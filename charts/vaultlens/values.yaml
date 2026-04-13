@@ -1,0 +1,159 @@
+# Default values for VaultLens Helm chart
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/Jasonrve/vaultlens
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to chart appVersion
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# -- VaultLens application configuration
+config:
+  # -- Vault server address (required)
+  vaultAddr: "http://vault:8200"
+  # -- Skip TLS verification for Vault connection
+  vaultSkipTlsVerify: "false"
+  # -- CORS origin (leave empty for same-origin)
+  corsOrigin: ""
+  # -- Server port
+  port: "3001"
+  # -- Audit log file path (leave empty for default)
+  auditLogPath: ""
+
+# -- Backup storage configuration
+backup:
+  # -- Directory inside the container where backups are stored
+  path: "/backups"
+  persistence:
+    # -- Enable a PersistentVolumeClaim for backup storage (recommended for production)
+    enabled: false
+    # -- Storage class name (leave empty to use cluster default)
+    storageClassName: ""
+    # -- Access mode for the PVC
+    accessMode: ReadWriteOnce
+    # -- Storage size for backups
+    size: 1Gi
+    # -- Use an existing PVC instead of creating one
+    existingClaim: ""
+
+# -- Configuration storage backend
+configStorage:
+  # -- Backend type: 'file' (default, stores config.ini on disk) or 'vault' (Vault KV v2)
+  # Use 'vault' for stateless/multi-replica deployments; 'file' requires persistence enabled below.
+  backend: "file"
+  # -- Mount path inside the container for file-based config storage
+  # Only relevant when backend is 'file'
+  path: "/config"
+  persistence:
+    # -- Enable a PersistentVolumeClaim for file-based config storage
+    # Required when backend is 'file' and config must survive pod restarts
+    enabled: false
+    # -- Storage class name (leave empty to use cluster default)
+    storageClassName: ""
+    # -- Access mode for the PVC
+    accessMode: ReadWriteOnce
+    # -- Storage size for config (config.ini + logo blobs)
+    size: 100Mi
+    # -- Use an existing PVC instead of creating one
+    existingClaim: ""
+
+# -- Vault system token for secure merge and shared secrets
+# Use existingSecret to reference a pre-created Kubernetes secret
+existingSecret: ""
+# -- Key in the existing secret that holds the system token
+existingSecretKey: "vault-system-token"
+# -- Inline system token (only if existingSecret is not set; NOT recommended for production)
+systemToken: ""
+
+# -- Kubernetes auth for the system token (recommended — replaces VAULT_SYSTEM_TOKEN)
+# When enabled, VaultLens authenticates to Vault using the pod's service account JWT.
+# This eliminates the need for a static VAULT_SYSTEM_TOKEN.
+kubernetesAuth:
+  # -- Enable Kubernetes auth method for system token
+  enabled: false
+  # -- Vault role to authenticate as (required when enabled)
+  role: "vaultlens"
+  # -- Vault auth mount path for Kubernetes
+  mount: "kubernetes"
+  # -- Path to the service account token (usually auto-mounted)
+  tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: vaultlens.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: vaultlens-tls
+  #    hosts:
+  #      - vaultlens.local
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

@@ -1,0 +1,9 @@
+* text=auto
+
+# Shell scripts should always use Unix line endings
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Docker-related files should use Unix line endings
+Dockerfile* text eol=lf
+docker-compose* text eol=lf

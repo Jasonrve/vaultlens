@@ -1,0 +1,39 @@
+services:
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: vaultlens-vault
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "root"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://127.0.0.1:8200"
+    volumes:
+      - ./vault/policies:/vault/policies:ro
+      - ./vault/scripts:/vault/scripts:ro
+      - ./vault/audit:/vault/audit
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  vault-init:
+    image: hashicorp/vault:1.17
+    container_name: vaultlens-vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "root"
+    volumes:
+      - ./vault/policies:/vault/policies:ro
+      - ./vault/scripts:/vault/scripts:ro
+    entrypoint: /bin/sh
+    command: /vault/scripts/bootstrap.sh
+    restart: "no"

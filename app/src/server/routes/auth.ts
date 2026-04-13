@@ -1,0 +1,228 @@
+import { Router, Response, NextFunction } from 'express';
+import { config } from '../config/index.js';
+import { VaultClient } from '../lib/vaultClient.js';
+import { authMiddleware } from '../middleware/auth.js';
+import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
+
+const router = Router();
+const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+router.post(
+  '/login',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { token } = req.body as { token?: string };
+
+      if (!token || typeof token !== 'string') {
+        res.status(400).json({ error: 'Token is required' });
+        return;
+      }
+
+      const response = await vaultClient.get<{ data: VaultTokenInfo }>(
+        '/auth/token/lookup-self',
+        token
+      );
+
+      const tokenInfo = response.data;
+
+      res.cookie('vault_token', token, {
+        httpOnly: true,
+        secure: config.nodeEnv === 'production',
+        sameSite: 'lax',
+        maxAge: tokenInfo.ttl > 0 ? tokenInfo.ttl * 1000 : 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+
+      res.json({
+        success: true,
+        tokenInfo: {
+          display_name: tokenInfo.display_name,
+          policies: tokenInfo.policies,
+          ttl: tokenInfo.ttl,
+          expire_time: tokenInfo.expire_time,
+          entity_id: tokenInfo.entity_id,
+          type: tokenInfo.type,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── OIDC: get authorization URL (unauthenticated — Vault validates redirect_uri) ──────────
+router.post(
+  '/oidc/auth-url',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { mountPath, role, redirectUri } = req.body as {
+        mountPath?: string;
+        role?: string;
+        redirectUri: string;
+      };
+
+      const mount = (mountPath || 'oidc').replace(/^\/+|\/+$/g, '');
+
+      if (!redirectUri || typeof redirectUri !== 'string' || !redirectUri.startsWith('http')) {
+        res.status(400).json({ error: 'A valid redirectUri is required' });
+        return;
+      }
+
+      const payload: Record<string, string> = { redirect_uri: redirectUri };
+      if (role?.trim()) payload.role = role.trim();
+
+      console.log(`[OIDC] Requesting auth_url — mount="${mount}", role="${role ?? '(none, using default_role)'}", redirect_uri="${redirectUri}"`);
+
+      // Probe the mount config so we can report useful diagnostics
+      let mountConfig: { data?: { default_role?: string; oidc_discovery_url?: string } } = {};
+      try {
+        mountConfig = await vaultClient.get<typeof mountConfig>(
+          `/auth/${encodeURIComponent(mount)}/config`,
+          ''
+        );
+      } catch {
+        // non-fatal — we still attempt the auth_url call
+      }
+
+      const response = await vaultClient.post<{ data: { auth_url: string } }>(
+        `/auth/${encodeURIComponent(mount)}/oidc/auth_url`,
+        '',
+        payload
+      );
+
+      const authUrl = response?.data?.auth_url;
+      if (!authUrl) {
+        // Vault returns auth_url="" (HTTP 200) for several reasons — build a diagnostic message.
+        const defaultRole = mountConfig?.data?.default_role;
+        const discoveryUrl = mountConfig?.data?.oidc_discovery_url;
+        const effectiveRole = role?.trim() || defaultRole || null;
+
+        const lines: string[] = [
+          `Vault returned an empty auth_url for mount "${mount}". Common causes:`,
+          '',
+          `  1. No role resolved — you ${role?.trim() ? `sent role="${role.trim()}"` : 'did not send a role'} and the mount's default_role is "${defaultRole ?? '(not set)'}".\n     Fix: enter a role name in the login form, or set default_role on the Vault OIDC mount.`,
+          '',
+          `  2. redirect_uri mismatch — ensure exactly this URI is in the role's allowed_redirect_uris:\n     ${redirectUri}`,
+          '',
+          `  3. OIDC provider not configured — discovery_url on this mount is: "${discoveryUrl ?? '(unknown)'}"`,
+        ];
+
+        if (effectiveRole) {
+          lines.push('', `  Role that would be used: "${effectiveRole}"`);
+        }
+
+        console.warn(`[OIDC] Empty auth_url returned. Diagnostics:\n${lines.join('\n')}`);
+        res.status(502).json({ error: lines.join('\n') });
+        return;
+      }
+
+      res.json({ authUrl });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── OIDC: exchange code + state for Vault token ───────────────────────────────────────────
+router.post(
+  '/oidc/callback',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { mountPath, code, state } = req.body as {
+        mountPath?: string;
+        code: string;
+        state: string;
+      };
+
+      const mount = (mountPath || 'oidc').replace(/^\/+|\/+$/g, '');
+
+      if (!code || typeof code !== 'string' || !state || typeof state !== 'string') {
+        res.status(400).json({ error: 'code and state are required' });
+        return;
+      }
+
+      // Exchange code for Vault client_token (unauthenticated endpoint)
+      const callbackResp = await vaultClient.get<{
+        auth: {
+          client_token: string;
+          lease_duration: number;
+          policies: string[];
+          display_name: string;
+          entity_id: string;
+          token_type: string;
+          accessor: string;
+        };
+      }>(
+        `/auth/${encodeURIComponent(mount)}/oidc/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
+        ''
+      );
+
+      const clientToken = callbackResp.auth.client_token;
+
+      // Look up full token info
+      const tokenInfoResp = await vaultClient.get<{ data: VaultTokenInfo }>(
+        '/auth/token/lookup-self',
+        clientToken
+      );
+      const tokenInfo = tokenInfoResp.data;
+
+      res.cookie('vault_token', clientToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === 'production',
+        sameSite: 'lax',
+        maxAge: tokenInfo.ttl > 0 ? tokenInfo.ttl * 1000 : 24 * 60 * 60 * 1000,
+        path: '/',
+      });
+
+      res.json({
+        success: true,
+        tokenInfo: {
+          display_name: tokenInfo.display_name,
+          policies: tokenInfo.policies,
+          ttl: tokenInfo.ttl,
+          expire_time: tokenInfo.expire_time,
+          entity_id: tokenInfo.entity_id,
+          type: tokenInfo.type,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
+  res.clearCookie('vault_token', {
+    httpOnly: true,
+    secure: config.nodeEnv === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+
+  res.json({ success: true });
+});
+
+router.get(
+  '/me',
+  authMiddleware,
+  (req: AuthenticatedRequest, res: Response) => {
+    if (!req.tokenInfo) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    res.json({
+      tokenInfo: {
+        display_name: req.tokenInfo.display_name,
+        policies: req.tokenInfo.policies,
+        ttl: req.tokenInfo.ttl,
+        expire_time: req.tokenInfo.expire_time,
+        entity_id: req.tokenInfo.entity_id,
+        type: req.tokenInfo.type,
+        accessor: req.tokenInfo.accessor,
+      },
+    });
+  }
+);
+
+export default router;

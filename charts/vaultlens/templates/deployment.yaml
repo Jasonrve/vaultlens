@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vaultlens.fullname" . }}
+  labels:
+    {{- include "vaultlens.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "vaultlens.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "vaultlens.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "vaultlens.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port | default 3001 }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: {{ .Values.config.port | default "3001" | quote }}
+            - name: VAULT_ADDR
+              value: {{ .Values.config.vaultAddr | quote }}
+            - name: VAULT_SKIP_TLS_VERIFY
+              value: {{ .Values.config.vaultSkipTlsVerify | default "false" | quote }}
+            {{- if .Values.config.corsOrigin }}
+            - name: CORS_ORIGIN
+              value: {{ .Values.config.corsOrigin | quote }}
+            {{- end }}
+            {{- if .Values.config.auditLogPath }}
+            - name: VAULT_AUDIT_LOG_PATH
+              value: {{ .Values.config.auditLogPath | quote }}
+            {{- end }}
+            - name: VAULTLENS_BACKUP_PATH
+              value: {{ .Values.backup.path | default "/backups" | quote }}
+            - name: VAULTLENS_CONFIG_STORAGE
+              value: {{ .Values.configStorage.backend | default "file" | quote }}
+            {{- if eq (.Values.configStorage.backend | default "file") "file" }}
+            - name: VAULTLENS_CONFIG_PATH
+              value: {{ .Values.configStorage.path | default "/config" | quote }}
+            {{- end }}
+            {{- if .Values.kubernetesAuth.enabled }}
+            - name: VAULT_K8S_AUTH_ROLE
+              value: {{ .Values.kubernetesAuth.role | quote }}
+            - name: VAULT_K8S_AUTH_MOUNT
+              value: {{ .Values.kubernetesAuth.mount | default "kubernetes" | quote }}
+            - name: VAULT_K8S_TOKEN_PATH
+              value: {{ .Values.kubernetesAuth.tokenPath | default "/var/run/secrets/kubernetes.io/serviceaccount/token" | quote }}
+            {{- else }}
+            - name: VAULT_SYSTEM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.existingSecret }}
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.existingSecretKey }}
+                  {{- else }}
+                  name: {{ include "vaultlens.fullname" . }}
+                  key: vault-system-token
+                  {{- end }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
+          {{- $hasConfigVol := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
+          {{- if or $hasBackupVol $hasConfigVol }}
+          volumeMounts:
+            {{- if $hasBackupVol }}
+            - name: backups
+              mountPath: {{ .Values.backup.path | default "/backups" | quote }}
+            {{- end }}
+            {{- if $hasConfigVol }}
+            - name: config-storage
+              mountPath: {{ .Values.configStorage.path | default "/config" | quote }}
+            {{- end }}
+          {{- end }}
+      {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
+      {{- $hasConfigVol := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
+      {{- if or $hasBackupVol $hasConfigVol }}
+      volumes:
+        {{- if $hasBackupVol }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ .Values.backup.persistence.existingClaim | default (printf "%s-backups" (include "vaultlens.fullname" .)) }}
+        {{- end }}
+        {{- if $hasConfigVol }}
+        - name: config-storage
+          persistentVolumeClaim:
+            claimName: {{ .Values.configStorage.persistence.existingClaim | default (printf "%s-config" (include "vaultlens.fullname" .)) }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,57 @@
+services:
+  vaultlens:
+    image: ghcr.io/Jasonrve/vaultlens:latest
+    container_name: vaultlens
+    restart: unless-stopped
+    ports:
+      - "${VAULTLENS_PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=production
+      - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
+      - VAULT_SYSTEM_TOKEN=${VAULT_SYSTEM_TOKEN}
+      - VAULT_SKIP_TLS_VERIFY=${VAULT_SKIP_TLS_VERIFY:-false}
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      # Config storage — 'file' (default, persisted below) or 'vault' (Vault KV, no volume needed)
+      - VAULTLENS_CONFIG_STORAGE=${VAULTLENS_CONFIG_STORAGE:-file}
+      - VAULTLENS_CONFIG_PATH=/config
+      # Backup storage
+      - VAULTLENS_BACKUP_PATH=/backups
+    volumes:
+      - vaultlens_config:/config
+      - vaultlens_backups:/backups
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - vaultlens
+
+  # Optional: local Vault for development/testing
+  # Uncomment the vault service below if you need a local Vault instance
+  #
+  # vault:
+  #   image: hashicorp/vault:1.17
+  #   container_name: vault
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8200:8200"
+  #   environment:
+  #     VAULT_DEV_ROOT_TOKEN_ID: root
+  #     VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+  #   cap_add:
+  #     - IPC_LOCK
+  #   networks:
+  #     - vaultlens
+
+networks:
+  vaultlens:
+    driver: bridge
+
+volumes:
+  # Persists config.ini and logo blobs across container restarts.
+  # Set VAULTLENS_CONFIG_STORAGE=vault to use Vault KV instead (no volume needed).
+  vaultlens_config:
+  # Persists backup JSON files across container restarts.
+  vaultlens_backups:

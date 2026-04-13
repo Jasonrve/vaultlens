@@ -1,0 +1,12 @@
+# VaultLens Docker Ignore
+node_modules
+.git
+.github
+docs
+vault
+*.md
+.env
+.env.*
+!README.md
+app/node_modules
+app/dist
