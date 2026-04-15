@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
+import DevIntegrationTab from './DevIntegrationTab';
 
 // Fields that contain token/security policies — rendered as badges
 const POLICY_FIELDS = new Set(['token_policies', 'policies', 'allowed_policies', 'disallowed_policies']);
@@ -57,6 +58,7 @@ export default function RoleDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [activeTab, setActiveTab] = useState<'details' | 'developer'>('details');
 
   useEffect(() => {
     api
@@ -98,7 +100,7 @@ export default function RoleDetail() {
         <span className="text-gray-700">{role}</span>
       </div>
 
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">{role}</h1>
         <button
           onClick={() => { void handleDelete(); }}
@@ -109,35 +111,63 @@ export default function RoleDetail() {
         </button>
       </div>
 
-      {/* General fields */}
-      {generalFields.length > 0 && (
-        <div className="mb-6 overflow-hidden rounded-md border border-gray-200 bg-white">
-          {generalFields.map(([key, val]) => (
-            <FieldRow
-              key={key}
-              label={toLabel(key)}
-              value={val}
-              isPolicy={POLICY_FIELDS.has(key)}
-            />
-          ))}
-        </div>
+      {/* Tabs */}
+      <div className="mb-5 flex gap-1 border-b border-gray-200">
+        {(['details', 'developer'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={[
+              'px-4 py-2 text-sm font-medium rounded-t transition-colors',
+              activeTab === tab
+                ? 'border-b-2 border-blue-600 text-blue-600 bg-white'
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+            ].join(' ')}
+          >
+            {tab === 'details' ? 'Role Details' : '⚙ Developer Guide'}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab: Role Details */}
+      {activeTab === 'details' && (
+        <>
+          {/* General fields */}
+          {generalFields.length > 0 && (
+            <div className="mb-6 overflow-hidden rounded-md border border-gray-200 bg-white">
+              {generalFields.map(([key, val]) => (
+                <FieldRow
+                  key={key}
+                  label={toLabel(key)}
+                  value={val}
+                  isPolicy={POLICY_FIELDS.has(key)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Token fields */}
+          {tokenFields.length > 0 && (
+            <>
+              <h2 className="mb-3 text-base font-semibold text-gray-700">Tokens</h2>
+              <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
+                {tokenFields.map(([key, val]) => (
+                  <FieldRow
+                    key={key}
+                    label={toLabel(key)}
+                    value={val}
+                    isPolicy={POLICY_FIELDS.has(key)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
 
-      {/* Token fields */}
-      {tokenFields.length > 0 && (
-        <>
-          <h2 className="mb-3 text-base font-semibold text-gray-700">Tokens</h2>
-          <div className="overflow-hidden rounded-md border border-gray-200 bg-white">
-            {tokenFields.map(([key, val]) => (
-              <FieldRow
-                key={key}
-                label={toLabel(key)}
-                value={val}
-                isPolicy={POLICY_FIELDS.has(key)}
-              />
-            ))}
-          </div>
-        </>
+      {/* Tab: Developer Guide */}
+      {activeTab === 'developer' && (
+        <DevIntegrationTab method={method} role={role} />
       )}
     </div>
   );

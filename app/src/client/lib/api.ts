@@ -222,6 +222,35 @@ export async function updateAuthMethodTune(method: string, tune: Record<string, 
   return data;
 }
 
+export async function getDevTemplate(method: string, role: string) {
+  const { data } = await api.get<{
+    content: string;
+    rawTemplate: string;
+    authType: string;
+    isCustomized: boolean;
+    canCustomize: boolean;
+    templateVars: Record<string, string>;
+  }>(`/auth-methods/${encodeURIComponent(method)}/developer-template`, {
+    params: { role },
+  });
+  return data;
+}
+
+export async function updateDevTemplate(method: string, content: string) {
+  const { data } = await api.put<{ success: boolean; authType: string }>(
+    `/auth-methods/${encodeURIComponent(method)}/developer-template`,
+    { content },
+  );
+  return data;
+}
+
+export async function deleteDevTemplate(method: string) {
+  const { data } = await api.delete<{ success: boolean; authType: string }>(
+    `/auth-methods/${encodeURIComponent(method)}/developer-template`,
+  );
+  return data;
+}
+
 // ── Identity ──────────────────────────────────────────────
 export interface EntitySuggestion {
   aliasName: string;

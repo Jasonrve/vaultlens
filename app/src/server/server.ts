@@ -4,6 +4,7 @@ import express from 'express';
 import app from './app.js';
 import { config } from './config/index.js';
 import { isSystemTokenConfigured } from './lib/systemToken.js';
+import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
 import { ensureVaultLensAdminPolicy } from './lib/policyInit.js';
 import { startAuditWatcher } from './routes/hooks.js';
@@ -39,9 +40,16 @@ async function start(): Promise<void> {
     });
   }
 
-  app.listen(config.port, () => {
+  app.listen(config.port, async () => {
     console.log(`VaultLens running on port ${config.port} [${config.nodeEnv}]`);
     console.log(`Vault address: ${config.vaultAddr}`);
+
+    // Initialize dev integration templates from disk
+    try {
+      await initializeTemplates();
+    } catch (err) {
+      console.error('[Dev Integration Templates] Failed to initialize:', err instanceof Error ? err.message : err);
+    }
 
     if (!isSystemTokenConfigured()) {
       console.warn(
