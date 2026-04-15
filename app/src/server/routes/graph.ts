@@ -14,8 +14,56 @@ const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify)
 
 router.use(authMiddleware);
 
-const NODE_SPACING_X = 260;
-const NODE_SPACING_Y = 80;
+// ── In-memory graph cache ────────────────────────────────────────────────────
+const GRAPH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+interface GraphCacheEntry {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  cachedAt: number;
+  fromCache: boolean;
+}
+
+const graphCache = new Map<string, GraphCacheEntry>();
+
+function getFromGraphCache(key: string): GraphCacheEntry | null {
+  const entry = graphCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > GRAPH_CACHE_TTL_MS) {
+    graphCache.delete(key);
+    return null;
+  }
+  return { ...entry, fromCache: true };
+}
+
+function setInGraphCache(key: string, nodes: GraphNode[], edges: GraphEdge[]): GraphCacheEntry {
+  const entry: GraphCacheEntry = { nodes, edges, cachedAt: Date.now(), fromCache: false };
+  graphCache.set(key, entry);
+  return entry;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Concurrency helper ────────────────────────────────────────────────────────
+// Runs `fn` over every item with at most `limit` calls in-flight at once.
+// JavaScript's single-threaded event loop keeps Set/array mutations safe.
+async function concurrentMap<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (queue.length > 0) {
+      const item = queue.shift()!;
+      await fn(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const CONCURRENT_LIMIT = 20;
+const NODE_SPACING_X = 180;
+const NODE_SPACING_Y = 60;
 
 function createNode(
   id: string,
@@ -46,11 +94,17 @@ router.get(
   '/auth-policy-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const isRefresh = req.query.refresh === 'true';
+      if (!isRefresh) {
+        const cached = getFromGraphCache('auth-policy-map');
+        if (cached) { res.json(cached); return; }
+      }
+
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
+      const addedPolicyIds = new Set<string>();
 
-      // Fetch auth methods
       const authResponse = await vaultClient.get<{
         data: Record<string, { type: string; description: string; accessor: string }>;
       }>('/sys/auth', token);
@@ -59,82 +113,57 @@ router.get(
       let methodY = 0;
 
       for (const [path, info] of authMethods) {
-        const methodId = `auth-${path.replace(/\/$/, '')}`;
-        nodes.push(
-          createNode(methodId, 'authMethod', `${info.type} (${path})`, 0, methodY, {
-            authType: info.type,
-          })
-        );
+        const normalizedPath = path.replace(/\/$/, '');
+        const methodId = `auth-${normalizedPath}`;
+        nodes.push(createNode(methodId, 'authMethod', `${info.type} (${path})`, 0, methodY, { authType: info.type }));
 
-        // Try to fetch roles for this auth method
         try {
-          const normalizedPath = path.replace(/\/$/, '');
-          const rolesResponse = await vaultClient.list<{
-            data: { keys: string[] };
-          }>(`/auth/${normalizedPath}/role`, token);
+          const rolesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
+            `/auth/${normalizedPath}/role`, token,
+          );
+          const roleNames = rolesResponse.data.keys;
 
-          const roles = rolesResponse.data.keys;
+          // Add all role nodes up-front (positions are overridden by frontend layout)
           let roleY = methodY;
-
-          for (const roleName of roles) {
+          for (const roleName of roleNames) {
             const roleId = `role-${normalizedPath}-${roleName}`;
-            nodes.push(
-              createNode(roleId, 'role', roleName, NODE_SPACING_X, roleY)
-            );
+            nodes.push(createNode(roleId, 'role', roleName, NODE_SPACING_X, roleY));
             edges.push(createEdge(methodId, roleId));
+            roleY += NODE_SPACING_Y;
+          }
+          methodY = roleY + NODE_SPACING_Y;
 
-            // Try to get role details to find attached policies
-            let slotsTaken = 1; // at minimum this role occupies one slot
+          // Concurrently fetch role details to obtain attached policies
+          await concurrentMap(roleNames, CONCURRENT_LIMIT, async (roleName) => {
+            const roleId = `role-${normalizedPath}-${roleName}`;
             try {
               const roleDetail = await vaultClient.get<{
-                data: {
-                  token_policies?: string[];
-                  policies?: string[];
-                };
+                data: { token_policies?: string[]; policies?: string[] };
               }>(`/auth/${normalizedPath}/role/${roleName}`, token);
 
-              const policies = [
-                ...(roleDetail.data.token_policies || []),
-                ...(roleDetail.data.policies || []),
+              const all = [
+                ...(roleDetail.data.token_policies ?? []),
+                ...(roleDetail.data.policies ?? []),
               ];
-              const uniquePolicies = [...new Set(policies)];
-
-              let policyY = roleY;
-              for (const policyName of uniquePolicies) {
+              for (const policyName of [...new Set(all)]) {
                 const policyId = `policy-${policyName}`;
-                // Only add node if not already added
-                if (!nodes.some((n) => n.id === policyId)) {
-                  nodes.push(
-                    createNode(
-                      policyId,
-                      'policy',
-                      policyName,
-                      NODE_SPACING_X * 2,
-                      policyY
-                    )
-                  );
+                if (!addedPolicyIds.has(policyId)) {
+                  nodes.push(createNode(policyId, 'policy', policyName, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y));
+                  addedPolicyIds.add(policyId);
                 }
                 edges.push(createEdge(roleId, policyId));
-                policyY += NODE_SPACING_Y;
               }
-              // This role needs as many vertical slots as it has policies
-              slotsTaken = Math.max(uniquePolicies.length, 1);
             } catch (e) {
-              console.warn(`[graph] Could not read role '${roleName}' detail:`, e instanceof Error ? e.message : e);
+              console.warn(`[graph] role '${roleName}' detail failed:`, e instanceof Error ? e.message : e);
             }
-
-            roleY += slotsTaken * NODE_SPACING_Y;
-          }
-
-          // Advance methodY past all roles used by this method, plus a gap row
-          methodY = roleY + NODE_SPACING_Y;
+          });
         } catch (e) {
-          console.warn(`[graph] Could not list roles for auth method '${path}':`, e instanceof Error ? e.message : e);
+          console.warn(`[graph] listing roles for '${path}' failed:`, e instanceof Error ? e.message : e);
           methodY += NODE_SPACING_Y * 2;
         }
       }
 
-      res.json({ nodes, edges });
+      res.json(setInGraphCache('auth-policy-map', nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -146,24 +175,29 @@ router.get(
   '/policy-secret-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const isRefresh = req.query.refresh === 'true';
+      if (!isRefresh) {
+        const cached = getFromGraphCache('policy-secret-map');
+        if (cached) { res.json(cached); return; }
+      }
+
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
-      // Fetch all policies
-      const policiesResponse = await vaultClient.list<{
-        data: { keys: string[] };
-      }>('/sys/policies/acl', token);
-
+      const policiesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
+        '/sys/policies/acl', token,
+      );
       const policyNames = policiesResponse.data.keys;
-      let policyY = 0;
 
-      for (const policyName of policyNames) {
+      // Add all policy nodes up-front so edge targets are always resolvable
+      policyNames.forEach((policyName, i) => {
+        nodes.push(createNode(`policy-${policyName}`, 'policy', policyName, 0, i * NODE_SPACING_Y));
+      });
+
+      // Concurrently fetch each policy's rules and build secret-path nodes
+      await concurrentMap(policyNames, CONCURRENT_LIMIT, async (policyName) => {
         const policyId = `policy-${policyName}`;
-        nodes.push(
-          createNode(policyId, 'policy', policyName, 0, policyY)
-        );
-
         try {
           const policyResponse = await vaultClient.get<{
             data: { rules?: string; policy?: string };
@@ -171,28 +205,20 @@ router.get(
 
           const rules = policyResponse.data.rules ?? policyResponse.data.policy ?? '';
           const paths = parsePolicyHCL(rules);
-          let pathY = policyY;
 
           for (const pathInfo of paths) {
             const pathId = `path-${policyName}-${pathInfo.path}`;
-            nodes.push(
-              createNode(pathId, 'secretPath', pathInfo.path, NODE_SPACING_X, pathY, {
-                capabilities: pathInfo.capabilities,
-              })
-            );
+            nodes.push(createNode(pathId, 'secretPath', pathInfo.path, NODE_SPACING_X, nodes.length * NODE_SPACING_Y, {
+              capabilities: pathInfo.capabilities,
+            }));
             edges.push(createEdge(policyId, pathId));
-            pathY += NODE_SPACING_Y;
           }
-
-          // Advance policyY past all paths this policy used, plus a gap row
-          policyY = pathY + NODE_SPACING_Y;
         } catch (e) {
-          console.warn(`[graph] Could not read policy '${policyName}':`, e instanceof Error ? e.message : e);
-          policyY += NODE_SPACING_Y * 2;
+          console.warn(`[graph] policy '${policyName}' fetch failed:`, e instanceof Error ? e.message : e);
         }
-      }
+      });
 
-      res.json({ nodes, edges });
+      res.json(setInGraphCache('policy-secret-map', nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -204,16 +230,23 @@ router.get(
   '/identity-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const isRefresh = req.query.refresh === 'true';
+      if (!isRefresh) {
+        const cached = getFromGraphCache('identity-map');
+        if (cached) { res.json(cached); return; }
+      }
+
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
+      const addedGroupIds = new Set<string>();
+      const addedPolicyIds = new Set<string>();
 
-      // Fetch entities
       let entityIds: string[] = [];
       try {
-        const entitiesResponse = await vaultClient.list<{
-          data: { keys: string[] };
-        }>('/identity/entity/id', token);
+        const entitiesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
+          '/identity/entity/id', token,
+        );
         entityIds = entitiesResponse.data.keys;
       } catch (error) {
         if (error instanceof VaultError && error.statusCode === 404) {
@@ -223,94 +256,81 @@ router.get(
         }
       }
 
-      let entityY = 0;
-      const addedGroupIds = new Set<string>();
-      const addedPolicyIds = new Set<string>();
+      // Intermediate store for entity data (keyed by entityId)
+      interface EntityPayload {
+        id: string;
+        name: string;
+        direct_policies: string[];
+        group_ids: string[];
+      }
+      const entityPayloads: EntityPayload[] = [];
 
-      for (const entityId of entityIds) {
+      // Concurrently fetch all entity details
+      await concurrentMap(entityIds, CONCURRENT_LIMIT, async (entityId) => {
         try {
           const entityResponse = await vaultClient.get<{
-            data: {
-              id: string;
-              name: string;
-              policies: string[];
-              group_ids: string[];
-              direct_policies: string[];
-            };
+            data: { id: string; name: string; policies: string[]; group_ids: string[]; direct_policies: string[] };
           }>(`/identity/entity/id/${entityId}`, token);
-
-          const entity = entityResponse.data;
-          const entityNodeId = `entity-${entity.id}`;
-          nodes.push(
-            createNode(entityNodeId, 'entity', entity.name, 0, entityY)
-          );
-
-          let rowY = entityY;
-
-          // Direct policies
-          for (const policyName of entity.direct_policies || []) {
-            const policyNodeId = `policy-${policyName}`;
-            if (!addedPolicyIds.has(policyNodeId)) {
-              nodes.push(
-                createNode(policyNodeId, 'policy', policyName, NODE_SPACING_X * 2, rowY)
-              );
-              addedPolicyIds.add(policyNodeId);
-              rowY += NODE_SPACING_Y;
-            }
-            edges.push(createEdge(entityNodeId, policyNodeId));
-          }
-
-          // Groups
-          for (const groupId of entity.group_ids || []) {
-            const groupNodeId = `group-${groupId}`;
-            const groupRow = rowY;
-
-            if (!addedGroupIds.has(groupNodeId)) {
-              try {
-                const groupResponse = await vaultClient.get<{
-                  data: { id: string; name: string; policies: string[] };
-                }>(`/identity/group/id/${groupId}`, token);
-
-                const group = groupResponse.data;
-                nodes.push(
-                  createNode(groupNodeId, 'group', group.name, NODE_SPACING_X, groupRow)
-                );
-                addedGroupIds.add(groupNodeId);
-
-                // Group policies
-                let gpolicyY = groupRow;
-                for (const policyName of group.policies || []) {
-                  const policyNodeId = `policy-${policyName}`;
-                  if (!addedPolicyIds.has(policyNodeId)) {
-                    nodes.push(
-                      createNode(policyNodeId, 'policy', policyName, NODE_SPACING_X * 2, gpolicyY)
-                    );
-                    addedPolicyIds.add(policyNodeId);
-                  }
-                  edges.push(createEdge(groupNodeId, policyNodeId));
-                  gpolicyY += NODE_SPACING_Y;
-                }
-                // Advance rowY past however many policies this group had
-                rowY = Math.max(rowY, gpolicyY) + NODE_SPACING_Y;
-              } catch {
-                rowY += NODE_SPACING_Y;
-              }
-            } else {
-              rowY += NODE_SPACING_Y;
-            }
-
-            edges.push(createEdge(entityNodeId, groupNodeId));
-          }
-
-          // Advance entityY past all rows used by this entity, plus a gap
-          entityY = Math.max(rowY, entityY + NODE_SPACING_Y) + NODE_SPACING_Y;
+          entityPayloads.push(entityResponse.data);
         } catch {
-          // Entity might not be accessible
-          entityY += NODE_SPACING_Y * 2;
+          // entity may not be accessible; skip
+        }
+      });
+
+      // Build entity nodes and collect unique group IDs
+      const allGroupIds = new Set<string>();
+      for (const entity of entityPayloads) {
+        const entityNodeId = `entity-${entity.id}`;
+        nodes.push(createNode(entityNodeId, 'entity', entity.name, 0, nodes.length * NODE_SPACING_Y));
+
+        for (const policyName of entity.direct_policies ?? []) {
+          const policyId = `policy-${policyName}`;
+          if (!addedPolicyIds.has(policyId)) {
+            nodes.push(createNode(policyId, 'policy', policyName, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y));
+            addedPolicyIds.add(policyId);
+          }
+          edges.push(createEdge(entityNodeId, policyId));
+        }
+
+        for (const groupId of entity.group_ids ?? []) {
+          allGroupIds.add(groupId);
+          edges.push(createEdge(entityNodeId, `group-${groupId}`));
         }
       }
 
-      res.json({ nodes, edges });
+      // Concurrently fetch all unique group details
+      interface GroupPayload { id: string; name: string; policies: string[] }
+      const groupPayloads: GroupPayload[] = [];
+
+      await concurrentMap([...allGroupIds], CONCURRENT_LIMIT, async (groupId) => {
+        try {
+          const groupResponse = await vaultClient.get<{
+            data: { id: string; name: string; policies: string[] };
+          }>(`/identity/group/id/${groupId}`, token);
+          groupPayloads.push(groupResponse.data);
+        } catch {
+          // group may not be accessible; skip
+        }
+      });
+
+      for (const group of groupPayloads) {
+        const groupNodeId = `group-${group.id}`;
+        if (!addedGroupIds.has(groupNodeId)) {
+          nodes.push(createNode(groupNodeId, 'group', group.name, NODE_SPACING_X, nodes.length * NODE_SPACING_Y));
+          addedGroupIds.add(groupNodeId);
+        }
+
+        for (const policyName of group.policies ?? []) {
+          const policyId = `policy-${policyName}`;
+          if (!addedPolicyIds.has(policyId)) {
+            nodes.push(createNode(policyId, 'policy', policyName, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y));
+            addedPolicyIds.add(policyId);
+          }
+          edges.push(createEdge(groupNodeId, policyId));
+        }
+      }
+
+      res.json(setInGraphCache('identity-map', nodes, edges));
     } catch (error) {
       next(error);
     }

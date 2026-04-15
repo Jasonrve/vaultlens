@@ -107,6 +107,8 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  cachedAt?: number;   // unix ms timestamp of when data was cached on the server
+  fromCache?: boolean; // true if the response was served from the server cache
 }
 
 export interface SysTokenStatus {

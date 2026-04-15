@@ -266,18 +266,24 @@ export async function getGroup(id: string) {
 }
 
 // ── Graph ─────────────────────────────────────────────────
-export async function getAuthPolicyMap() {
-  const { data } = await api.get<GraphData>('/graph/auth-policy-map');
+export async function getAuthPolicyMap(refresh = false) {
+  const { data } = await api.get<GraphData>('/graph/auth-policy-map', {
+    params: refresh ? { refresh: 'true' } : undefined,
+  });
   return data;
 }
 
-export async function getPolicySecretMap() {
-  const { data } = await api.get<GraphData>('/graph/policy-secret-map');
+export async function getPolicySecretMap(refresh = false) {
+  const { data } = await api.get<GraphData>('/graph/policy-secret-map', {
+    params: refresh ? { refresh: 'true' } : undefined,
+  });
   return data;
 }
 
-export async function getIdentityMap() {
-  const { data } = await api.get<GraphData>('/graph/identity-map');
+export async function getIdentityMap(refresh = false) {
+  const { data } = await api.get<GraphData>('/graph/identity-map', {
+    params: refresh ? { refresh: 'true' } : undefined,
+  });
   return data;
 }
 

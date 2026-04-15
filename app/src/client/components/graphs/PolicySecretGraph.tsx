@@ -1,63 +1,39 @@
 import { useEffect, useState } from 'react';
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  type Node,
-  type Edge,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
 import * as api from '../../lib/api';
 import type { GraphData } from '../../types';
 import GraphWrapper from './GraphWrapper';
 import GraphTableView from './GraphTableView';
+import GraphExplorer from './GraphExplorer';
 
 const nodeColors: Record<string, string> = {
   policy: '#10b981',
   secretPath: '#6366f1',
 };
 
-export default function PolicySecretGraph() {
+interface Props {
+  refreshKey?: number;
+  onDataLoaded?: (cachedAt: number | undefined, fromCache: boolean) => void;
+}
+
+export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Props) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<'graph' | 'table'>('graph');
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     api
-      .getPolicySecretMap()
-      .then(setGraphData)
+      .getPolicySecretMap(refreshKey > 0)
+      .then((data) => {
+        setGraphData(data);
+        onDataLoaded?.(data.cachedAt, data.fromCache ?? false);
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
-  }, []);
-
-  const nodes: Node[] = (graphData?.nodes ?? []).map((n) => ({
-    id: n.id,
-    position: n.position,
-    data: { label: n.data.label },
-    style: {
-      background: nodeColors[n.type] ?? '#94a3b8',
-      color: '#fff',
-      border: 'none',
-      borderRadius: '8px',
-      padding: '8px 14px',
-      fontSize: '12px',
-      fontWeight: 600,
-      minWidth: '140px',
-      maxWidth: '220px',
-      textAlign: 'center' as const,
-      whiteSpace: 'pre-wrap' as const,
-      wordBreak: 'break-word' as const,
-    },
-  }));
-
-  const edges: Edge[] = (graphData?.edges ?? []).map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    animated: true,
-    style: { stroke: '#94a3b8' },
-  }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   return (
     <div>
@@ -92,19 +68,19 @@ export default function PolicySecretGraph() {
               </span>
             ))}
           </div>
-          <GraphWrapper loading={loading} error={error}>
-            <ReactFlow nodes={nodes} edges={edges} fitView fitViewOptions={{ padding: 0.15 }} proOptions={{ hideAttribution: true }}>
-              <Background color="#e5e7eb" gap={20} />
-              <Controls showInteractive={false} />
-            </ReactFlow>
-          </GraphWrapper>
+          <GraphExplorer
+            data={graphData}
+            nodeColors={nodeColors}
+            loading={loading}
+            error={error}
+          />
         </>
       )}
       {view === 'table' && graphData && (
         <GraphTableView data={graphData} diagramType="policy-secret" />
       )}
       {view === 'table' && !graphData && !loading && (
-        <GraphWrapper loading={loading} error={error}>{<></>}</GraphWrapper>
+        <GraphWrapper loading={loading} error={error}>{null}</GraphWrapper>
       )}
     </div>
   );
