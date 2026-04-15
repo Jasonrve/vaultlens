@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discussions & Questions
+    url: https://github.com/Jasonrve/vaultlens/discussions
+    about: Ask questions, share ideas, or discuss the project
+  - name: 🔒 Security Vulnerability
+    url: https://github.com/Jasonrve/vaultlens/security/advisories/new
+    about: Report security vulnerabilities privately (do not use public issues)

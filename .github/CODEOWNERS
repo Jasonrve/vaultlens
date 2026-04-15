@@ -1,0 +1,30 @@
+# CODEOWNERS
+# Each line is a pattern followed by one or more owners.
+# The last matching pattern takes precedence.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+*                                               @Jasonrve
+
+# GitHub Actions workflows and CI configuration
+.github/workflows/                              @Jasonrve
+
+# Security-sensitive backend code
+app/src/server/middleware/                      @Jasonrve
+app/src/server/lib/configEncryption.ts          @Jasonrve
+app/src/server/lib/systemToken.ts               @Jasonrve
+app/src/server/lib/config-storage/             @Jasonrve
+app/src/server/lib/policyInit.ts                @Jasonrve
+
+# Docker and infrastructure
+Dockerfile                                      @Jasonrve
+docker-compose*.yml                             @Jasonrve
+charts/                                         @Jasonrve
+
+# Vault policies (security-critical)
+vault/policies/                                 @Jasonrve
+
+# Documentation
+docs/                                           @Jasonrve
+README.md                                       @Jasonrve
+SECURITY.md                                     @Jasonrve
