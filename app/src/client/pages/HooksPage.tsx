@@ -1,6 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../lib/api';
 
+const AUDIT_FIELDS: { id: string; label: string }[] = [
+  { id: 'accessor', label: 'Accessor' },
+  { id: 'display_name', label: 'Display Name' },
+  { id: 'entity_id', label: 'Entity ID' },
+  { id: 'user', label: 'User' },
+];
+
+type FormState = {
+  name: string;
+  secretPath: string;
+  endpoint: string;
+  matchFields: string[];
+  matchValues: Record<string, string>;
+};
+
+const EMPTY_FORM: FormState = {
+  name: '',
+  secretPath: '',
+  endpoint: '',
+  matchFields: [],
+  matchValues: {},
+};
+
 export default function HooksPage() {
   const [hooks, setHooks] = useState<api.WebhookConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -8,7 +31,7 @@ export default function HooksPage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', secretPath: '', endpoint: '' });
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [testing, setTesting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
@@ -32,15 +55,21 @@ export default function HooksPage() {
     setSuccessMsg(null);
     try {
       if (editingId) {
-        await api.updateHook(editingId, form);
+        await api.updateHook(editingId, {
+          name: form.name,
+          secretPath: form.secretPath,
+          endpoint: form.endpoint,
+          matchFields: form.matchFields,
+          matchValues: form.matchValues,
+        });
         setSuccessMsg('Webhook updated');
       } else {
-        await api.createHook(form.name, form.secretPath, form.endpoint);
+        await api.createHook(form.name, form.secretPath, form.endpoint, form.matchFields, form.matchValues);
         setSuccessMsg('Webhook created');
       }
       setShowForm(false);
       setEditingId(null);
-      setForm({ name: '', secretPath: '', endpoint: '' });
+      setForm(EMPTY_FORM);
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save webhook');
@@ -48,7 +77,13 @@ export default function HooksPage() {
   };
 
   const handleEdit = (hook: api.WebhookConfig) => {
-    setForm({ name: hook.name, secretPath: hook.secretPath, endpoint: hook.endpoint });
+    setForm({
+      name: hook.name,
+      secretPath: hook.secretPath,
+      endpoint: hook.endpoint,
+      matchFields: hook.matchFields ?? [],
+      matchValues: hook.matchValues ?? {},
+    });
     setEditingId(hook.id);
     setShowForm(true);
   };
@@ -93,6 +128,18 @@ export default function HooksPage() {
     }
   };
 
+  const toggleMatchField = (fieldId: string) => {
+    setForm((prev) => {
+      const active = prev.matchFields.includes(fieldId);
+      const next = active
+        ? prev.matchFields.filter((f) => f !== fieldId)
+        : [...prev.matchFields, fieldId];
+      const nextValues = { ...prev.matchValues };
+      if (active) delete nextValues[fieldId];
+      return { ...prev, matchFields: next, matchValues: nextValues };
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -110,7 +157,7 @@ export default function HooksPage() {
             Refresh
           </button>
           <button
-            onClick={() => { setShowForm(true); setEditingId(null); setForm({ name: '', secretPath: '', endpoint: '' }); }}
+            onClick={() => { setShowForm(true); setEditingId(null); setForm(EMPTY_FORM); }}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
           >
             Add Webhook
@@ -123,8 +170,11 @@ export default function HooksPage() {
         <h3 className="text-sm font-semibold text-blue-800 mb-1">How Webhooks Work</h3>
         <p className="text-xs text-blue-700">
           VaultLens monitors the Vault audit log for write operations (create, update, delete) on secret paths.
-          When a change is detected that matches a webhook&apos;s configured path, a POST request is sent to the endpoint
-          with details about the change. The payload includes the event type, hook info, changed path, and timestamp.
+          When a change is detected that matches a webhook&apos;s path pattern, a POST request is sent to the endpoint.
+          Use <code className="bg-blue-100 px-1 rounded">*</code> as a wildcard in the path (e.g.{' '}
+          <code className="bg-blue-100 px-1 rounded">kv/*/prod/*</code>). Optional audit field filters
+          narrow delivery to specific users or entities — these require the Vault audit device to have{' '}
+          <code className="bg-blue-100 px-1 rounded">hmac_accessor=false</code>.
         </p>
       </div>
 
@@ -158,15 +208,20 @@ export default function HooksPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Secret Path (prefix)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Secret Path Pattern
+              </label>
               <input
                 type="text"
                 value={form.secretPath}
                 onChange={e => setForm(prev => ({ ...prev, secretPath: e.target.value }))}
-                placeholder="e.g. kv/data/production/"
+                placeholder="e.g. kv/production/ or kv/*/prod/*"
                 className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
               />
-              <p className="text-[11px] text-gray-400 mt-0.5">Any change under this path will trigger the webhook.</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Use <code className="bg-gray-100 px-0.5 rounded">*</code> as a wildcard to match any path segment.
+                Without wildcards, all sub-paths are matched as a prefix.
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Endpoint URL</label>
@@ -178,6 +233,48 @@ export default function HooksPage() {
                 className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
               />
             </div>
+
+            {/* Audit field matching */}
+            <div className="rounded border border-gray-200 p-3">
+              <p className="text-xs font-medium text-gray-700 mb-1">
+                Audit Field Filters{' '}
+                <span className="font-normal text-gray-400">(optional — requires hmac_accessor=false)</span>
+              </p>
+              <p className="text-[11px] text-gray-400 mb-2">
+                Only fire the webhook when the audit event contains these values (case-insensitive substring match).
+              </p>
+              <div className="space-y-2">
+                {AUDIT_FIELDS.map(f => (
+                  <div key={f.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id={`mf-${f.id}`}
+                      checked={form.matchFields.includes(f.id)}
+                      onChange={() => toggleMatchField(f.id)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-blue-600"
+                    />
+                    <label htmlFor={`mf-${f.id}`} className="text-xs text-gray-700 w-28 shrink-0">
+                      {f.label}
+                    </label>
+                    {form.matchFields.includes(f.id) && (
+                      <input
+                        type="text"
+                        value={form.matchValues[f.id] ?? ''}
+                        onChange={e =>
+                          setForm(prev => ({
+                            ...prev,
+                            matchValues: { ...prev.matchValues, [f.id]: e.target.value },
+                          }))
+                        }
+                        placeholder={`Filter by ${f.label.toLowerCase()}…`}
+                        className="flex-1 rounded border border-gray-300 px-2 py-1 text-xs"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <button
                 onClick={handleSave}
@@ -255,6 +352,20 @@ export default function HooksPage() {
                   <span>Endpoint: <code className="bg-gray-100 px-1 rounded">{hook.endpoint}</code></span>
                   <span>Triggered: {hook.triggerCount} time{hook.triggerCount !== 1 ? 's' : ''}</span>
                   {hook.lastTriggered && <span>Last: {new Date(hook.lastTriggered).toLocaleString()}</span>}
+                  {(hook.matchFields?.length ?? 0) > 0 && (
+                    <span>
+                      Filters:{' '}
+                      {hook.matchFields.map(f => {
+                        const label = AUDIT_FIELDS.find(af => af.id === f)?.label ?? f;
+                        const val = hook.matchValues?.[f];
+                        return (
+                          <code key={f} className="bg-gray-100 px-1 rounded mr-1">
+                            {label}{val ? `="${val}"` : ''}
+                          </code>
+                        );
+                      })}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

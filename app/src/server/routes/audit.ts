@@ -81,14 +81,15 @@ interface GroupedAuditEntry {
   hasResponse: boolean;
 }
 
-// GET /api/audit/logs — read and return grouped audit log entries
+// GET /api/audit/logs — read and return grouped audit log entries (server-side paginated)
 router.get(
   '/logs',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const offset = Math.max(parseInt(String(req.query['offset'] ?? '0'), 10), 0);
       const limit = Math.min(
-        Math.max(parseInt(String(req.query['limit'] ?? '500'), 10), 1),
-        5000
+        Math.max(parseInt(String(req.query['limit'] ?? '50'), 10), 1),
+        200
       );
       const search = String(req.query['search'] ?? '').toLowerCase();
       const filterOperation = String(req.query['operation'] ?? '');
@@ -182,11 +183,11 @@ router.get(
       // Sort by time descending (most recent first)
       grouped.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-      // Paginate
+      // Apply server-side pagination
       const total = grouped.length;
-      const paginated = grouped.slice(0, limit);
+      const paginated = grouped.slice(offset, offset + limit);
 
-      return res.json({ entries: paginated, total });
+      return res.json({ entries: paginated, total, offset, limit });
     } catch (error) {
       return next(error);
     }

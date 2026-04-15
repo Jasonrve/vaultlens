@@ -155,7 +155,30 @@ docs/                        # Architecture, API reference, security, audit repo
   - Shared secrets cubbyhole context (all users share one cubbyhole via the system token)
   - Policy initialization on startup
 - **The system token is NOT used for browsing secrets, listing engines, reading/writing secrets outside of merge, or any other operation the user initiates.** All user-initiated API calls use the logged-in user's session token (`req.vaultToken`) so Vault's own ACL policies control access.
-- **Resolution order**: (1) Kubernetes auth via `VAULT_K8S_AUTH_ROLE` + service account JWT (cached with 75% TTL auto-renewal), (2) static `VAULT_SYSTEM_TOKEN` env var
+- **Resolution order** (highest to lowest priority):
+  1. **Kubernetes auth** via `VAULT_K8S_AUTH_ROLE` + service account JWT (cached with 75% TTL auto-renewal)
+  2. **AppRole auth** via stored `role_id` + `secret_id` in encrypted config storage (generated once during setup wizard, then used indefinitely)
+  3. **Static token** via `VAULT_SYSTEM_TOKEN` environment variable
+
+#### System Token Setup & Security
+- **Setup Wizard** (`/setup` route, `POST /api/sys-token-setup/create-approle`):
+  - Uses the **logged-in user's token** (`req.vaultToken`) to perform setup operations
+  - Validates user has required permissions via `/sys/capabilities-self` checks
+  - Shows permission errors to the user if they lack necessary rights: `sys/policies/acl/*`, `auth/approle/role/*`, `sys/auth/*`
+  - Generates role_id and secret_id once, then **encrypts both before storing** in config.ini
+  
+- **Encrypted Credentials** (`lib/configEncryption.ts`):
+  - Uses **AES-256-GCM** (authenticated encryption) for storing AppRole credentials
+  - Encryption key is **derived from VAULT_ADDR** so all containers pointing to the same Vault instance can decrypt
+  - Format in storage: `v1:base64(iv):base64(encryptedData):base64(authTag)` (versioned for future key rotation)
+  - Backwards compatible: plaintext values (from before encryption was added) are still readable; they're auto-converted on first read
+  
+- **Forced Wizard Flow**:
+  - If system token is NOT configured, **all protected routes redirect to `/setup`**
+  - `SystemTokenRequiredRoute` guard in `App.tsx` wraps the Layout, enforcing setup before dashboard access
+  - Setup page is skipped if system token is already configured (redirect to dashboard)
+  
+- **AppRole Indefinite Use**: The `/setup` wizard generates and stores both credentials for indefinite background service use. This allows removing `VAULT_SYSTEM_TOKEN` from production environments after initial setup.
 - **Never send or log this token in any response.**
 
 ### Vault Client
@@ -169,10 +192,14 @@ vaultClient.list<T>(path, token)  // Uses Vault LIST HTTP method
 ```
 Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `VaultError` to handle Vault-specific errors (404, 403, etc.) before calling `next(error)`.
 
-### Config Storage
+### Config Storage & Encryption
 - Pluggable backend for VaultLens's own configuration (branding, webhooks, rotation, backup schedules).
 - **Interface**: `ConfigStorageProvider` with `get/set/delete/list` + `getBlob/setBlob/deleteBlob`.
 - **Two backends**: `file` (INI on disk, default) and `vault` (Vault KV v2 engine `vaultlens-conf`).
+- **Encryption**: Sensitive values like AppRole credentials are encrypted before storage via `app/src/server/lib/configEncryption.ts`
+  - `encryptConfigValue(plaintext: string)` — encrypts and returns versioned format
+  - `tryDecryptConfigValue(value: string)` — safely decrypts, handles plaintext for backward compatibility
+  - Key derivation: `SHA256(VAULT_ADDR + 'vaultlens-config-encryption-key-v1')` — consistent across instances
 - **Singleton**: `getConfigStorage()` returns the configured backend instance.
 - Use `VAULTLENS_CONFIG_STORAGE=vault` for Kubernetes/production deployments.
 
@@ -198,6 +225,56 @@ Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `Vau
 ### Permission Testing (Important)
 - When `entityId` is provided to `POST /api/permissions/test-entity`, the `operationAllowed` result is computed from the entity's **parsed policies**, not from `/sys/capabilities-self`.
 - `/sys/capabilities-self` reflects the LOGGED-IN user's token — do not use it for entity simulation.
+
+---
+
+## Frontend Routing & Auth Flow
+
+### Route Guard Order
+The frontend uses two nested route guards to enforce authentication and system token setup:
+
+```
+Route element wrapping (outermost to innermost):
+1. ProtectedRoute        — checks if user is authenticated
+2. SystemTokenRequiredRoute — checks if system token is configured
+3. Layout               — renders main UI with nested routes
+```
+
+### Route Guard Logic
+- **`ProtectedRoute`**: 
+  - If NOT authenticated → `<Navigate to="/login" />`
+  - If authenticated → render children
+  
+- **`SystemTokenRequiredRoute`**:
+  - If NOT authenticated → `<Navigate to="/login" />` (redundant safety check)
+  - If authenticated but system token NOT configured → `<Navigate to="/setup" />`
+  - If authenticated AND system token configured → render children
+  
+- **`SetupRouteGuard`** (on `/setup` route only):
+  - If NOT authenticated → `<Navigate to="/login" />`
+  - If authenticated AND system token already configured → `<Navigate to="/" />` (skip wizard)
+  - If authenticated but system token NOT configured → render children (show wizard)
+
+### User Flow Examples
+**Fresh user (no auth token or session):**
+1. User goes to `/` 
+2. `ProtectedRoute` checks: not authenticated
+3. Redirects to `/login` ✓
+4. User sees LoginPage and enters token
+5. After successful login, redirected to `/`
+6. `ProtectedRoute` checks: authenticated ✓
+7. `SystemTokenRequiredRoute` checks: system token not configured
+8. Redirected to `/setup` ✓
+9. User sees SystemTokenSetupPage (wizard) and completes setup
+10. Redirected to `/` 
+11. Both guards pass → sees Dashboard ✓
+
+**Existing session (token from cookie/localStorage):**
+1. User goes to `/`
+2. `ProtectedRoute` checks: authenticated (from saved session) ✓
+3. `SystemTokenRequiredRoute` checks: system token not configured
+4. Redirected to `/setup` ✓
+5. User sees wizard (already logged in from session)
 
 ---
 
@@ -313,6 +390,9 @@ npm start       # serves everything from dist/
 - **Input validation** on secrets (path traversal, data shape), auth configs, webhook URLs, backup filenames, rotation intervals
 - **SSRF blocklist** on webhook endpoints (loopback, private, metadata ranges)
 - **E2E encryption** for shared secrets (OpenPGP, key in URL fragment)
+- **Encrypted AppRole credentials** at rest (AES-256-GCM, key derived from VAULT_ADDR for multi-container deployments)
+- **Permission validation** in setup wizard using current user's token with real capability checks
+- **Forced setup flow** — dashboard requires system token configuration before access
 - **Error sanitisation** — generic messages only, no stack traces or internal details
 - **Non-root Docker** container (UID 1001)
 - **UUID format validation** on all parameterised webhook endpoints

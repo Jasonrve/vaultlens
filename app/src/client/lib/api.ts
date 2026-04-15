@@ -177,6 +177,21 @@ export async function getRole(method: string, role: string) {
   return data;
 }
 
+export async function createOrUpdateRole(method: string, role: string, roleData: Record<string, unknown>) {
+  const { data } = await api.post<{ success: boolean; method: string; role: string }>(
+    `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}`,
+    roleData,
+  );
+  return data;
+}
+
+export async function deleteRole(method: string, role: string) {
+  const { data } = await api.delete<{ success: boolean }>(
+    `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}`,
+  );
+  return data;
+}
+
 export async function getAuthMethodConfig(method: string) {
   const { data } = await api.get<{ config: Record<string, unknown> }>(
     `/auth-methods/${encodeURIComponent(method)}/config`,
@@ -351,18 +366,20 @@ export interface AuditLogEntry {
 }
 
 export async function getAuditLogs(params?: {
+  offset?: number;
   limit?: number;
   search?: string;
   operation?: string;
   mountType?: string;
 }) {
   const query = new URLSearchParams();
+  if (params?.offset) query.set('offset', String(params.offset));
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.search) query.set('search', params.search);
   if (params?.operation) query.set('operation', params.operation);
   if (params?.mountType) query.set('mountType', params.mountType);
   const qs = query.toString();
-  const { data } = await api.get<{ entries: AuditLogEntry[]; total: number }>(
+  const { data } = await api.get<{ entries: AuditLogEntry[]; total: number; offset: number; limit: number }>(
     `/audit/logs${qs ? `?${qs}` : ''}`,
   );
   return data;
@@ -460,7 +477,28 @@ export interface BackupEntry {
   filename: string;
   size: number;
   createdAt: string;
-  type: 'snapshot' | 'legacy-json';
+  type: 'snapshot' | 'legacy-json' | 'kv-json';
+}
+
+export async function createKvBackup() {
+  const { data } = await api.post<{
+    success: boolean;
+    filename: string;
+    size: number;
+    createdAt: string;
+    secretCount: number;
+  }>('/backup/kv-create', {});
+  return data;
+}
+
+export async function restoreKvBackup(filename: string) {
+  const { data } = await api.post<{
+    success: boolean;
+    filename: string;
+    restoredCount: number;
+    failedCount: number;
+  }>('/backup/kv-restore', { filename });
+  return data;
 }
 
 export async function getBackupStatus() {
@@ -526,6 +564,8 @@ export interface WebhookConfig {
   createdAt: string;
   lastTriggered: string | null;
   triggerCount: number;
+  matchFields: string[];
+  matchValues: Record<string, string>;
 }
 
 export async function getHooks() {
@@ -533,12 +573,18 @@ export async function getHooks() {
   return data.hooks;
 }
 
-export async function createHook(name: string, secretPath: string, endpoint: string) {
-  const { data } = await api.post<WebhookConfig>('/hooks', { name, secretPath, endpoint });
+export async function createHook(
+  name: string,
+  secretPath: string,
+  endpoint: string,
+  matchFields?: string[],
+  matchValues?: Record<string, string>,
+) {
+  const { data } = await api.post<WebhookConfig>('/hooks', { name, secretPath, endpoint, matchFields, matchValues });
   return data;
 }
 
-export async function updateHook(id: string, updates: Partial<{ name: string; secretPath: string; endpoint: string; enabled: boolean }>) {
+export async function updateHook(id: string, updates: Partial<{ name: string; secretPath: string; endpoint: string; enabled: boolean; matchFields: string[]; matchValues: Record<string, string> }>) {
   const { data } = await api.put<WebhookConfig>(`/hooks/${id}`, updates);
   return data;
 }
@@ -571,6 +617,61 @@ export async function getVaultLeader() {
 
 export async function getVaultMetrics() {
   const { data } = await api.get<Record<string, unknown>>('/sys/metrics');
+  return data;
+}
+
+// ── System Token Setup ────────────────────────────────────
+export interface SysTokenStatus {
+  hasSystemToken: boolean;
+  source: 'kubernetes' | 'static' | 'approle' | 'none';
+  approleConfigured: boolean;
+  servicesEnabled: boolean;
+}
+
+export async function getSysTokenStatus() {
+  const { data } = await api.get<SysTokenStatus>('/sys-token-setup/status');
+  return data;
+}
+
+export async function checkSysTokenPermissions() {
+  const { data } = await api.post<{
+    canCreate: boolean;
+    approleEnabled: boolean;
+    missingCapabilities: string[];
+    willCreate: { policy: string; approleRole: string; approleMount: string };
+  }>('/sys-token-setup/check-permissions', {});
+  return data;
+}
+
+export async function previewSysTokenSetup() {
+  const { data } = await api.get<{
+    policy: { name: string; hcl: string };
+    approleRole: { name: string; mount: string; tokenTtl: string; tokenMaxTtl: string; policies: string[] };
+  }>('/sys-token-setup/preview');
+  return data;
+}
+
+export async function createAppRole() {
+  const { data } = await api.post<{ success: boolean; message: string }>(
+    '/sys-token-setup/create-approle', {}
+  );
+  return data;
+}
+
+export async function testAppRole() {
+  const { data } = await api.post<{
+    success: boolean;
+    message: string;
+    policies: string[];
+    tokenTtl: number;
+  }>('/sys-token-setup/test-approle', {});
+  return data;
+}
+
+export async function deleteAppRole() {
+  const { data } = await api.delete<{ success: boolean; message: string }>(
+    '/sys-token-setup/approle'
+  );
   return data;
 }
 

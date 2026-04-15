@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 import type { AuthMethod } from '../../types';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
+import AuthMethodIcon from './AuthMethodIcon';
 
 export default function AuthMethodList() {
   const [methods, setMethods] = useState<AuthMethod[]>([]);
@@ -46,12 +47,15 @@ export default function AuthMethodList() {
             {methods.map((m) => (
               <tr key={m.path} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <Link
-                    to={`/access/auth-methods/${m.path.replace(/\/$/, '')}`}
-                    className="text-sm font-medium text-[#1563ff] hover:text-[#1250d4]"
-                  >
-                    {m.path}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <AuthMethodIcon type={m.type} className="h-5 w-5 shrink-0" />
+                    <Link
+                      to={`/access/auth-methods/${m.path.replace(/\/$/, '')}`}
+                      className="text-sm font-medium text-[#1563ff] hover:text-[#1250d4]"
+                    >
+                      {m.path}
+                    </Link>
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{m.type}</td>
                 <td className="px-4 py-3 text-sm text-gray-500">{m.description || '—'}</td>

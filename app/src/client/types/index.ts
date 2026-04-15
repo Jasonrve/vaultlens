@@ -108,3 +108,10 @@ export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+
+export interface SysTokenStatus {
+  hasSystemToken: boolean;
+  source: 'kubernetes' | 'static' | 'approle' | 'none';
+  approleConfigured: boolean;
+  servicesEnabled: boolean;
+}

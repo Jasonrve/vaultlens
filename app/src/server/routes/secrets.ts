@@ -1,7 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
-import { getSystemToken, isSystemTokenConfigured } from '../lib/systemToken.js';
+import { getSystemToken } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
 import type { AuthenticatedRequest, SecretEngine } from '../types/index.js';
 
@@ -79,13 +79,44 @@ async function getEngineInfo(
   token: string,
   secretPath: string
 ): Promise<{ mount: string; subPath: string; version: number; type: string }> {
-  const mounts = await vaultClient.get<MountsResponse>('/sys/mounts', token);
+  // Check cache first (keyed by first path segment, i.e. the mount name)
+  const mountGuess = secretPath.replace(/^\//, '').split('/')[0] || '';
+  const cached = engineCache.get(mountGuess);
+  if (cached && cached.expiry > Date.now()) {
+    const subPath = secretPath.replace(/^\//, '').slice(mountGuess.length + 1);
+    return { mount: mountGuess, subPath, version: cached.version, type: cached.type };
+  }
+
+  // Try to get mount info with user token; fall back to system token if denied
+  let mountsData: MountsResponse | null = null;
+  try {
+    mountsData = await vaultClient.get<MountsResponse>('/sys/mounts', token);
+  } catch {
+    // User token lacks sys/mounts access — use system token for mount lookup only
+    try {
+      const sysToken = await getSystemToken();
+      mountsData = await vaultClient.get<MountsResponse>('/sys/mounts', sysToken);
+    } catch {
+      mountsData = null;
+    }
+  }
+
+  if (!mountsData) {
+    // Ultimate fallback: derive from path
+    const segments = secretPath.replace(/^\//, '').split('/');
+    return {
+      mount: segments[0] || secretPath,
+      subPath: segments.slice(1).join('/'),
+      version: 1,
+      type: 'kv',
+    };
+  }
 
   // Find the mount that matches the path (longest prefix match)
   let bestMount = '';
   let bestEngine: { type: string; options: Record<string, string> | null } | null = null;
 
-  for (const [mountPath, engineInfo] of Object.entries(mounts.data)) {
+  for (const [mountPath, engineInfo] of Object.entries(mountsData.data)) {
     const normalizedMount = mountPath.endsWith('/') ? mountPath : `${mountPath}/`;
     const normalizedPath = secretPath.startsWith('/')
       ? secretPath.slice(1)
@@ -117,11 +148,6 @@ async function getEngineInfo(
   const subPath = secretPath.replace(/^\//, '').slice(bestMount.length);
 
   const cacheKey = mount;
-  const cached = engineCache.get(cacheKey);
-  if (cached && cached.expiry > Date.now()) {
-    return { mount, subPath, version: cached.version, type: cached.type };
-  }
-
   const version =
     bestEngine.options?.version === '2' || bestEngine.type === 'kv'
       ? (bestEngine.options?.version === '2' ? 2 : 1)
@@ -156,10 +182,20 @@ router.get(
   '/engines',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const mounts = await vaultClient.get<MountsResponse>(
-        '/sys/mounts',
-        req.vaultToken!
-      );
+      // Try user token first; fall back to system token if user lacks sys/mounts
+      let mounts: MountsResponse;
+      try {
+        mounts = await vaultClient.get<MountsResponse>('/sys/mounts', req.vaultToken!);
+      } catch {
+        try {
+          const sysToken = await getSystemToken();
+          mounts = await vaultClient.get<MountsResponse>('/sys/mounts', sysToken);
+        } catch {
+          // If both fail, return empty list
+          res.json({ engines: [] });
+          return;
+        }
+      }
 
       const engines: SecretEngine[] = Object.entries(mounts.data).map(
         ([path, info]) => ({
@@ -388,9 +424,14 @@ router.post(
         return;
       }
 
-      if (!isSystemTokenConfigured()) {
+      // Try to get system token — works with env var, K8s auth, or stored AppRole credentials
+      let sysToken: string;
+      try {
+        sysToken = await getSystemToken();
+        if (!sysToken) throw new Error('empty token');
+      } catch {
         res.status(503).json({
-          error: 'Merge operation requires system token configuration',
+          error: 'Merge operation requires system token configuration. Please complete system token setup at /setup.',
         });
         return;
       }
@@ -406,7 +447,6 @@ router.post(
       // Read existing secret with system token (never exposed to user)
       let existingData: Record<string, unknown> = {};
       try {
-        const sysToken = await getSystemToken();
         const existing = await vaultClient.get<{
           data: { data: Record<string, unknown> } | Record<string, unknown>;
         }>(readPath, sysToken);

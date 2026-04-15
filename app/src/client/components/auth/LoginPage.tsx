@@ -21,6 +21,8 @@ export default function LoginPage() {
   const [role, setRole] = useState('');
   const [oidcError, setOidcError] = useState('');
   const [oidcLoading, setOidcLoading] = useState(false);
+  const [defaultOidcRole, setDefaultOidcRole] = useState<string>('');
+  const [oidcAvailable, setOidcAvailable] = useState(false);
 
   const { login, loginWithToken, error, loading } = useAuthStore();
   const navigate = useNavigate();
@@ -33,6 +35,30 @@ export default function LoginPage() {
       cleanupRef.current?.();
       popupRef.current?.close();
     };
+  }, []);
+
+  // On mount, check if OIDC is available and get default role
+  useEffect(() => {
+    async function initializeAuth() {
+      try {
+        const methods = await api.getAuthMethods();
+        const oidcMethod = methods.find((m) => m.type === 'oidc');
+        
+        if (oidcMethod) {
+          setOidcAvailable(true);
+          setMethod('oidc');
+          setMountPath(oidcMethod.path.replace(/\/$/, ''));
+          
+          // Try to get the default role from OIDC config
+          const defaultRole = (oidcMethod.config?.default_role as string) || '';
+          setDefaultOidcRole(defaultRole);
+        }
+      } catch {
+        // If we can't get auth methods, just use defaults
+      }
+    }
+    
+    void initializeAuth();
   }, []);
 
   async function handleTokenSubmit(e: FormEvent) {
@@ -51,6 +77,8 @@ export default function LoginPage() {
 
     try {
       const mount = mountPath.trim() || 'oidc';
+      // Use default role if no role was entered
+      const roleToUse = role.trim() || defaultOidcRole;
       const redirectUri = `${window.location.origin}/oidc-callback/${encodeURIComponent(mount)}`;
 
       // ── Open the popup SYNCHRONOUSLY before any await ──────────────────────
@@ -81,7 +109,7 @@ export default function LoginPage() {
       // ── Now fetch the Vault auth URL asynchronously ─────────────────────────
       let authUrl: string;
       try {
-        const result = await api.getOidcAuthUrl(mount, role.trim(), redirectUri);
+        const result = await api.getOidcAuthUrl(mount, roleToUse, redirectUri);
         authUrl = result.authUrl;
       } catch (err) {
         popup.close();
@@ -194,17 +222,19 @@ export default function LoginPage() {
               >
                 Token
               </button>
-              <button
-                type="button"
-                onClick={() => setMethod('oidc')}
-                className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                  method === 'oidc'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                OIDC
-              </button>
+              {oidcAvailable && (
+                <button
+                  type="button"
+                  onClick={() => setMethod('oidc')}
+                  className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+                    method === 'oidc'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  OIDC
+                </button>
+              )}
             </div>
           </div>
 
@@ -247,7 +277,7 @@ export default function LoginPage() {
           )}
 
           {/* ── OIDC form ── */}
-          {method === 'oidc' && (
+          {method === 'oidc' && oidcAvailable && (
             <div>
               <div className="mb-4">
                 <label
@@ -280,12 +310,14 @@ export default function LoginPage() {
                   type="text"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  placeholder="default"
+                  placeholder={defaultOidcRole || 'default'}
                   autoComplete="off"
                   className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-[#1563ff] focus:outline-none focus:ring-1 focus:ring-[#1563ff]"
                 />
                 <p className="mt-1 text-xs text-gray-400">
-                  Vault uses the default role if left blank.
+                  {defaultOidcRole
+                    ? `Vault uses "${defaultOidcRole}" (default role) if left blank.`
+                    : 'Vault uses the default role if left blank.'}
                 </p>
               </div>
 

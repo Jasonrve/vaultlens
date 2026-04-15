@@ -125,12 +125,15 @@ ingress:
   #      - vaultlens.local
 
 resources:
+  # -- CPU and memory requests (guaranteed allocation to pod)
+  # VaultLens runs Node.js 22, React SPA, Express backend with background services
   requests:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 250m          # Node.js needs consistent CPU for startup and scheduling
+    memory: 256Mi      # Minimum for Node.js runtime + React bundle + operations
+  # -- CPU and memory limits (hard caps for pod)
   limits:
-    cpu: 500m
-    memory: 256Mi
+    cpu: 1000m         # Can utilize full core for spike loads and background processing
+    memory: 512Mi      # Reserve for background services (rotation, audit, backups)
 
 livenessProbe:
   httpGet:

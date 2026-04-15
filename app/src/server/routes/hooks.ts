@@ -83,6 +83,8 @@ interface WebhookConfig {
   createdAt: string;
   lastTriggered: string | null;
   triggerCount: number;
+  matchFields: string[];
+  matchValues: Record<string, string>;
 }
 
 // GET /api/hooks — list all configured webhooks
@@ -98,6 +100,10 @@ router.get(
         if (!section.startsWith(HOOKS_SECTION_PREFIX)) continue;
         const data = await storage.get(section);
         if (!data) continue;
+        let matchFields: string[] = [];
+        let matchValues: Record<string, string> = {};
+        try { matchFields = JSON.parse(data['matchFields'] || '[]'); } catch { /* ignore */ }
+        try { matchValues = JSON.parse(data['matchValues'] || '{}'); } catch { /* ignore */ }
         hooks.push({
           id: section.slice(HOOKS_SECTION_PREFIX.length),
           name: data['name'] || '',
@@ -107,6 +113,8 @@ router.get(
           createdAt: data['createdAt'] || '',
           lastTriggered: data['lastTriggered'] || null,
           triggerCount: parseInt(data['triggerCount'] || '0', 10),
+          matchFields,
+          matchValues,
         });
       }
 
@@ -122,10 +130,12 @@ router.post(
   '/',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const { name, secretPath, endpoint } = req.body as {
+      const { name, secretPath, endpoint, matchFields, matchValues } = req.body as {
         name?: string;
         secretPath?: string;
         endpoint?: string;
+        matchFields?: string[];
+        matchValues?: Record<string, string>;
       };
 
       if (!name || !secretPath || !endpoint) {
@@ -139,6 +149,13 @@ router.post(
         return;
       }
 
+      const validFields = ['accessor', 'display_name', 'entity_id', 'user'];
+      const safeFields = (matchFields || []).filter((f) => validFields.includes(f));
+      const safeValues: Record<string, string> = {};
+      for (const f of safeFields) {
+        if (matchValues?.[f]) safeValues[f] = String(matchValues[f]).slice(0, 256);
+      }
+
       const id = crypto.randomUUID();
       const storage = getConfigStorage();
 
@@ -150,6 +167,8 @@ router.post(
         createdAt: new Date().toISOString(),
         lastTriggered: '',
         triggerCount: '0',
+        matchFields: JSON.stringify(safeFields),
+        matchValues: JSON.stringify(safeValues),
       });
 
       res.json({
@@ -161,6 +180,8 @@ router.post(
         createdAt: new Date().toISOString(),
         lastTriggered: null,
         triggerCount: 0,
+        matchFields: safeFields,
+        matchValues: safeValues,
       });
     } catch (error) {
       next(error);
@@ -187,11 +208,13 @@ router.put(
         return;
       }
 
-      const { name, secretPath, endpoint, enabled } = req.body as {
+      const { name, secretPath, endpoint, enabled, matchFields, matchValues } = req.body as {
         name?: string;
         secretPath?: string;
         endpoint?: string;
         enabled?: boolean;
+        matchFields?: string[];
+        matchValues?: Record<string, string>;
       };
 
       if (name !== undefined) existing['name'] = name;
@@ -205,8 +228,23 @@ router.put(
         existing['endpoint'] = endpoint;
       }
       if (enabled !== undefined) existing['enabled'] = String(enabled);
+      if (matchFields !== undefined) {
+        const validFields = ['accessor', 'display_name', 'entity_id', 'user'];
+        const safeFields = matchFields.filter((f) => validFields.includes(f));
+        const safeValues: Record<string, string> = {};
+        for (const f of safeFields) {
+          if (matchValues?.[f]) safeValues[f] = String(matchValues[f]).slice(0, 256);
+        }
+        existing['matchFields'] = JSON.stringify(safeFields);
+        existing['matchValues'] = JSON.stringify(safeValues);
+      }
 
       await storage.set(`${HOOKS_SECTION_PREFIX}${hookId}`, existing);
+
+      let parsedMatchFields: string[] = [];
+      let parsedMatchValues: Record<string, string> = {};
+      try { parsedMatchFields = JSON.parse(existing['matchFields'] || '[]'); } catch { /* ignore */ }
+      try { parsedMatchValues = JSON.parse(existing['matchValues'] || '{}'); } catch { /* ignore */ }
 
       res.json({
         id: hookId,
@@ -217,6 +255,8 @@ router.put(
         createdAt: existing['createdAt'] || '',
         lastTriggered: existing['lastTriggered'] || null,
         triggerCount: parseInt(existing['triggerCount'] || '0', 10),
+        matchFields: parsedMatchFields,
+        matchValues: parsedMatchValues,
       });
     } catch (error) {
       next(error);
@@ -339,6 +379,7 @@ interface AuditLogEntry {
     entity_id?: string;
     policies?: string[];
     display_name?: string;
+    accessor?: string;
   };
   request_path?: string;
   remote_address?: string;
@@ -347,6 +388,54 @@ interface AuditLogEntry {
       entity_id?: string;
     };
   };
+}
+
+/**
+ * Match a path against a pattern that may contain * wildcards.
+ * Without wildcards: prefix-match (existing behaviour).
+ * With wildcards: * matches any non-slash sequence.
+ */
+function pathMatchesPattern(pattern: string, vaultPath: string): boolean {
+  const normalizedPattern = normalizeVaultPath(pattern);
+  const normalizedPath = normalizeVaultPath(vaultPath);
+  if (!normalizedPattern.includes('*')) {
+    // Legacy prefix match
+    return (
+      normalizedPath === normalizedPattern ||
+      normalizedPath.startsWith(normalizedPattern + '/') ||
+      normalizedPath.startsWith(normalizedPattern)
+    );
+  }
+  // Wildcard match: * → any non-slash chars
+  const regexStr = normalizedPattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '[^/]*');
+  return new RegExp(`^${regexStr}(/.*)?$`).test(normalizedPath);
+}
+
+/**
+ * Check whether an audit entry satisfies all configured match field conditions.
+ * Returns true when no fields are configured (no additional constraints).
+ */
+function auditFieldMatches(
+  matchFields: string[],
+  matchValues: Record<string, string>,
+  entry: AuditLogEntry,
+): boolean {
+  if (matchFields.length === 0) return true;
+  for (const field of matchFields) {
+    const expected = matchValues[field];
+    if (!expected) continue;
+    let actual: string | undefined;
+    switch (field) {
+      case 'accessor': actual = entry.auth?.accessor; break;
+      case 'display_name': actual = entry.auth?.display_name; break;
+      case 'entity_id': actual = entry.auth?.entity_id; break;
+      case 'user': actual = entry.auth?.display_name || entry.request?.user_id; break;
+    }
+    if (!actual || !actual.toLowerCase().includes(expected.toLowerCase())) return false;
+  }
+  return true;
 }
 
 async function checkAuditLogForChanges(): Promise<void> {
@@ -407,16 +496,18 @@ async function checkAuditLogForChanges(): Promise<void> {
       // Check if any changed path matches this hook's secret path.
       // Normalize both sides to strip KV v2 "/data/" and "/metadata/" segments
       // so "kv/data/foo/bar" matches a webhook configured for "kv/foo/bar".
-      const normalizedHookPath = normalizeVaultPath(hookPath);
+      let hookMatchFields: string[] = [];
+      let hookMatchValues: Record<string, string> = {};
+      try { hookMatchFields = JSON.parse(hookData['matchFields'] || '[]'); } catch { /* ignore */ }
+      try { hookMatchValues = JSON.parse(hookData['matchValues'] || '{}'); } catch { /* ignore */ }
+
       for (const { path: changedPath, entry } of changedEntries) {
-        const normalizedChanged = normalizeVaultPath(changedPath);
         if (
-          normalizedChanged === normalizedHookPath ||
-          normalizedChanged.startsWith(normalizedHookPath + '/') ||
-          normalizedChanged.startsWith(normalizedHookPath)
+          pathMatchesPattern(hookPath, changedPath) &&
+          auditFieldMatches(hookMatchFields, hookMatchValues, entry)
         ) {
           // Create a unique key for this webhook+path combination to track if we've already fired it
-          const firedKey = `${hookId}:${normalizedChanged}`;
+          const firedKey = `${hookId}:${normalizeVaultPath(changedPath)}`;
           if (!firedHookPaths.has(firedKey)) {
             firedHookPaths.add(firedKey);
             await fireWebhook(hookId, hookData, entry);

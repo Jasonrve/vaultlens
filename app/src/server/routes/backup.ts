@@ -105,11 +105,19 @@ router.get(
       const backups = files.map(filename => {
         const filePath = path.join(BACKUP_DIR, filename);
         const stats = fs.statSync(filePath);
+        let type: 'snapshot' | 'legacy-json' | 'kv-json';
+        if (filename.endsWith('.snap')) {
+          type = 'snapshot';
+        } else if (filename.startsWith('kv-backup-')) {
+          type = 'kv-json';
+        } else {
+          type = 'legacy-json';
+        }
         return {
           filename,
           size: stats.size,
           createdAt: stats.mtime.toISOString(),
-          type: filename.endsWith('.snap') ? 'snapshot' : 'legacy-json',
+          type,
         };
       });
 
@@ -236,6 +244,211 @@ router.put(
         lastBackup: current['lastBackup'] || null,
         nextBackup: current['nextBackup'] || null,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── KV Backup / Restore ───────────────────────────────────────────────────────
+
+interface KvSecret {
+  [key: string]: unknown;
+}
+
+interface KvEngineBackup {
+  kvVersion: number;
+  secrets: Record<string, KvSecret>;
+}
+
+interface KvBackupFile {
+  version: 1;
+  backupType: 'kv';
+  createdAt: string;
+  engines: Record<string, KvEngineBackup>;
+}
+
+/** List KV secret paths recursively under a prefix. */
+async function listKVSecretsRecursive(
+  mount: string,
+  prefix: string,
+  kvVersion: number,
+  token: string,
+  depth = 0
+): Promise<string[]> {
+  if (depth > 20) return []; // Guard against infinite recursion
+  const listPath =
+    kvVersion === 2
+      ? `/${mount}/metadata/${prefix}`
+      : `/${mount}/${prefix}`;
+
+  let keys: string[] = [];
+  try {
+    const resp = await vaultClient.list<{ data: { keys: string[] } }>(listPath, token);
+    keys = resp.data?.keys ?? [];
+  } catch {
+    return [];
+  }
+
+  const paths: string[] = [];
+  for (const key of keys) {
+    if (key.endsWith('/')) {
+      const nested = await listKVSecretsRecursive(mount, prefix + key, kvVersion, token, depth + 1);
+      paths.push(...nested);
+    } else {
+      paths.push(prefix + key);
+    }
+  }
+  return paths;
+}
+
+/** Read a KV secret's plaintext data. */
+async function readKVSecret(
+  mount: string,
+  secretPath: string,
+  kvVersion: number,
+  token: string
+): Promise<KvSecret | null> {
+  try {
+    if (kvVersion === 2) {
+      const resp = await vaultClient.get<{ data: { data: KvSecret } }>(
+        `/${mount}/data/${secretPath}`,
+        token
+      );
+      return resp.data?.data ?? null;
+    } else {
+      const resp = await vaultClient.get<{ data: KvSecret }>(`/${mount}/${secretPath}`, token);
+      return resp.data ?? null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/** Generate a KV JSON backup filename. */
+function generateKvBackupFilename(): string {
+  ensureBackupDir();
+  const now = new Date();
+  const dateStr = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  return `kv-backup-${dateStr}.json`;
+}
+
+// POST /api/backup/kv-create — dump all KV secrets to a JSON file
+router.post(
+  '/kv-create',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const token = req.vaultToken!;
+
+      // List all mounts and filter KV engines
+      const mounts = await vaultClient.get<{
+        data: Record<string, { type: string; options: Record<string, string> | null }>;
+      }>('/sys/mounts', token);
+
+      const kvMounts = Object.entries(mounts.data)
+        .filter(([, info]) => info.type === 'kv')
+        .map(([mountPath, info]) => ({
+          mount: mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath,
+          kvVersion: info.options?.version === '2' ? 2 : 1,
+        }));
+
+      const backupData: KvBackupFile = {
+        version: 1,
+        backupType: 'kv',
+        createdAt: new Date().toISOString(),
+        engines: {},
+      };
+
+      for (const { mount, kvVersion } of kvMounts) {
+        const secretPaths = await listKVSecretsRecursive(mount, '', kvVersion, token);
+        const engineBackup: KvEngineBackup = { kvVersion, secrets: {} };
+
+        for (const secretPath of secretPaths) {
+          const data = await readKVSecret(mount, secretPath, kvVersion, token);
+          if (data !== null) {
+            engineBackup.secrets[secretPath] = data;
+          }
+        }
+
+        backupData.engines[mount] = engineBackup;
+      }
+
+      ensureBackupDir();
+      const filename = generateKvBackupFilename();
+      const filePath = path.join(BACKUP_DIR, filename);
+      fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+      const stats = fs.statSync(filePath);
+
+      const secretCount = Object.values(backupData.engines).reduce(
+        (sum, eng) => sum + Object.keys(eng.secrets).length, 0
+      );
+
+      res.json({ success: true, filename, size: stats.size, createdAt: backupData.createdAt, secretCount });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/backup/kv-restore — restore KV secrets from a JSON backup file
+router.post(
+  '/kv-restore',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { filename } = req.body as { filename?: string };
+
+      if (!filename || typeof filename !== 'string') {
+        res.status(400).json({ error: 'Backup filename is required' });
+        return;
+      }
+
+      const safeFilename = path.basename(filename);
+      if (!safeFilename.endsWith('.json')) {
+        res.status(400).json({ error: 'Invalid backup file type. Expected a .json KV backup.' });
+        return;
+      }
+
+      const filePath = path.join(BACKUP_DIR, safeFilename);
+      if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: 'Backup file not found' });
+        return;
+      }
+
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      let backupData: KvBackupFile;
+      try {
+        backupData = JSON.parse(raw) as KvBackupFile;
+      } catch {
+        res.status(400).json({ error: 'Invalid backup file: not valid JSON' });
+        return;
+      }
+
+      if (backupData.backupType !== 'kv' || backupData.version !== 1 || typeof backupData.engines !== 'object') {
+        res.status(400).json({ error: 'Invalid backup file: unrecognised format' });
+        return;
+      }
+
+      const token = req.vaultToken!;
+      let restoredCount = 0;
+      let failedCount = 0;
+
+      for (const [mount, engineBackup] of Object.entries(backupData.engines)) {
+        const { kvVersion, secrets } = engineBackup;
+        for (const [secretPath, secretData] of Object.entries(secrets)) {
+          try {
+            if (kvVersion === 2) {
+              await vaultClient.post(`/${mount}/data/${secretPath}`, token, { data: secretData });
+            } else {
+              await vaultClient.post(`/${mount}/${secretPath}`, token, secretData);
+            }
+            restoredCount++;
+          } catch {
+            failedCount++;
+          }
+        }
+      }
+
+      res.json({ success: true, filename: safeFilename, restoredCount, failedCount });
     } catch (error) {
       next(error);
     }

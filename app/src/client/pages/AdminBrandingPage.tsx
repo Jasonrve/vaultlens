@@ -123,6 +123,7 @@ export default function AdminBrandingPage() {
         primaryColor: draft.primaryColor,
         secondaryColor: draft.secondaryColor,
         backgroundColor: draft.backgroundColor,
+        appName: draft.appName,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -157,6 +158,7 @@ export default function AdminBrandingPage() {
       primaryColor: '#1563ff',
       secondaryColor: '#19191a',
       backgroundColor: '#f6f6f6',
+      appName: 'VaultLens',
     });
   };
 
@@ -227,6 +229,22 @@ export default function AdminBrandingPage() {
           </div>
 
           {/* Colors */}
+          <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <h2 className="text-sm font-semibold text-gray-800 mb-4">App Name</h2>
+            <div className="flex flex-col gap-1">
+              <input
+                type="text"
+                value={draft.appName}
+                maxLength={50}
+                onChange={(e) => setDraft((p: BrandingConfig) => ({ ...p, appName: e.target.value }))}
+                className="rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                placeholder="VaultLens"
+              />
+              <p className="text-xs text-gray-400">{draft.appName.length}/50 characters</p>
+            </div>
+          </div>
+
+          {/* Color Scheme */}
           <div className="rounded-lg border border-gray-200 bg-white p-5">
             <h2 className="text-sm font-semibold text-gray-800 mb-4">Color Scheme</h2>
             <div className="space-y-4">

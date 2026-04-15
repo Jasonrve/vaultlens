@@ -1,11 +1,59 @@
 import fs from 'fs';
 import { config } from '../config/index.js';
 import { VaultClient } from './vaultClient.js';
+import { getConfigStorage } from './config-storage/index.js';
+import { tryDecryptConfigValue } from './configEncryption.js';
 
 const K8S_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
+const APPROLE_ROLE_NAME = 'vaultlens-system-token';
+const CREDS_SECTION = 'sys_token_approle';
 
 let cachedToken: string | null = null;
 let tokenExpiry: number = 0;
+
+/**
+ * Authenticate to Vault using AppRole credentials stored in config storage.
+ * Uses the stored secret-id that was generated during setup.
+ * Both role_id and secret_id are encrypted in storage for security.
+ */
+async function authenticateAppRole(): Promise<string | null> {
+  try {
+    const storage = getConfigStorage();
+    const creds = await storage.get(CREDS_SECTION);
+    if (!creds || !creds['role_id'] || !creds['secret_id']) return null;
+
+    // Decrypt the stored credentials
+    const roleId = tryDecryptConfigValue(creds['role_id']);
+    const secretId = tryDecryptConfigValue(creds['secret_id']);
+
+    if (!roleId || !secretId) {
+      console.error('[AppRole Auth] Failed to decrypt stored credentials');
+      return null;
+    }
+
+    const vaultClientInst = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+    // Use the stored role_id and secret_id to authenticate
+    // These are generated and stored once during setup, then used indefinitely
+    const loginResponse = await vaultClientInst.post<{
+      auth: { client_token: string; lease_duration: number };
+    }>(
+      '/auth/approle/login',
+      '', // unauthenticated
+      { role_id: roleId, secret_id: secretId }
+    );
+
+    const { client_token, lease_duration } = loginResponse.auth;
+    // Cache at 75% of TTL so background services reuse the same token (cubbyhole is per-token)
+    cachedToken = client_token;
+    tokenExpiry = Date.now() + lease_duration * 750;
+    console.log(`[AppRole Auth] Authenticated to Vault via AppRole (ttl=${lease_duration}s)`);
+    return client_token;
+  } catch (e) {
+    console.error('[AppRole Auth] Failed to authenticate:', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
 
 /**
  * Authenticate to Vault using the Kubernetes auth method.
@@ -49,7 +97,8 @@ async function authenticateK8s(): Promise<string> {
  *
  * Resolution order:
  * 1. Kubernetes auth — if VAULT_K8S_AUTH_ROLE is set and a service account token exists
- * 2. Static token — VAULT_SYSTEM_TOKEN environment variable
+ * 2. AppRole — if credentials are stored in config storage
+ * 3. Static token — VAULT_SYSTEM_TOKEN environment variable
  *
  * Kubernetes tokens are automatically renewed before expiry.
  */
@@ -62,14 +111,43 @@ export async function getSystemToken(): Promise<string> {
     return authenticateK8s();
   }
 
+  // Try AppRole credentials stored in config storage
+  // Check cache first — AppRole tokens are cached at module level to ensure
+  // the same token is reused across calls (cubbyhole is per-token in Vault)
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken;
+  }
+  const appRoleToken = await authenticateAppRole();
+  if (appRoleToken) return appRoleToken;
+
   // Fall back to static system token
   return config.vaultSystemToken;
 }
 
 /**
- * Check whether the system token source is configured.
+ * Check whether the system token source is configured (synchronous).
+ * Covers env-var sources. For AppRole, checks the module-level cachedToken
+ * or falls back to a synchronous config file check.
+ * For a definitive async check, use getSystemToken() in a try/catch.
  */
 export function isSystemTokenConfigured(): boolean {
   if (config.vaultK8sAuthRole) return true;
-  return !!config.vaultSystemToken;
+  if (config.vaultSystemToken) return true;
+  // AppRole credentials may be stored in config storage (set during setup wizard)
+  // We can't do async here, but if cachedToken is populated it means AppRole worked
+  if (cachedToken) return true;
+  // Best-effort: try to read config synchronously (file backend only)
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const configPath = (config as Record<string, unknown>)['configStoragePath'] as string || './data';
+    const iniPath = path.resolve(configPath, 'config.ini');
+    if (fs.existsSync(iniPath)) {
+      const contents = fs.readFileSync(iniPath, 'utf-8');
+      if (contents.includes('[sys_token_approle]') && contents.includes('role_id=')) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
 }

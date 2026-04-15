@@ -219,4 +219,56 @@ router.post(
   }
 );
 
+// ── Role CRUD ─────────────────────────────────────────────────────────────────
+
+// Create or update a role
+router.post(
+  '/:method/roles/:role',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mount = String(req.params['method']).replace(/\/$/, '');
+      const role = String(req.params['role']);
+      if (!role || !/^[\w\-]+$/.test(role)) {
+        return res.status(400).json({ error: 'Invalid role name' });
+      }
+      const body = req.body as Record<string, unknown>;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return res.status(400).json({ error: 'Request body must be a JSON object' });
+      }
+      if (Object.keys(body).length > 100) {
+        return res.status(400).json({ error: 'Too many role parameters' });
+      }
+      await vaultClient.post(
+        `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}`,
+        req.vaultToken!,
+        body
+      );
+      return res.json({ success: true, method: mount, role });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// Delete a role
+router.delete(
+  '/:method/roles/:role',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mount = String(req.params['method']).replace(/\/$/, '');
+      const role = String(req.params['role']);
+      if (!role || !/^[\w\-]+$/.test(role)) {
+        return res.status(400).json({ error: 'Invalid role name' });
+      }
+      await vaultClient.delete(
+        `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}`,
+        req.vaultToken!
+      );
+      return res.json({ success: true });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 export default router;

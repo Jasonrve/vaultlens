@@ -62,16 +62,36 @@ export default function BackupRestorePage() {
     }
   };
 
+  const handleCreateKv = async () => {
+    setCreating(true);
+    setSuccessMsg(null);
+    setError(null);
+    try {
+      const result = await api.createKvBackup();
+      setSuccessMsg(`KV backup created: ${result.filename} — ${result.secretCount} secrets backed up (${formatSize(result.size)})`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create KV backup');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const handleRestore = async (filename: string) => {
     setRestoring(filename);
     setSuccessMsg(null);
     setError(null);
     setConfirmRestore(null);
     try {
-      const result = await api.restoreBackup(filename);
-      setSuccessMsg(`Vault snapshot restored: ${result.filename}`);
+      if (filename.startsWith('kv-backup-') && filename.endsWith('.json')) {
+        const result = await api.restoreKvBackup(filename);
+        setSuccessMsg(`KV backup restored: ${result.restoredCount} secrets written${result.failedCount > 0 ? `, ${result.failedCount} failed` : ''}`);
+      } else {
+        const result = await api.restoreBackup(filename);
+        setSuccessMsg(`Vault snapshot restored: ${result.filename}`);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to restore snapshot');
+      setError(err instanceof Error ? err.message : 'Failed to restore backup');
     } finally {
       setRestoring(null);
     }
@@ -106,7 +126,9 @@ export default function BackupRestorePage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Backup & Restore</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Create and manage native Vault Raft snapshots (requires Integrated Storage).
+            {raftAvailable
+              ? 'Create and manage native Vault Raft snapshots.'
+              : 'Create and manage KV secret backups (JSON format).'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -116,14 +138,23 @@ export default function BackupRestorePage() {
           >
             Refresh
           </button>
-          <button
-            onClick={handleCreate}
-            disabled={creating || !raftAvailable}
-            title={!raftAvailable ? 'Vault must use Integrated Storage (Raft) for snapshots' : ''}
-            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {creating ? 'Creating...' : 'Create Backup'}
-          </button>
+          {raftAvailable ? (
+            <button
+              onClick={handleCreate}
+              disabled={creating}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create Backup'}
+            </button>
+          ) : (
+            <button
+              onClick={handleCreateKv}
+              disabled={creating}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create KV Backup'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -134,10 +165,10 @@ export default function BackupRestorePage() {
       )}
 
       {!raftAvailable && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <h3 className="text-sm font-semibold text-amber-900 mb-1">Raft Storage Not Available</h3>
-          <p className="text-sm text-amber-800">
-            Vault Raft snapshots require Integrated Storage (Raft). Your Vault instance appears to be using a different storage backend (e.g., Consul, S3). Snapshots are not available in this configuration.
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <h3 className="text-sm font-semibold text-blue-900 mb-1">KV Backup Mode</h3>
+          <p className="text-sm text-blue-800">
+            Vault Raft snapshots are not available with this storage backend. KV secret backups are enabled instead — all secret values from every KV engine are exported to an encrypted JSON file that can be restored to any Vault instance.
           </p>
         </div>
       )}
@@ -241,6 +272,9 @@ export default function BackupRestorePage() {
                     {backup.type === 'legacy-json' && (
                       <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">legacy</span>
                     )}
+                    {backup.type === 'kv-json' && (
+                      <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">kv</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{formatSize(backup.size)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{new Date(backup.createdAt).toLocaleString()}</td>
@@ -264,7 +298,7 @@ export default function BackupRestorePage() {
                         </>
                       ) : (
                         <>
-                          {backup.type !== 'legacy-json' && (
+                          {(backup.type === 'snapshot' || backup.type === 'kv-json') && (
                             <button
                               onClick={() => setConfirmRestore(backup.filename)}
                               className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"

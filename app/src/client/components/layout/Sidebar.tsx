@@ -208,7 +208,7 @@ export default function Sidebar() {
         ) : (
           <VaultHexIcon className="h-6 w-6" color={branding.primaryColor} />
         )}
-        <span className="text-[15px] font-semibold tracking-tight text-white">VaultLens</span>
+        <span className="text-[15px] font-semibold tracking-tight text-white">{branding.appName || 'VaultLens'}</span>
       </div>
 
       {/* Nav */}

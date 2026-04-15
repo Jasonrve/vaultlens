@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
@@ -52,9 +52,11 @@ function FieldRow({ label, value, isPolicy }: FieldRowProps) {
 
 export default function RoleDetail() {
   const { method = '', role = '' } = useParams();
+  const navigate = useNavigate();
   const [roleData, setRoleData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     api
@@ -63,6 +65,18 @@ export default function RoleDetail() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
   }, [method, role]);
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete role "${role}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteRole(method, role);
+      navigate(`/access/auth-methods/${method}/roles`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to delete role');
+      setDeleting(false);
+    }
+  }
 
   if (loading) return <LoadingSpinner className="mt-12" />;
   if (error) return <ErrorMessage message={error} />;
@@ -84,7 +98,16 @@ export default function RoleDetail() {
         <span className="text-gray-700">{role}</span>
       </div>
 
-      <h1 className="mb-6 text-2xl font-bold text-gray-800">{role}</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">{role}</h1>
+        <button
+          onClick={() => { void handleDelete(); }}
+          disabled={deleting}
+          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+        >
+          {deleting ? 'Deleting…' : 'Delete Role'}
+        </button>
+      </div>
 
       {/* General fields */}
       {generalFields.length > 0 && (

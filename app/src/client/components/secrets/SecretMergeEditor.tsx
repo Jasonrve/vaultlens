@@ -21,9 +21,9 @@ export default function SecretMergeEditor() {
     api
       .readSecret(splat)
       .then((result) => {
-        const data = result.data as Record<string, unknown>;
+        const keys = result.keys ?? [];
         setFields(
-          Object.keys(data).map((key) => ({
+          keys.map((key) => ({
             key,
             value: '********',
             modified: false,

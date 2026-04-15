@@ -23,11 +23,13 @@ export default function SecretsList() {
 
   const segments = splat.split('/').filter(Boolean);
   const enginePath = segments[0] ? segments[0] + '/' : '';
+  // Ensure trailing slash for correct path construction from breadcrumb links without trailing slash
+  const normalizedSplat = splat.endsWith('/') ? splat : (splat ? `${splat}/` : '');
   const breadcrumbItems = [
     { label: 'Secrets Engines', path: '/secrets' },
     ...segments.map((seg, i) => ({
       label: seg,
-      path: i < segments.length - 1 ? `/secrets/${segments.slice(0, i + 1).join('/')}/` : undefined,
+      path: `/secrets/${segments.slice(0, i + 1).join('/')}`,
     })),
   ];
 
@@ -44,7 +46,7 @@ export default function SecretsList() {
           {enginePath || 'Secrets'}
         </h1>
         <button
-          onClick={() => navigate(`/secrets/create/${splat}`)}
+          onClick={() => navigate(`/secrets/create/${normalizedSplat}`)}
           className="rounded-md bg-[#1563ff] px-4 py-2 text-sm font-medium text-white hover:bg-[#1250d4]"
         >
           Create secret +
@@ -64,8 +66,8 @@ export default function SecretsList() {
             {keys.map((key) => {
               const isFolder = key.endsWith('/');
               const linkPath = isFolder
-                ? `/secrets/${splat}${key}`
-                : `/secrets/view/${splat}${key}`;
+                ? `/secrets/${normalizedSplat}${key}`
+                : `/secrets/view/${normalizedSplat}${key}`;
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-4 py-3">

@@ -6,6 +6,7 @@ export interface BrandingConfig {
   primaryColor: string;
   secondaryColor: string;
   backgroundColor: string;
+  appName: string;
 }
 
 const DEFAULT_BRANDING: BrandingConfig = {
@@ -13,6 +14,7 @@ const DEFAULT_BRANDING: BrandingConfig = {
   primaryColor: '#1563ff',
   secondaryColor: '#19191a',
   backgroundColor: '#f6f6f6',
+  appName: 'VaultLens',
 };
 
 function applyBrandingToDOM(branding: BrandingConfig): void {

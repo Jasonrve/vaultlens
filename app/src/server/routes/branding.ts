@@ -10,6 +10,7 @@ export interface BrandingConfig {
   primaryColor: string;
   secondaryColor: string;
   backgroundColor: string;
+  appName: string;
 }
 
 const DEFAULT_BRANDING: BrandingConfig = {
@@ -17,6 +18,7 @@ const DEFAULT_BRANDING: BrandingConfig = {
   primaryColor: '#1563ff',
   secondaryColor: '#19191a',
   backgroundColor: '#f6f6f6',
+  appName: 'VaultLens',
 };
 
 const BRANDING_SECTION = 'branding';
@@ -33,6 +35,7 @@ async function readBranding(): Promise<BrandingConfig> {
         primaryColor: data['primaryColor'] || DEFAULT_BRANDING.primaryColor,
         secondaryColor: data['secondaryColor'] || DEFAULT_BRANDING.secondaryColor,
         backgroundColor: data['backgroundColor'] || DEFAULT_BRANDING.backgroundColor,
+        appName: data['appName'] || DEFAULT_BRANDING.appName,
       };
     }
   } catch {
@@ -48,6 +51,7 @@ async function writeBranding(brandingConfig: BrandingConfig): Promise<void> {
     primaryColor: brandingConfig.primaryColor,
     secondaryColor: brandingConfig.secondaryColor,
     backgroundColor: brandingConfig.backgroundColor,
+    appName: brandingConfig.appName,
   });
 }
 
@@ -109,6 +113,14 @@ router.put(
           return;
         }
         current.backgroundColor = body.backgroundColor;
+      }
+      if (body.appName !== undefined) {
+        const trimmed = String(body.appName).trim();
+        if (trimmed.length === 0 || trimmed.length > 50) {
+          res.status(400).json({ error: 'appName must be 1–50 characters' });
+          return;
+        }
+        current.appName = trimmed;
       }
 
       await writeBranding(current);

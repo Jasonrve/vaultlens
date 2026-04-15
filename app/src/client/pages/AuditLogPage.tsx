@@ -76,14 +76,17 @@ export default function AuditLogPage() {
   const [operationFilter, setOperationFilter] = useState('');
   const [mountTypeFilter, setMountTypeFilter] = useState('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
-  const [limit, setLimit] = useState(200);
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
+      const offset = (page - 1) * pageSize;
       const result = await api.getAuditLogs({
-        limit,
+        offset,
+        limit: pageSize,
         search: search || undefined,
         operation: operationFilter || undefined,
         mountType: mountTypeFilter || undefined,
@@ -95,11 +98,24 @@ export default function AuditLogPage() {
     } finally {
       setLoading(false);
     }
-  }, [limit, search, operationFilter, mountTypeFilter]);
+  }, [search, operationFilter, mountTypeFilter, page, pageSize]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  // Reset to first page when pageSize changes
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [search, operationFilter, mountTypeFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const displayedEntries = entries;
 
   // Derive unique operations and mount types
   const { operations, mountTypes } = useMemo(() => {
@@ -163,14 +179,15 @@ export default function AuditLogPage() {
           ))}
         </select>
         <select
-          value={limit}
-          onChange={(e) => setLimit(Number(e.target.value))}
+          value={pageSize}
+          onChange={(e) => setPageSize(Number(e.target.value))}
           className="rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:outline-none"
         >
-          <option value={100}>100 entries</option>
-          <option value={200}>200 entries</option>
-          <option value={500}>500 entries</option>
-          <option value={1000}>1000 entries</option>
+          <option value={10}>10 per page</option>
+          <option value={20}>20 per page</option>
+          <option value={50}>50 per page</option>
+          <option value={100}>100 per page</option>
+          <option value={200}>200 per page</option>
         </select>
       </div>
 
@@ -193,7 +210,7 @@ export default function AuditLogPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {entries.map((entry) => {
+              {displayedEntries.map((entry) => {
                 const link = mountLinkPath(entry.mountType, entry.mountPoint);
                 const isExpanded = expandedRow === entry.requestId;
                 return (
@@ -325,7 +342,7 @@ export default function AuditLogPage() {
               })}
               {entries.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-gray-400">
                     No audit log entries found. Make some requests to Vault to generate audit data.
                   </td>
                 </tr>
@@ -334,6 +351,34 @@ export default function AuditLogPage() {
           </table>
         </div>
       </div>
+
+      {/* Pagination controls */}
+      {entries.length > 0 && (
+        <div className="flex items-center justify-between border-t border-gray-200 pt-3">
+          <p className="text-sm text-gray-500">
+            Showing {entries.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, entries.length)} of {entries.length} entries
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-700">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import sysRoutes from './routes/sys.js';
 import rotationRoutes from './routes/rotation.js';
 import backupRoutes from './routes/backup.js';
 import hooksRoutes from './routes/hooks.js';
+import sysTokenSetupRoutes from './routes/sys-token-setup.js';
 
 const app = express();
 
@@ -129,6 +130,7 @@ app.use('/api/sys', sysRoutes);
 app.use('/api/rotation', rotationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/hooks', hooksRoutes);
+app.use('/api/sys-token-setup', sysTokenSetupRoutes);
 
 // Error handling
 app.use(errorHandler);
