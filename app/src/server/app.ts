@@ -46,13 +46,25 @@ if (config.nodeEnv === 'production') {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'"],
+          // Tailwind CSS ships fully pre-compiled styles in the bundle; no runtime
+          // style injection is needed, so 'unsafe-inline' can be safely removed.
+          styleSrc: ["'self'"],
           imgSrc: ["'self'", 'data:', 'blob:'],
           connectSrc: ["'self'"],
           fontSrc: ["'self'"],
           objectSrc: ["'none'"],
+          // Deny framing to prevent clickjacking
           frameAncestors: ["'none'"],
+          // Restrict form submissions to the same origin
+          formAction: ["'self'"],
+          // Block loading plugins
+          baseUri: ["'self'"],
         },
+      },
+      // HSTS — 1 year, include subdomains
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
       },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     }),
@@ -91,14 +103,26 @@ app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 
 // Rate limiting — scoped to /api only so static assets are never throttled
+// In development, use permissive limits to avoid blocking during testing
 const limiter = rateLimit({
-  windowMs: config.rateLimitWindowMs,
-  max: config.rateLimitMax,
+  windowMs: config.nodeEnv === 'development' ? 60 * 60 * 1000 : config.rateLimitWindowMs, // 1 hour window in dev
+  max: config.nodeEnv === 'development' ? 10000 : config.rateLimitMax, // Very high limit in dev
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
 });
 app.use('/api', limiter);
+
+// Prevent caching of sensitive API responses by browsers and intermediary caches
+// In development, allow caching for faster iteration cycles
+app.use('/api', (_req, res, next) => {
+  if (config.nodeEnv === 'development') {
+    res.setHeader('Cache-Control', 'private, max-age=5');
+  } else {
+    res.setHeader('Cache-Control', 'no-store');
+  }
+  next();
+});
 
 // HTTP parameter pollution protection
 app.use(hpp());

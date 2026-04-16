@@ -43,7 +43,6 @@ function StepIndicator({ current }: { current: Step }) {
 export default function SystemTokenSetupPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('status');
-  const [status, setStatus] = useState<api.SysTokenStatus | null>(null);
   const [permissions, setPermissions] = useState<Awaited<ReturnType<typeof api.checkSysTokenPermissions>> | null>(null);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.previewSysTokenSetup>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,7 +56,6 @@ export default function SystemTokenSetupPage() {
     setError(null);
     api.getSysTokenStatus()
       .then((s) => {
-        setStatus(s);
         // If system token is already configured, redirect to dashboard
         if (s.hasSystemToken) {
           navigate('/', { replace: true });
@@ -210,7 +208,7 @@ export default function SystemTokenSetupPage() {
                   {!permissions.approleEnabled && (
                     <div className="rounded bg-amber-50 border border-amber-200 p-3">
                       <p className="text-sm text-amber-700">
-                        AppRole auth method is not currently enabled. We'll enable it as part of the setup process.
+                        AppRole auth method is not currently enabled. We&apos;ll enable it as part of the setup process.
                       </p>
                     </div>
                   )}

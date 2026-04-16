@@ -54,27 +54,6 @@ function TextAreaField({ value, onChange, readOnly, rows = 4 }: {
   );
 }
 
-function Toggle({ checked, onChange, readOnly }: { checked: boolean; onChange: (v: boolean) => void; readOnly: boolean }) {
-  if (readOnly) return <ReadValue value={checked} />;
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 focus:outline-none ${
-        checked ? 'bg-[#1563ff]' : 'bg-gray-200'
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-          checked ? 'translate-x-4' : 'translate-x-0.5'
-        } mt-0.5`}
-      />
-    </button>
-  );
-}
-
 // ── AWS Config Form ─────────────────────────────────────────────────────────
 
 export interface AwsFields {

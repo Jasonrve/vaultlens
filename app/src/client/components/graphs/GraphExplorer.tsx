@@ -224,7 +224,7 @@ function GraphCanvas({
   fitViewTrigger,
   focusNodeId,
 }: GraphCanvasProps) {
-  const { fitView, setViewport, getViewport } = useReactFlow();
+  const { fitView, setViewport } = useReactFlow();
   const { x: tx, y: ty, zoom } = useViewport();
 
   const containerRef = useRef<HTMLDivElement>(null);

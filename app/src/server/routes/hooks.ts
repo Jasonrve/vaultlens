@@ -35,18 +35,48 @@ function validateWebhookEndpoint(endpoint: string): string | null {
     return 'Endpoint URL must not contain a URL fragment (#). Use the direct endpoint URL — e.g. https://webhook.site/your-uuid, not the https://webhook.site/#!/view/... browser URL.';
   }
   const hostname = parsed.hostname.toLowerCase();
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '::1' ||
-    hostname === '0.0.0.0' ||
-    hostname.startsWith('169.254.') ||
-    hostname.startsWith('10.') ||
-    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname) ||
-    hostname.startsWith('192.168.') ||
+  // Strip IPv6 brackets: [::1] → ::1
+  const rawHost = hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
+
+  // In development, allow localhost and private networks for testing
+  if (config.nodeEnv === 'development') {
+    return null;
+  }
+
+  const isBlocked =
+    // Localhost by name and common loopback addresses
+    rawHost === 'localhost' ||
+    rawHost === '127.0.0.1' ||
+    rawHost === '::1' ||
+    rawHost === '0.0.0.0' ||
+    rawHost === '::' ||
+    rawHost === '0:0:0:0:0:0:0:0' ||
+    rawHost === '0:0:0:0:0:0:0:1' ||
+    // IPv4 loopback range 127.0.0.0/8
+    /^127\./.test(rawHost) ||
+    // IPv4 private ranges
+    rawHost.startsWith('10.') ||
+    rawHost.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(rawHost) ||
+    // IPv4 link-local and cloud metadata
+    rawHost.startsWith('169.254.') ||
+    // IPv4 CGNAT range 100.64.0.0/10
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(rawHost) ||
+    // IPv6 link-local fe80::/10
+    rawHost.startsWith('fe80:') ||
+    rawHost.startsWith('fe80::') ||
+    // IPv6 Unique Local Addresses (ULA) fc00::/7 — covers fc:: and fd::
+    rawHost.startsWith('fc') ||
+    rawHost.startsWith('fd') ||
+    // IPv4-mapped IPv6 ::ffff:192.168.x.x  or  ::ffff:10.x.x.x
+    rawHost.startsWith('::ffff:') ||
+    rawHost.startsWith('::ffff:0:') ||
+    // Internal hostnames
     hostname.endsWith('.internal') ||
-    hostname === 'metadata.google.internal'
-  ) {
+    hostname === 'metadata.google.internal' ||
+    hostname === 'metadata.aws.internal';
+
+  if (isBlocked) {
     return 'Webhook endpoints must not target internal or metadata addresses';
   }
   return null;
@@ -143,6 +173,15 @@ router.post(
         return;
       }
 
+      if (typeof name !== 'string' || name.length > 100) {
+        res.status(400).json({ error: 'name must be a string of 100 characters or fewer' });
+        return;
+      }
+      if (typeof secretPath !== 'string' || secretPath.length > 500) {
+        res.status(400).json({ error: 'secretPath must be a string of 500 characters or fewer' });
+        return;
+      }
+
       const endpointError = validateWebhookEndpoint(endpoint);
       if (endpointError) {
         res.status(400).json({ error: endpointError });
@@ -217,8 +256,20 @@ router.put(
         matchValues?: Record<string, string>;
       };
 
-      if (name !== undefined) existing['name'] = name;
-      if (secretPath !== undefined) existing['secretPath'] = secretPath;
+      if (name !== undefined) {
+        if (typeof name !== 'string' || name.length > 100) {
+          res.status(400).json({ error: 'name must be a string of 100 characters or fewer' });
+          return;
+        }
+        existing['name'] = name;
+      }
+      if (secretPath !== undefined) {
+        if (typeof secretPath !== 'string' || secretPath.length > 500) {
+          res.status(400).json({ error: 'secretPath must be a string of 500 characters or fewer' });
+          return;
+        }
+        existing['secretPath'] = secretPath;
+      }
       if (endpoint !== undefined) {
         const endpointError = validateWebhookEndpoint(endpoint);
         if (endpointError) {
@@ -407,6 +458,8 @@ function pathMatchesPattern(pattern: string, vaultPath: string): boolean {
     );
   }
   // Wildcard match: * → any non-slash chars
+  // Guard against excessively long patterns that could cause ReDoS
+  if (normalizedPattern.length > 512) return false;
   const regexStr = normalizedPattern
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*/g, '[^/]*');

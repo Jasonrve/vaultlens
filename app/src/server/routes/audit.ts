@@ -100,12 +100,15 @@ router.get(
       }
 
       // Read all lines (JSONL format) — read from end for most recent first
+      // Cap at 20 000 lines to prevent memory exhaustion on large audit logs
+      const MAX_AUDIT_LINES = 20_000;
       const entries: AuditEntry[] = [];
       const fileStream = fs.createReadStream(AUDIT_LOG_FILE, { encoding: 'utf-8' });
       const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
       for await (const line of rl) {
         if (!line.trim()) continue;
+        if (entries.length >= MAX_AUDIT_LINES) break;
         try {
           entries.push(JSON.parse(line) as AuditEntry);
         } catch {

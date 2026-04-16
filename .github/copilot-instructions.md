@@ -1,5 +1,7 @@
 # VaultLens — GitHub Copilot Instructions
 
+
+
 ## Project Overview
 
 VaultLens is a full-stack HashiCorp Vault management UI built with React + Vite (frontend) and Node.js/Express (backend), served as a single unified runtime from the `app/` folder.
@@ -433,3 +435,11 @@ docker-compose* text eol=lf
 12. **Audit log** — `/admin/audit-log` should show recent Vault operations.
 13. **Branding** — Change app name and logo in `/admin/branding`, verify the header updates.
 14. **Admin-only pages** — Backup, hooks pages should require `root` or `vaultlens-admin` policy.
+
+## ⚠️ IMPORTANT: Development Workflow
+-  **DO NOT:** Commit changes locally with `git commit`
+-  **DO NOT:** Push changes to GitHub with `git push` or `git push origin main` or any variant
+-  **DO:** Let the user commit manually push when ready
+-  **DO:** Check lint after all multifile changes
+-  **DO:** Make sure that docker build still works for all large changes
+---

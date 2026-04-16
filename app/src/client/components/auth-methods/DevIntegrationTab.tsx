@@ -12,35 +12,39 @@ interface Props {
 }
 
 // Custom markdown components for better styling
+interface MarkdownProps extends React.PropsWithChildren {
+  className?: string;
+}
+
 const markdownComponents = {
-  h1: ({ node, ...props }: any) => <h1 className="mb-4 mt-6 text-2xl font-bold text-gray-900" {...props} />,
-  h2: ({ node, ...props }: any) => <h2 className="mb-3 mt-5 text-xl font-bold text-gray-800" {...props} />,
-  h3: ({ node, ...props }: any) => <h3 className="mb-2 mt-4 text-lg font-semibold text-gray-800" {...props} />,
-  h4: ({ node, ...props }: any) => <h4 className="mb-2 mt-3 text-base font-semibold text-gray-700" {...props} />,
-  p: ({ node, ...props }: any) => <p className="mb-3 text-gray-700 leading-relaxed" {...props} />,
-  ul: ({ node, ...props }: any) => <ul className="mb-3 ml-4 list-inside list-disc space-y-1 text-gray-700" {...props} />,
-  ol: ({ node, ...props }: any) => <ol className="mb-3 ml-4 list-inside list-decimal space-y-1 text-gray-700" {...props} />,
-  li: ({ node, ...props }: any) => <li className="ml-2" {...props} />,
-  code: ({ node, inline, ...props }: any) =>
-    inline ? (
+  h1: (props: MarkdownProps) => <h1 className="mb-4 mt-6 text-2xl font-bold text-gray-900" {...props} />,
+  h2: (props: MarkdownProps) => <h2 className="mb-3 mt-5 text-xl font-bold text-gray-800" {...props} />,
+  h3: (props: MarkdownProps) => <h3 className="mb-2 mt-4 text-lg font-semibold text-gray-800" {...props} />,
+  h4: (props: MarkdownProps) => <h4 className="mb-2 mt-3 text-base font-semibold text-gray-700" {...props} />,
+  p: (props: MarkdownProps) => <p className="mb-3 text-gray-700 leading-relaxed" {...props} />,
+  ul: (props: MarkdownProps) => <ul className="mb-3 ml-4 list-inside list-disc space-y-1 text-gray-700" {...props} />,
+  ol: (props: MarkdownProps) => <ol className="mb-3 ml-4 list-inside list-decimal space-y-1 text-gray-700" {...props} />,
+  li: (props: MarkdownProps) => <li className="ml-2" {...props} />,
+  code: (props: MarkdownProps & { inline?: boolean }) =>
+    props.inline ? (
       <code className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm text-red-600" {...props} />
     ) : (
       <code {...props} />
     ),
-  pre: ({ node, ...props }: any) => (
+  pre: (props: MarkdownProps) => (
     <pre className="mb-4 overflow-x-auto rounded-lg bg-gray-900 p-4 text-gray-100" {...props} />
   ),
-  table: ({ node, ...props }: any) => (
+  table: (props: MarkdownProps) => (
     <div className="mb-4 overflow-x-auto rounded border border-gray-200">
       <table className="w-full text-sm" {...props} />
     </div> 
   ),
-  thead: ({ node, ...props }: any) => <thead className="bg-gray-50" {...props} />,
-  th: ({ node, ...props }: any) => (
+  thead: (props: MarkdownProps) => <thead className="bg-gray-50" {...props} />,
+  th: (props: MarkdownProps) => (
     <th className="border border-gray-200 px-4 py-2 text-left font-semibold text-gray-700" {...props} />
   ),
-  td: ({ node, ...props }: any) => <td className="border border-gray-200 px-4 py-2 text-gray-600" {...props} />,
-  blockquote: ({ node, ...props }: any) => (
+  td: (props: MarkdownProps) => <td className="border border-gray-200 px-4 py-2 text-gray-600" {...props} />,
+  blockquote: (props: MarkdownProps) => (
     <blockquote className="mb-3 border-l-4 border-blue-500 bg-blue-50 py-2 pl-4 italic text-gray-700" {...props} />
   ),
 };

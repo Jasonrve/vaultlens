@@ -42,6 +42,7 @@ export default [
         HTMLInputElement: 'readonly',
         HTMLImageElement: 'readonly',
         HTMLDivElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
         FormEvent: 'readonly',
@@ -49,6 +50,8 @@ export default [
         React: 'readonly',
         File: 'readonly',
         FormData: 'readonly',
+        Node: 'readonly',
+        ResizeObserver: 'readonly',
       },
     },
     plugins: {

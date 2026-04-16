@@ -9,7 +9,7 @@
     "build": "npm run build:client && npm run build:server && npm run copy-templates",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.json",
-    "copy-templates": "node -e \"const fs=require('fs'),path=require('path');const src=path.join('src','server','templates');const dst=path.join('dist','server','templates');fs.cpSync(src,dst,{recursive:true});console.log('[build] Templates copied to dist/server/templates')\"",
+    "copy-templates": "node -e \"const fs=require('fs'),path=require('path');const src=path.join('src','server','templates');const dst=path.join('dist','server','templates');if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true});console.log('[build] Templates copied to dist/server/templates')}else{console.log('[build] Templates directory not found, skipping copy')}\"",
     "start": "node dist/server/server.js",
     "lint": "eslint src/client",
     "preview": "vite preview"
@@ -22,7 +22,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "@xyflow/react": "^12.10.1",
-    "axios": "^1.13.6",
+    "axios": "1.15.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -40,7 +40,7 @@
     "react-router-dom": "^7.13.2",
     "remark-gfm": "^4.0.1",
     "typescript": "^5.7.3",
-    "vite": "^8.0.3",
+    "vite": "8.0.8",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
