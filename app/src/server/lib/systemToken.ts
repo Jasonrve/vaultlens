@@ -11,12 +11,25 @@ const CREDS_SECTION = 'sys_token_approle';
 let cachedToken: string | null = null;
 let tokenExpiry: number = 0;
 
+// Backoff state for AppRole authentication failures.
+// After the first failure we wait at least 1 minute before retrying, doubling
+// up to a maximum of 1 hour so that stale/misconfigured credentials don't
+// produce a continuous stream of error log lines.
+let appRoleBackoffMs: number = 0;
+let appRoleLastFailTime: number = 0;
+const APPROLE_BACKOFF_MIN_MS = 60_000;    // 1 minute
+const APPROLE_BACKOFF_MAX_MS = 3_600_000; // 1 hour
+
 /**
  * Authenticate to Vault using AppRole credentials stored in config storage.
  * Uses the stored secret-id that was generated during setup.
  * Both role_id and secret_id are encrypted in storage for security.
  */
 async function authenticateAppRole(): Promise<string | null> {
+  // Respect backoff window to avoid log spam when credentials are wrong/missing.
+  if (appRoleBackoffMs > 0 && Date.now() - appRoleLastFailTime < appRoleBackoffMs) {
+    return null;
+  }
   try {
     const storage = getConfigStorage();
     const creds = await storage.get(CREDS_SECTION);
@@ -28,6 +41,10 @@ async function authenticateAppRole(): Promise<string | null> {
 
     if (!roleId || !secretId) {
       console.error('[AppRole Auth] Failed to decrypt stored credentials');
+      appRoleLastFailTime = Date.now();
+      appRoleBackoffMs = appRoleBackoffMs
+        ? Math.min(appRoleBackoffMs * 2, APPROLE_BACKOFF_MAX_MS)
+        : APPROLE_BACKOFF_MIN_MS;
       return null;
     }
 
@@ -47,10 +64,17 @@ async function authenticateAppRole(): Promise<string | null> {
     // Cache at 75% of TTL so background services reuse the same token (cubbyhole is per-token)
     cachedToken = client_token;
     tokenExpiry = Date.now() + lease_duration * 750;
+    // Reset backoff on success
+    appRoleBackoffMs = 0;
+    appRoleLastFailTime = 0;
     console.log(`[AppRole Auth] Authenticated to Vault via AppRole (ttl=${lease_duration}s)`);
     return client_token;
   } catch (e) {
     console.error('[AppRole Auth] Failed to authenticate:', e instanceof Error ? e.message : e);
+    appRoleLastFailTime = Date.now();
+    appRoleBackoffMs = appRoleBackoffMs
+      ? Math.min(appRoleBackoffMs * 2, APPROLE_BACKOFF_MAX_MS)
+      : APPROLE_BACKOFF_MIN_MS;
     return null;
   }
 }
@@ -122,6 +146,20 @@ export async function getSystemToken(): Promise<string> {
 
   // Fall back to static system token
   return config.vaultSystemToken;
+}
+
+/**
+ * Seed the system token cache with a freshly-obtained token.
+ * Called from the setup wizard after creating the AppRole so that subsequent
+ * config storage writes (which need a system token) work immediately without
+ * waiting for the next authentication cycle.
+ */
+export function seedSystemTokenCache(token: string, ttlSeconds: number): void {
+  cachedToken = token;
+  tokenExpiry = Date.now() + ttlSeconds * 750; // 75% of TTL, same as other auth paths
+  // Reset backoff — a freshly seeded token means credentials are now valid
+  appRoleBackoffMs = 0;
+  appRoleLastFailTime = 0;
 }
 
 /**

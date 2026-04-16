@@ -48,10 +48,12 @@ if (config.nodeEnv === 'production') {
           scriptSrc: ["'self'"],
           // Tailwind CSS ships fully pre-compiled styles in the bundle; no runtime
           // style injection is needed, so 'unsafe-inline' can be safely removed.
-          styleSrc: ["'self'"],
+          // Google Fonts stylesheet is loaded from fonts.googleapis.com.
+          styleSrc: ["'self'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
           connectSrc: ["'self'"],
-          fontSrc: ["'self'"],
+          // Google Fonts font files are served from fonts.gstatic.com.
+          fontSrc: ["'self'", 'https://fonts.gstatic.com'],
           objectSrc: ["'none'"],
           // Deny framing to prevent clickjacking
           frameAncestors: ["'none'"],

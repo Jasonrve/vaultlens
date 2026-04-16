@@ -4,6 +4,7 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
 import { encryptConfigValue, tryDecryptConfigValue } from '../lib/configEncryption.js';
+import { seedSystemTokenCache } from '../lib/systemToken.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -71,9 +72,18 @@ router.get(
       const hasK8sAuth = !!config.vaultK8sAuthRole;
       const hasStaticToken = !!config.vaultSystemToken;
 
-      // Check if AppRole creds are stored
-      const creds = await getConfigStorage().get(CREDS_SECTION);
-      const hasApprole = !!(creds && creds['role_id']);
+      // Check if AppRole creds are stored.
+      // Wrap in try/catch: if vault config storage is in use and the system token
+      // isn't yet available (first-time setup), the storage read returns null rather
+      // than throwing (see VaultConfigStorage.get), but guard here too in case of
+      // unexpected storage errors — the setup wizard must always be reachable.
+      let hasApprole = false;
+      try {
+        const creds = await getConfigStorage().get(CREDS_SECTION);
+        hasApprole = !!(creds && creds['role_id']);
+      } catch {
+        // Storage unavailable — treat as no credentials configured
+      }
 
       res.json({
         hasSystemToken: hasK8sAuth || hasStaticToken || hasApprole,
@@ -284,7 +294,26 @@ router.post(
       const encryptedRoleId = encryptConfigValue(roleId);
       const encryptedSecretId = encryptConfigValue(secretId);
 
-      // 7. Store encrypted credentials in config storage
+      // 7. Bootstrap the system token cache BEFORE the config storage write.
+      //    When VAULTLENS_CONFIG_STORAGE=vault, writing to config storage requires
+      //    a working system token (chicken-and-egg).  Performing an AppRole login
+      //    now populates the cache so that getSystemToken() returns a valid token
+      //    for the subsequent set() call.
+      try {
+        const bootstrapLogin = await vaultClient.post<{
+          auth: { client_token: string; lease_duration: number };
+        }>('/auth/approle/login', '', { role_id: roleId, secret_id: secretId });
+        seedSystemTokenCache(
+          bootstrapLogin.auth.client_token,
+          bootstrapLogin.auth.lease_duration,
+        );
+      } catch {
+        // Non-critical for file storage mode — config write will still succeed.
+        // For vault storage mode the set() call below will throw if this fails,
+        // which is the correct behaviour (setup cannot complete without a working token).
+      }
+
+      // 8. Store encrypted credentials in config storage
       // After this, the system token can authenticate without needing a bootstrap token.
       await getConfigStorage().set(CREDS_SECTION, {
         role_id: encryptedRoleId,

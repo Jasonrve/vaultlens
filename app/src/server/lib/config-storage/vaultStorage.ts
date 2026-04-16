@@ -17,8 +17,12 @@ export class VaultConfigStorage implements ConfigStorageProvider {
   }
 
   async get(section: string): Promise<Record<string, string> | null> {
+    const token = await getSystemToken();
+    // If no system token is available yet (e.g. during initial setup before AppRole is
+    // configured), treat this as "no data stored" rather than forwarding a tokenless
+    // request to Vault which would return a 403 and break the setup wizard.
+    if (!token) return null;
     try {
-      const token = await getSystemToken();
       const resp = await this.vaultClient.get<{
         data: { data: Record<string, string> };
       }>(`/${KV_MOUNT}/data/${encodeURIComponent(section)}`, token);
@@ -32,6 +36,7 @@ export class VaultConfigStorage implements ConfigStorageProvider {
 
   async set(section: string, data: Record<string, string>): Promise<void> {
     const token = await getSystemToken();
+    if (!token) throw new Error('No system token available — cannot write to Vault config storage');
     await this.vaultClient.post(
       `/${KV_MOUNT}/data/${encodeURIComponent(section)}`,
       token,
@@ -40,8 +45,9 @@ export class VaultConfigStorage implements ConfigStorageProvider {
   }
 
   async delete(section: string): Promise<void> {
+    const token = await getSystemToken();
+    if (!token) throw new Error('No system token available — cannot delete from Vault config storage');
     try {
-      const token = await getSystemToken();
       await this.vaultClient.delete(
         `/${KV_MOUNT}/metadata/${encodeURIComponent(section)}`,
         token,
@@ -54,8 +60,9 @@ export class VaultConfigStorage implements ConfigStorageProvider {
   }
 
   async list(): Promise<string[]> {
+    const token = await getSystemToken();
+    if (!token) return [];
     try {
-      const token = await getSystemToken();
       const resp = await this.vaultClient.list<{
         data: { keys: string[] };
       }>(`/${KV_MOUNT}/metadata`, token);
@@ -68,8 +75,9 @@ export class VaultConfigStorage implements ConfigStorageProvider {
   }
 
   async getBlob(key: string): Promise<{ data: Buffer; mimeType: string } | null> {
+    const token = await getSystemToken();
+    if (!token) return null;
     try {
-      const token = await getSystemToken();
       const resp = await this.vaultClient.get<{
         data: { data: { blob: string; mimeType: string } };
       }>(`/${KV_MOUNT}/data/_blob_${encodeURIComponent(key)}`, token);
@@ -84,6 +92,7 @@ export class VaultConfigStorage implements ConfigStorageProvider {
 
   async setBlob(key: string, data: Buffer, mimeType: string): Promise<void> {
     const token = await getSystemToken();
+    if (!token) throw new Error('No system token available — cannot write blob to Vault config storage');
     await this.vaultClient.post(
       `/${KV_MOUNT}/data/_blob_${encodeURIComponent(key)}`,
       token,
@@ -92,8 +101,9 @@ export class VaultConfigStorage implements ConfigStorageProvider {
   }
 
   async deleteBlob(key: string): Promise<void> {
+    const token = await getSystemToken();
+    if (!token) return; // Nothing to delete if no token
     try {
-      const token = await getSystemToken();
       await this.vaultClient.delete(
         `/${KV_MOUNT}/metadata/_blob_${encodeURIComponent(key)}`,
         token,
