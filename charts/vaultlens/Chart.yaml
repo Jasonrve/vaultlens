@@ -2,8 +2,8 @@ apiVersion: v2
 name: vaultlens
 description: A Helm chart for VaultLens — HashiCorp Vault Management UI
 type: application
-version: 0.2.0-beta
-appVersion: "0.2.0-beta"
+version: 0.2.1-beta
+appVersion: "0.2.1-beta"
 keywords:
   - vault
   - hashicorp
