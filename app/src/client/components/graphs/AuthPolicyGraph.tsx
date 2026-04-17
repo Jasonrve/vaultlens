@@ -6,9 +6,10 @@ import GraphTableView from './GraphTableView';
 import GraphExplorer from './GraphExplorer';
 
 const nodeColors: Record<string, string> = {
-  authMethod: '#6366f1',
+  authMethod: '#7c3aed',
   role: '#f59e0b',
   policy: '#10b981',
+  secretPath: '#60A5FA',
 };
 
 interface Props {

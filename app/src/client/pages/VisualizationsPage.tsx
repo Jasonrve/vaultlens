@@ -2,10 +2,12 @@ import { useCallback, useState } from 'react';
 import AuthPolicyGraph from '../components/graphs/AuthPolicyGraph';
 import PolicySecretGraph from '../components/graphs/PolicySecretGraph';
 import IdentityGraph from '../components/graphs/IdentityGraph';
+import PolicyRelationGraph from '../components/graphs/PolicyRelationGraph';
 
 const tabs = [
   { id: 'auth-policy', label: 'Auth → Role → Policy' },
   { id: 'policy-secret', label: 'Policy → Secret Path' },
+  { id: 'policy-relations', label: 'Policy Relationships' },
   { id: 'identity', label: 'Identity' },
 ] as const;
 
@@ -104,6 +106,12 @@ export default function VisualizationsPage() {
         <PolicySecretGraph
           refreshKey={refreshKey}
           onDataLoaded={handleDataLoaded('policy-secret')}
+        />
+      )}
+      {activeTab === 'policy-relations' && (
+        <PolicyRelationGraph
+          refreshKey={refreshKey}
+          onDataLoaded={handleDataLoaded('policy-relations')}
         />
       )}
       {activeTab === 'identity' && (

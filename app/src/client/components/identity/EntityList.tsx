@@ -5,7 +5,9 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 
 export default function EntityList() {
-  const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
+  const [entities, setEntities] = useState<
+    { id: string; name: string; groupCount: number; policyCount: number }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,15 +38,21 @@ export default function EntityList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {entities.map(({ id, name }) => (
+            {entities.map(({ id, name, groupCount, policyCount }) => (
               <tr key={id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <Link
-                    to={`/access/entities/${id}`}
-                    className="text-sm text-[#1563ff] hover:text-[#1250d4]"
-                  >
-                    {name || <span className="italic text-gray-400">unnamed</span>}
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/access/entities/${id}`}
+                      className="text-sm text-[#1563ff] hover:text-[#1250d4]"
+                    >
+                      {name || <span className="italic text-gray-400">unnamed</span>}
+                    </Link>
+                    <div className="flex gap-2 text-xs text-gray-400">
+                      {groupCount > 0 && <span>Groups: {groupCount}</span>}
+                      {policyCount > 0 && <span>Policies: {policyCount}</span>}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">
                   <span className="font-mono text-xs text-gray-400">{id}</span>

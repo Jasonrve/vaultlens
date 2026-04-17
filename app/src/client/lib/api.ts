@@ -280,12 +280,16 @@ export async function getGroups() {
 }
 
 export async function getEntitiesSummary() {
-  const { data } = await api.get<{ entities: { id: string; name: string }[] }>('/identity/entities-summary');
+  const { data } = await api.get<{
+    entities: { id: string; name: string; groupCount: number; policyCount: number }[];
+  }>('/identity/entities-summary');
   return data.entities;
 }
 
 export async function getGroupsSummary() {
-  const { data } = await api.get<{ groups: { id: string; name: string }[] }>('/identity/groups-summary');
+  const { data } = await api.get<{
+    groups: { id: string; name: string; memberCount: number; policyCount: number }[];
+  }>('/identity/groups-summary');
   return data.groups;
 }
 
@@ -316,14 +320,23 @@ export async function getIdentityMap(refresh = false) {
   return data;
 }
 
-export async function getUserIdentityMap(options?: { entityName?: string; entityId?: string }) {
+export async function getUserIdentityMap(options?: { entityName?: string; entityId?: string; groupId?: string }) {
   let url = '/graph/user-identity-map';
   if (options?.entityId) {
     url += `?entityId=${encodeURIComponent(options.entityId)}`;
+  } else if (options?.groupId) {
+    url += `?groupId=${encodeURIComponent(options.groupId)}`;
   } else if (options?.entityName) {
     url += `?entityName=${encodeURIComponent(options.entityName)}`;
   }
   const { data } = await api.get<GraphData>(url);
+  return data;
+}
+
+export async function getPolicyRelationshipsMap(refresh = false) {
+  const { data } = await api.get<GraphData>('/graph/policy-relationships', {
+    params: refresh ? { refresh: 'true' } : undefined,
+  });
   return data;
 }
 

@@ -8,12 +8,17 @@ import GraphExplorer from './GraphExplorer';
 const nodeColors: Record<string, string> = {
   policy: '#10b981',
   secretPath: '#60A5FA',
+  group: '#f59e0b',
+  role: '#f59e0b',
+  authMethod: '#7c3aed',
 };
 
 const legendItems = [
   { label: 'policy', color: '#10b981' },
   { label: 'secret path', color: '#60A5FA' },
   { label: 'auth backend path', color: '#7c3aed', emoji: '🔒' },
+  { label: 'group', color: '#f59e0b' },
+  { label: 'role / auth method', color: '#7c3aed' },
 ];
 
 interface Props {
@@ -21,7 +26,7 @@ interface Props {
   onDataLoaded?: (cachedAt: number | undefined, fromCache: boolean) => void;
 }
 
-export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Props) {
+export default function PolicyRelationGraph({ refreshKey = 0, onDataLoaded }: Props) {
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +36,7 @@ export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Prop
     setLoading(true);
     setError(null);
     api
-      .getPolicySecretMap(refreshKey > 0)
+      .getPolicyRelationshipsMap(refreshKey > 0)
       .then((data) => {
         setGraphData(data);
         onDataLoaded?.(data.cachedAt, data.fromCache ?? false);
@@ -44,7 +49,7 @@ export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Prop
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-700">Policies Secret Paths</h2>
+        <h2 className="text-lg font-semibold text-gray-700">Policy Relationships</h2>
         <div className="flex rounded-md border border-gray-200 bg-gray-50 p-0.5">
           <button
             onClick={() => setView('graph')}
@@ -66,7 +71,7 @@ export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Prop
       </div>
       {view === 'graph' && (
         <>
-          <div className="mb-3 flex gap-4 text-xs text-gray-500">
+          <div className="mb-3 flex flex-wrap gap-4 text-xs text-gray-500">
             {legendItems.map(({ label, color, emoji }) => (
               <span key={label} className="flex items-center gap-1">
                 <span className="inline-block h-3 w-3 rounded" style={{ background: color }} />
@@ -91,4 +96,3 @@ export default function PolicySecretGraph({ refreshKey = 0, onDataLoaded }: Prop
     </div>
   );
 }
-

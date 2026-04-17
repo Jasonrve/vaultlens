@@ -52,10 +52,11 @@ export default function SecretsEngineList() {
       .finally(() => setLoading(false));
 
     // Check if user has sys/mounts permissions (proxy test for enabling engines)
-    api.testPermissions(['sys/mounts'])
+    // Test against sys/mounts/test-path which matches the sys/mounts/* policy glob
+    api.testPermissions(['sys/mounts/test-path'])
       .then((results) => {
-        const caps = results['sys/mounts'] ?? [];
-        setCanEnable(caps.includes('create') || caps.includes('sudo') || caps.includes('root'));
+        const caps = results['sys/mounts/test-path'] ?? [];
+        setCanEnable(caps.includes('create') || caps.includes('update') || caps.includes('sudo') || caps.includes('root'));
       })
       .catch(() => setCanEnable(false));
   }, [fetchEngines]);
@@ -243,7 +244,7 @@ export default function SecretsEngineList() {
           </tbody>
         </table>
       </div>
-      <Modal isOpen={showEnableModal} onClose={() => setShowEnableModal(false)} title="Enable Secrets Engine">
+      <Modal open={showEnableModal} onClose={() => setShowEnableModal(false)} title="Enable Secrets Engine">
         <div className="space-y-4">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Path</label>

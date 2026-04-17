@@ -1,30 +1,34 @@
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
   Background,
   Controls,
-  Handle,
-  Position,
   ReactFlowProvider,
   useReactFlow,
   useViewport,
   type Edge,
   type Node,
-  type NodeTypes,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import dagre from 'dagre';
+import * as api from '../../lib/api';
 import type { GraphData } from '../../types';
+import {
+  AuthIcon,
+  NODE_TYPES,
+  capBadgeClass,
+} from './graphNodeTypes';
+import type { ExpandableNodeData, QuickViewNode } from './graphNodeTypes';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const X_STEP = 220;
-const Y_STEP = 55;
 const NODE_W = 160;   // approx rendered node width
 const NODE_H = 32;    // approx rendered node height
 const GHOST_W = 130;  // ghost overlay width
@@ -128,74 +132,56 @@ function collectSubtreeIds(
   return result;
 }
 
-// ── Custom node type ──────────────────────────────────────────────────────────
-interface ExpandableNodeData {
-  label: string;
-  color: string;
-  hasChildren: boolean;
-  isExpanded: boolean;
-  isHighlighted: boolean;
-  [key: string]: unknown;
-}
+// ── Custom node type ─────────────────────────────────────────────────────────
+// ExpandableNodeData, ExpandableNode, NODE_TYPES are imported from graphNodeTypes
 
-const ExpandableNode = memo(function ExpandableNode({
-  data,
-}: {
-  data: ExpandableNodeData;
-}) {
-  const bg = data.color || '#6b7280';
-  return (
-    <div
-      style={{
-        background: bg,
-        boxShadow: data.isHighlighted
-          ? '0 0 0 3px #fbbf24, 0 0 12px rgba(251,191,36,0.5)'
-          : '0 1px 3px rgba(0,0,0,0.18)',
-      }}
-      className="relative flex min-w-[100px] max-w-[160px] items-center rounded-md px-3 py-1.5 text-xs font-medium text-white select-none"
-    >
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <span className="max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">{data.label}</span>
-      {data.hasChildren && (
-        <span
-          className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/25 text-[10px] font-bold leading-none text-white"
-          title={data.isExpanded ? 'Collapse' : 'Expand'}
-        >
-          {data.isExpanded ? '−' : '+'}
-        </span>
-      )}
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-    </div>
-  );
-});
-
-// Stable reference so React Flow does not re-register types on every render
-const NODE_TYPES: NodeTypes = { expandable: ExpandableNode as unknown as NodeTypes['expandable'] };
-
-// ── Layout algorithm ──────────────────────────────────────────────────────────
+// ── Layout algorithm using Dagre ──────────────────────────────────────────────
+/**
+ * Use Dagre to compute node positions that minimize edge crossings.
+ * Dagre automatically arranges nodes in a hierarchical layout.
+ */
 function computeLayout(
   rootIds: string[],
   expandedIds: Set<string>,
   childMap: Map<string, string[]>,
   visibleNodeIds: Set<string>,
 ): Map<string, { x: number; y: number }> {
-  const positions = new Map<string, { x: number; y: number }>();
+  // Create a directed acyclic graph
+  const graph = new dagre.graphlib.Graph();
+  graph.setGraph({
+    rankdir: 'LR',        // left-to-right layout
+    align: 'DR',          // downward-right alignment minimizes crossings
+    nodesep: 35,          // horizontal spacing between columns (compact but nodes don't touch)
+    ranksep: 55,          // vertical spacing between rows (compact but nodes don't touch)
+  });
+  graph.setDefaultEdgeLabel(() => ({}));
 
-  // Recursively place a node at (col, anchorY) then spread its children
-  // symmetrically around anchorY so the parent NEVER changes position.
-  function place(id: string, col: number, anchorY: number) {
-    if (!visibleNodeIds.has(id)) return;
-    positions.set(id, { x: col * X_STEP, y: anchorY });
-    if (!expandedIds.has(id)) return;
-    const children = (childMap.get(id) ?? []).filter((c) => visibleNodeIds.has(c));
-    if (children.length === 0) return;
-    // Centre children around the parent's anchorY so the parent stays in place.
-    const startY = anchorY - ((children.length - 1) / 2) * Y_STEP;
-    children.forEach((childId, i) => place(childId, col + 1, startY + i * Y_STEP));
+  // Add all visible nodes with their dimensions
+  for (const nodeId of visibleNodeIds) {
+    graph.setNode(nodeId, { width: 160, height: 40 });
   }
 
-  // Root nodes are anchored at their natural index position — they never move.
-  rootIds.filter((id) => visibleNodeIds.has(id)).forEach((id, i) => place(id, 0, i * Y_STEP));
+  // Add edges: only visible edges from expanded parents to visible children
+  for (const parentId of visibleNodeIds) {
+    if (!expandedIds.has(parentId)) continue;
+    for (const childId of childMap.get(parentId) ?? []) {
+      if (visibleNodeIds.has(childId)) {
+        graph.setEdge(parentId, childId);
+      }
+    }
+  }
+
+  // Compute layout
+  dagre.layout(graph);
+
+  // Extract positions from Dagre
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const nodeId of visibleNodeIds) {
+    const node = graph.node(nodeId);
+    if (node) {
+      positions.set(nodeId, { x: node.x, y: node.y });
+    }
+  }
 
   return positions;
 }
@@ -208,6 +194,7 @@ interface GraphCanvasProps {
   rootIds: string[];
   expandedIds: Set<string>;
   onToggle: (id: string) => void;
+  onQuickView: (node: Node) => void;
   highlightedIds: Set<string>;
   fitViewTrigger: number;
   focusNodeId: string | null;
@@ -220,6 +207,7 @@ function GraphCanvas({
   rootIds,
   expandedIds,
   onToggle,
+  onQuickView,
   highlightedIds,
   fitViewTrigger,
   focusNodeId,
@@ -275,6 +263,7 @@ function GraphCanvas({
         .map((id) => {
           const raw = nodeMap.get(id)!;
           const pos = positions.get(id)!;
+          const isAuthPath = Boolean(raw.data.isAuthPath);
           return {
             id,
             type: 'expandable',
@@ -285,6 +274,11 @@ function GraphCanvas({
               hasChildren: (childMap.get(id)?.length ?? 0) > 0,
               isExpanded: expandedIds.has(id),
               isHighlighted: highlightedIds.has(id),
+              isAuthPath,
+              authType: raw.data.authType as string | undefined,
+              // Pass through extra node data for quick-view panel
+              nodeType: raw.type,
+              capabilities: raw.data.capabilities,
             } satisfies ExpandableNodeData,
           };
         }),
@@ -334,10 +328,14 @@ function GraphCanvas({
       const centerX = posArr.reduce((s, p) => s + p.x, 0) / posArr.length;
       const centerY = posArr.reduce((s, p) => s + p.y, 0) / posArr.length;
 
-      // Target: ~10 nodes visible vertically (each node is Y_STEP apart)
-      const TARGET_VISIBLE = Math.min(10, nodes.length);
-      // Zoom so that exactly TARGET_VISIBLE nodes span the visible container height
-      const targetZoom = Math.min(ch / (TARGET_VISIBLE * Y_STEP), 3);
+      // Target: ~10 nodes visible vertically (each node is ~55px apart from Dagre ranksep).
+      // Use at least 3 as the minimum to avoid over-zooming on graphs with very few root nodes.
+      const TARGET_VISIBLE = Math.max(3, Math.min(10, nodes.length));
+      // Zoom so that exactly TARGET_VISIBLE nodes span the visible container height.
+      // Cap at 1.5 so graphs with few root nodes (e.g. Identity with 1–2 entities)
+      // don't zoom in to an extreme level.
+      const DAGRE_RANKSEP = 55; // matches computeLayout configuration
+      const targetZoom = Math.min(ch / (TARGET_VISIBLE * DAGRE_RANKSEP), 1.5);
 
       // Pan so the layout center is at the screen center at the new zoom
       const newX = cw / 2 - centerX * targetZoom;
@@ -420,6 +418,14 @@ function GraphCanvas({
 
   // ── Fit-view effect: search priority > expand-to-focus > default ──────────
   useEffect(() => {
+    // For auto-expanded graphs (modal with autoExpandRoots), fitView is unreliable
+    // because it depends on ReactFlow's async ResizeObserver node measurements.
+    // When many nodes appear at once some may not yet be measured, so fitView's
+    // bounding box is incomplete and nodes end up off-screen.
+    // Instead, compute the viewport directly from our own Dagre positions map,
+    // which is always complete and doesn't depend on ReactFlow internals.
+    const fitAllExpanded = expandedIds.size > 5;
+    const delay = fitAllExpanded ? 0 : 60;
     const t = setTimeout(() => {
       const visibleHighlights = [...highlightedIds].filter((id) => visibleNodeIds.has(id));
       if (visibleHighlights.length > 0) {
@@ -427,24 +433,53 @@ function GraphCanvas({
       } else if (focusNodeId && expandedIds.has(focusNodeId) && visibleNodeIds.has(focusNodeId)) {
         const subtree = collectSubtreeIds(focusNodeId, expandedIds, visibleNodeIds, childMap);
         fitView({ nodes: subtree.map((id) => ({ id })), duration: 450, padding: 0.25, maxZoom: 1.5 });
+      } else if (fitAllExpanded) {
+        // Compute bounding box from Dagre positions — guaranteed accurate regardless
+        // of whether ReactFlow has measured all node dimensions yet.
+        const cw = containerRef.current?.clientWidth || containerW;
+        const ch = containerRef.current?.clientHeight || containerH;
+        if (!cw || !ch) return;
+        const posArr = [...visibleNodeIds]
+          .map((id) => positions.get(id))
+          .filter(Boolean) as { x: number; y: number }[];
+        if (posArr.length === 0) return;
+        const minX = Math.min(...posArr.map((p) => p.x));
+        const maxX = Math.max(...posArr.map((p) => p.x)) + NODE_W;
+        const minY = Math.min(...posArr.map((p) => p.y));
+        const maxY = Math.max(...posArr.map((p) => p.y)) + NODE_H;
+        const graphW = maxX - minX;
+        const graphH = maxY - minY;
+        const PAD_FRAC = 0.1;
+        const scaleX = (cw * (1 - 2 * PAD_FRAC)) / graphW;
+        const scaleY = (ch * (1 - 2 * PAD_FRAC)) / graphH;
+        const zoom = Math.min(scaleX, scaleY, 1.5);
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        setViewport({ x: cw / 2 - cx * zoom, y: ch / 2 - cy * zoom, zoom }, { duration: 350 });
       } else {
         // Skip the default full-fit if the custom zoom-in animation has already run
         // (prevents React Query re-fetches from resetting the viewport after animation).
         if (!animatedForDataKey.current) {
-          fitView({ duration: 350, padding: 0.12 });
+          // Cap maxZoom at 1.5 so graphs with few root nodes don't over-zoom on initial load.
+          const padding = expandedIds.size > 2 ? 0.25 : 0.12;
+          fitView({ duration: 350, padding, maxZoom: 1.5 });
         }
       }
-    }, 60);
+    }, delay);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitViewTrigger]);
 
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node) => {
+    (event: React.MouseEvent, node: Node) => {
+      if (event.ctrlKey || event.metaKey) {
+        onQuickView(node);
+        return;
+      }
       const d = node.data as ExpandableNodeData;
       if (d.hasChildren) onToggle(node.id);
     },
-    [onToggle],
+    [onToggle, onQuickView],
   );
 
   const navigateToNode = useCallback(
@@ -605,12 +640,165 @@ function GraphCanvas({
   );
 }
 
+// ── Node Quick-View Panel ─────────────────────────────────────────────────────
+// QuickViewNode and capBadgeClass are imported from graphNodeTypes
+
+function NodeQuickViewPanel({ node, onClose }: { node: QuickViewNode; onClose: () => void }) {
+  const navigate = useNavigate();
+  const [policyRules, setPolicyRules] = useState<string | null>(null);
+  const [loadingExtra, setLoadingExtra] = useState(false);
+
+  useEffect(() => {
+    if (node.nodeType !== 'policy') return;
+    setLoadingExtra(true);
+    api.getPolicy(node.label)
+      .then((p) => setPolicyRules(p.rules))
+      .catch(() => setPolicyRules(null))
+      .finally(() => setLoadingExtra(false));
+  }, [node.id, node.label, node.nodeType]);
+
+  const typeLabel = (t: string) => {
+    const labels: Record<string, string> = {
+      policy: 'Policy', secretPath: 'Secret Path', authMethod: 'Auth Method',
+      role: 'Role', entity: 'Entity', group: 'Group',
+    };
+    return labels[t] ?? t;
+  };
+
+  const headerColor = (t: string) => {
+    const colors: Record<string, string> = {
+      policy: 'bg-emerald-600', secretPath: node.isAuthPath ? 'bg-violet-700' : 'bg-indigo-600',
+      authMethod: 'bg-indigo-600', role: 'bg-amber-500', entity: 'bg-blue-700', group: 'bg-amber-500',
+    };
+    return colors[t] ?? 'bg-gray-700';
+  };
+
+  const navTarget = () => {
+    switch (node.nodeType) {
+      case 'policy': return `/policies/${encodeURIComponent(node.label)}`;
+      case 'authMethod': return `/access/auth-methods/${encodeURIComponent(node.label.replace(/\s*\(.*\)$/, '').trim())}`;
+      case 'entity': return `/access/entities/${node.id.replace(/^entity-/, '')}`;
+      case 'group': return `/access/groups/${node.id.replace(/^group-/, '')}`;
+      default: return null;
+    }
+  };
+
+  const secretsNavTarget = () => {
+    if (node.nodeType !== 'secretPath') return null;
+    const path = node.label
+      .replace(/\/data\//, '/')
+      .replace(/\/\*$/, '')
+      .replace(/\/\+$/, '')
+      .replace(/\/$/, '');
+    return `/secrets/${path}`;
+  };
+
+  return (
+    <div className="pointer-events-auto absolute right-2 top-2 z-20 w-72 rounded-lg border border-gray-200 bg-white shadow-xl">
+      {/* Header */}
+      <div className={`flex items-center justify-between rounded-t-lg px-4 py-2.5 ${headerColor(node.nodeType)}`}>
+        <span className="text-xs font-semibold uppercase tracking-wider text-white">
+          {typeLabel(node.nodeType)}{node.isAuthPath ? ' · Auth Backend' : ''}
+        </span>
+        <button
+          onClick={onClose}
+          className="rounded p-0.5 text-white/70 hover:text-white"
+          aria-label="Close"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Body */}
+      <div className="max-h-96 overflow-y-auto px-4 py-3 space-y-3">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Name / Path</p>
+          <p className="mt-0.5 break-all font-mono text-sm text-gray-800">{node.label}</p>
+        </div>
+
+        {node.isAuthPath && node.authType && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Auth Method Type</p>
+            <span className="mt-0.5 inline-flex items-center gap-1 rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
+              <AuthIcon type={node.authType} />
+              {node.authType}
+            </span>
+          </div>
+        )}
+
+        {Array.isArray(node.capabilities) && node.capabilities.length > 0 && (
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Capabilities</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {(node.capabilities as string[]).map((cap) => (
+                <span key={cap} className={`rounded px-1.5 py-0.5 text-xs font-medium ${capBadgeClass(cap)}`}>
+                  {cap}
+                </span>
+              ))}
+            </div>
+            {/* Read-only check */}
+            {!(node.capabilities as string[]).some((c) => ['create', 'update', 'delete', 'patch'].includes(c)) &&
+              (node.capabilities as string[]).some((c) => ['read', 'list'].includes(c)) && (
+              <p className="mt-1 text-xs text-green-700 font-medium">✓ Read-only access</p>
+            )}
+          </div>
+        )}
+
+        {node.nodeType === 'policy' && (
+          <div>
+            {loadingExtra && <p className="text-xs text-gray-400">Loading rules…</p>}
+            {policyRules && (
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Rules (preview)</p>
+                <pre className="mt-1 max-h-36 overflow-auto rounded bg-gray-50 p-2 text-[10px] text-gray-700 ring-1 ring-gray-200 whitespace-pre-wrap break-all">
+                  {policyRules.slice(0, 600)}{policyRules.length > 600 ? '\n…(truncated)' : ''}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Footer actions */}
+      <div className="border-t border-gray-100 px-4 py-2.5 flex flex-col gap-1.5">
+        {navTarget() && (
+          <button
+            onClick={() => navigate(navTarget()!)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-[#1563ff] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1250d4]"
+          >
+            Open full page
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+          </button>
+        )}
+        {secretsNavTarget() && (
+          <button
+            onClick={() => navigate(secretsNavTarget()!)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+          >
+            Browse secrets
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+        )}
+        <p className="text-center text-[10px] text-gray-400">Ctrl+click any node to quick-view</p>
+      </div>
+    </div>
+  );
+}
+
 // ── Public component ──────────────────────────────────────────────────────────
 interface GraphExplorerProps {
   data: GraphData | null;
   nodeColors: Record<string, string>;
   loading: boolean;
   error: string | null;
+  hideSearch?: boolean;
+  autoExpandRoots?: boolean;
 }
 
 export default function GraphExplorer({
@@ -618,11 +806,14 @@ export default function GraphExplorer({
   nodeColors,
   loading,
   error,
+  hideSearch = false,
+  autoExpandRoots = false,
 }: GraphExplorerProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [fitViewTrigger, setFitViewTrigger] = useState(0);
+  const [quickViewNode, setQuickViewNode] = useState<QuickViewNode | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { childMap, parentMap, rootIds } = useMemo(() => {
@@ -646,10 +837,45 @@ export default function GraphExplorer({
   }, [data]);
 
   useEffect(() => {
-    setExpandedIds(new Set());
+    // Auto-expand all root nodes if requested (e.g., in modal context)
+    if (autoExpandRoots && data) {
+      const cm = new Map<string, string[]>();
+      const pm = new Map<string, string[]>();
+      for (const edge of data.edges) {
+        if (!cm.has(edge.source)) cm.set(edge.source, []);
+        cm.get(edge.source)!.push(edge.target);
+        if (!pm.has(edge.target)) pm.set(edge.target, []);
+        pm.get(edge.target)!.push(edge.source);
+      }
+      // Root nodes = nodes that have no incoming edges (no parents)
+      const roots = data.nodes
+        .filter((n) => !pm.has(n.id) || pm.get(n.id)!.length === 0)
+        .map((n) => n.id);
+      // Expand all nodes up to 3 levels deep from roots
+      const toExpand = new Set<string>(roots);
+      const expandToDepth = (nodeIds: string[], depth: number) => {
+        if (depth === 0) return;
+        const nextLevel: string[] = [];
+        for (const nodeId of nodeIds) {
+          for (const childId of cm.get(nodeId) ?? []) {
+            if (!toExpand.has(childId)) {
+              toExpand.add(childId);
+              nextLevel.push(childId);
+            }
+          }
+        }
+        expandToDepth(nextLevel, depth - 1);
+      };
+      expandToDepth(roots, 3);
+      setExpandedIds(toExpand);
+      // Trigger fitView after nodes become visible
+      setFitViewTrigger((prev) => prev + 1);
+    } else {
+      setExpandedIds(new Set());
+    }
     setFocusNodeId(null);
     setSearch('');
-  }, [data]);
+  }, [data, autoExpandRoots]); 
 
   const toggleExpanded = useCallback(
     (id: string) => {
@@ -672,6 +898,18 @@ export default function GraphExplorer({
     },
     [childMap],
   );
+
+  const handleQuickView = useCallback((node: Node) => {
+    const d = node.data as ExpandableNodeData;
+    setQuickViewNode({
+      id: node.id,
+      label: d.label,
+      nodeType: (d.nodeType as string) || node.type || 'unknown',
+      capabilities: d.capabilities as string[] | undefined,
+      isAuthPath: d.isAuthPath,
+      authType: d.authType as string | undefined,
+    });
+  }, []);
 
   useEffect(() => {
     const term = search.trim().toLowerCase();
@@ -733,39 +971,41 @@ export default function GraphExplorer({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative">
-        <svg
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-          />
-        </svg>
-        <input
-          ref={searchRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search nodes — auto-expands ancestors and centres view"
-          className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-gray-400"
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-lg leading-none text-gray-400 hover:text-gray-600"
-            aria-label="Clear search"
+      {!hideSearch && (
+        <div className="relative">
+          <svg
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
           >
-            ×
-          </button>
-        )}
-      </div>
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
+          </svg>
+          <input
+            ref={searchRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search nodes — auto-expands ancestors and centres view"
+            className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-8 text-sm text-gray-700 shadow-sm focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder:text-gray-400"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-lg leading-none text-gray-400 hover:text-gray-600"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
-      <div className="h-[600px] rounded-md border border-gray-200 bg-white">
+      <div className="relative h-[600px] rounded-md border border-gray-200 bg-white">
         <ReactFlowProvider>
           <GraphCanvas
             data={data}
@@ -774,25 +1014,36 @@ export default function GraphExplorer({
             rootIds={rootIds}
             expandedIds={expandedIds}
             onToggle={toggleExpanded}
+            onQuickView={handleQuickView}
             highlightedIds={highlightedIds}
             fitViewTrigger={fitViewTrigger}
             focusNodeId={focusNodeId}
           />
         </ReactFlowProvider>
+
+        {/* Quick-view panel — overlays the canvas */}
+        {quickViewNode && (
+          <NodeQuickViewPanel
+            node={quickViewNode}
+            onClose={() => setQuickViewNode(null)}
+          />
+        )}
       </div>
 
-      <div className="flex items-center gap-3 text-xs text-gray-400">
-        <span>
-          {rootIds.length} root node{rootIds.length !== 1 ? 's' : ''} · {expandedIds.size} expanded
-          · {data.nodes.length} total
-        </span>
-        {highlightedIds.size > 0 && (
-          <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">
-            {highlightedIds.size} match{highlightedIds.size !== 1 ? 'es' : ''}
+      {!hideSearch && (
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span>
+            {rootIds.length} root node{rootIds.length !== 1 ? 's' : ''} · {expandedIds.size} expanded
+            · {data.nodes.length} total
           </span>
-        )}
-        <span className="ml-auto italic">Click a node with [+] to expand it</span>
-      </div>
+          {highlightedIds.size > 0 && (
+            <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">
+              {highlightedIds.size} match{highlightedIds.size !== 1 ? 'es' : ''}
+            </span>
+          )}
+          <span className="ml-auto italic">Click [+] to expand · Ctrl+click for quick-view</span>
+        </div>
+      )}
     </div>
   );
 }

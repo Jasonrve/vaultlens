@@ -208,8 +208,15 @@ router.get(
 
           for (const pathInfo of paths) {
             const pathId = `path-${policyName}-${pathInfo.path}`;
+            // Detect auth backend paths (e.g. auth/token/..., auth/oidc/...)
+            const isAuthPath = pathInfo.path.startsWith('auth/') || pathInfo.path === 'auth';
+            const authType = isAuthPath
+              ? (pathInfo.path.split('/')[1] ?? 'auth')
+              : undefined;
             nodes.push(createNode(pathId, 'secretPath', pathInfo.path, NODE_SPACING_X, nodes.length * NODE_SPACING_Y, {
               capabilities: pathInfo.capabilities,
+              isAuthPath,
+              authType,
             }));
             edges.push(createEdge(policyId, pathId));
           }
@@ -345,6 +352,73 @@ router.get(
       const token = req.vaultToken!;
       const entityName = req.query['entityName'] as string | undefined;
       const entityId = req.query['entityId'] as string | undefined;
+      const groupId = req.query['groupId'] as string | undefined;
+
+      // ── Group-centric view: group → member entities + policies → secret paths
+      if (groupId) {
+        const nodes: GraphNode[] = [];
+        const edges: GraphEdge[] = [];
+
+        let groupData: Record<string, unknown>;
+        try {
+          const groupResp = await vaultClient.get<{ data: Record<string, unknown> }>(
+            `/identity/group/id/${encodeURIComponent(groupId)}`, token,
+          );
+          groupData = groupResp.data;
+        } catch {
+          return res.status(404).json({ error: `Group '${groupId}' not found` });
+        }
+
+        const groupName = (groupData.name as string) ?? groupId;
+        const gPolicies = (groupData.policies as string[]) ?? [];
+        const memberEntityIds = (groupData.member_entity_ids as string[]) ?? [];
+        const gNodeId = `group-${groupId}`;
+        nodes.push(createNode(gNodeId, 'group', groupName, 0, 0, { groupId, groupName, policies: gPolicies }));
+
+        // Member entities (capped to avoid oversize graphs)
+        let eY = 0;
+        await concurrentMap(memberEntityIds.slice(0, 25), CONCURRENT_LIMIT, async (eId) => {
+          try {
+            const eResp = await vaultClient.get<{ data: Record<string, unknown> }>(
+              `/identity/entity/id/${eId}`, token,
+            );
+            const eName = (eResp.data.name as string) ?? eId;
+            const eNodeId = `entity-${eId}`;
+            nodes.push(createNode(eNodeId, 'entity', eName, 220, eY, { entityId: eId }));
+            edges.push(createEdge(gNodeId, eNodeId));
+            eY += 55;
+          } catch { /* skip inaccessible */ }
+        });
+
+        // Policies → paths
+        let pY = 0;
+        let pathY = 0;
+        for (const policyName of gPolicies) {
+          const pId = `policy-${policyName}`;
+          nodes.push(createNode(pId, 'policy', policyName, 450, pY));
+          edges.push(createEdge(gNodeId, pId));
+          try {
+            const pResp = await vaultClient.get<{ data: { rules?: string; policy?: string } }>(
+              `/sys/policies/acl/${encodeURIComponent(policyName)}`, token,
+            );
+            const rules = pResp.data.rules ?? pResp.data.policy ?? '';
+            const paths = parsePolicyHCL(rules);
+            for (const pathInfo of paths) {
+              const pathId = `path-${policyName}-${pathInfo.path}`;
+              if (!nodes.some((n) => n.id === pathId)) {
+                nodes.push(createNode(pathId, 'secretPath', pathInfo.path, 690, pathY, {
+                  path: pathInfo.path, capabilities: pathInfo.capabilities,
+                }));
+              }
+              edges.push(createEdge(pId, pathId));
+              pathY += 55;
+            }
+          } catch { /* skip */ }
+          pY += 65;
+        }
+
+        return res.json({ nodes, edges });
+      }
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
@@ -534,6 +608,138 @@ router.get(
       return res.json({ nodes, edges });
     } catch (error) {
       return next(error);
+    }
+  }
+);
+
+// Policy → relationships graph (paths, groups that use the policy, auth method roles that use the policy)
+router.get(
+  '/policy-relationships',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const isRefresh = req.query.refresh === 'true';
+      if (!isRefresh) {
+        const cached = getFromGraphCache('policy-relationships');
+        if (cached) { res.json(cached); return; }
+      }
+
+      const token = req.vaultToken!;
+      const nodes: GraphNode[] = [];
+      const edges: GraphEdge[] = [];
+
+      // 1. List all policies
+      const policiesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
+        '/sys/policies/acl', token,
+      );
+      const policyNames = policiesResponse.data.keys;
+
+      policyNames.forEach((policyName, i) => {
+        nodes.push(createNode(`policy-${policyName}`, 'policy', policyName, 0, i * NODE_SPACING_Y));
+      });
+
+      // 2. Collect all groups (for reverse-lookup: which policies does each group use?)
+      interface GroupInfo { id: string; name: string; policies: string[] }
+      const groups: GroupInfo[] = [];
+      try {
+        const groupsResp = await vaultClient.list<{ data: { keys: string[] } }>(
+          '/identity/group/id', token,
+        );
+        await concurrentMap(groupsResp.data.keys, CONCURRENT_LIMIT, async (gId) => {
+          try {
+            const gResp = await vaultClient.get<{ data: { id: string; name: string; policies: string[] } }>(
+              `/identity/group/id/${gId}`, token,
+            );
+            groups.push({ id: gResp.data.id, name: gResp.data.name, policies: gResp.data.policies ?? [] });
+          } catch { /* skip inaccessible group */ }
+        });
+      } catch { /* groups endpoint not accessible */ }
+
+      // 3. Collect all auth method roles (for reverse-lookup: which policies does each role use?)
+      interface RoleInfo { mountPath: string; mountType: string; roleName: string; policies: string[] }
+      const roles: RoleInfo[] = [];
+      try {
+        const authResponse = await vaultClient.get<{
+          data: Record<string, { type: string }>;
+        }>('/sys/auth', token);
+
+        for (const [path, info] of Object.entries(authResponse.data)) {
+          const normalizedPath = path.replace(/\/$/, '');
+          try {
+            const rolesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
+              `/auth/${normalizedPath}/role`, token,
+            );
+            await concurrentMap(rolesResponse.data.keys, CONCURRENT_LIMIT, async (roleName) => {
+              try {
+                const roleDetail = await vaultClient.get<{
+                  data: { token_policies?: string[]; policies?: string[] };
+                }>(`/auth/${normalizedPath}/role/${roleName}`, token);
+                const rPolicies = [...new Set([
+                  ...(roleDetail.data.token_policies ?? []),
+                  ...(roleDetail.data.policies ?? []),
+                ])];
+                roles.push({ mountPath: normalizedPath, mountType: info.type, roleName, policies: rPolicies });
+              } catch { /* skip */ }
+            });
+          } catch { /* no roles for this mount */ }
+        }
+      } catch { /* /sys/auth not accessible */ }
+
+      // 4. For each policy: attach paths + groups + roles
+      await concurrentMap(policyNames, CONCURRENT_LIMIT, async (policyName) => {
+        const policyId = `policy-${policyName}`;
+
+        // Paths from HCL rules
+        try {
+          const policyResponse = await vaultClient.get<{
+            data: { rules?: string; policy?: string };
+          }>(`/sys/policies/acl/${encodeURIComponent(policyName)}`, token);
+          const rules = policyResponse.data.rules ?? policyResponse.data.policy ?? '';
+          const paths = parsePolicyHCL(rules);
+
+          for (const pathInfo of paths) {
+            const pathId = `path-${policyName}-${pathInfo.path}`;
+            const isAuthPath = pathInfo.path.startsWith('auth/') || pathInfo.path === 'auth';
+            const authType = isAuthPath ? (pathInfo.path.split('/')[1] ?? 'auth') : undefined;
+            nodes.push(createNode(pathId, 'secretPath', pathInfo.path, NODE_SPACING_X, nodes.length * NODE_SPACING_Y, {
+              capabilities: pathInfo.capabilities, isAuthPath, authType,
+            }));
+            edges.push(createEdge(policyId, pathId));
+          }
+        } catch { /* skip */ }
+
+        // Groups that include this policy
+        for (const g of groups) {
+          if ((g.policies ?? []).includes(policyName)) {
+            const gNodeId = `grprel-${policyName}-${g.id}`;
+            nodes.push(createNode(gNodeId, 'group', g.name, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y, {
+              groupId: g.id,
+            }));
+            edges.push(createEdge(policyId, gNodeId));
+          }
+        }
+
+        // Auth method roles that include this policy
+        const addedAuthNodes = new Set<string>();
+        for (const r of roles) {
+          if ((r.policies ?? []).includes(policyName)) {
+            const roleNodeId = `rolerel-${policyName}-${r.mountPath}-${r.roleName}`;
+            const amNodeId = `amrel-${policyName}-${r.mountPath}`;
+            nodes.push(createNode(roleNodeId, 'role', r.roleName, NODE_SPACING_X * 3, nodes.length * NODE_SPACING_Y));
+            if (!addedAuthNodes.has(amNodeId)) {
+              nodes.push(createNode(amNodeId, 'authMethod', `${r.mountType} (${r.mountPath})`, NODE_SPACING_X * 4, nodes.length * NODE_SPACING_Y, {
+                authType: r.mountType,
+              }));
+              addedAuthNodes.add(amNodeId);
+            }
+            edges.push(createEdge(policyId, roleNodeId));
+            edges.push(createEdge(roleNodeId, amNodeId));
+          }
+        }
+      });
+
+      res.json(setInGraphCache('policy-relationships', nodes, edges));
+    } catch (error) {
+      next(error);
     }
   }
 );

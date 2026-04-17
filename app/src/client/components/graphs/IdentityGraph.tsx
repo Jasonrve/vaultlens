@@ -6,7 +6,7 @@ import GraphTableView from './GraphTableView';
 import GraphExplorer from './GraphExplorer';
 
 const nodeColors: Record<string, string> = {
-  entity: '#6366f1',
+  entity: '#60A5FA',
   group: '#f59e0b',
   policy: '#10b981',
 };

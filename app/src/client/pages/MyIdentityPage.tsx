@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -453,6 +453,7 @@ function EntitySearchBox({
 
 export default function MyIdentityPage() {
   const { tokenInfo } = useAuthStore();
+  const [searchParams] = useSearchParams();
   const [graphData, setGraphData] = useState<GraphData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -473,10 +474,17 @@ export default function MyIdentityPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Load current user on mount
+  // Load current user on mount, or specific entity if URL param is set
   useEffect(() => {
-    loadGraph(undefined);
-  }, [loadGraph]);
+    const entityId = searchParams.get('entityId');
+    if (entityId) {
+      setActiveLabel(entityId);
+      loadGraph({ entityId });
+    } else {
+      loadGraph(undefined);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSuggestionSelect = (suggestion: EntitySuggestion) => {
     setActiveLabel(suggestion.aliasName);

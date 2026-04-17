@@ -7,6 +7,7 @@ import AuthMethodConfig from './AuthMethodConfig';
 import AuthMethodTune from './AuthMethodTune';
 import RoleList from './RoleList';
 import { AuthMethodMeta } from './AuthMethodMeta';
+import RelationshipGraphModal from '../common/RelationshipGraphModal';
 
 type Tab = 'Configuration' | 'Method Options' | 'Roles';
 const TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
@@ -16,6 +17,7 @@ export default function AuthMethodDetail() {
   const [activeTab, setActiveTab] = useState<Tab>('Roles');
   const [methodInfo, setMethodInfo] = useState<AuthMethod | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showGraph, setShowGraph] = useState(false);
 
   // Resolve the method type from the auth methods list
   useEffect(() => {
@@ -33,6 +35,14 @@ export default function AuthMethodDetail() {
 
   return (
     <div>
+      {showGraph && (
+        <RelationshipGraphModal
+          entityType="authMethod"
+          entityId={method}
+          entityLabel={method}
+          onClose={() => setShowGraph(false)}
+        />
+      )}
       {/* Breadcrumb + header */}
       <div className="mb-1 flex items-center gap-1.5 text-sm text-gray-500">
         <Link to="/access/auth-methods" className="hover:text-[#1563ff]">Auth Methods</Link>
@@ -40,7 +50,7 @@ export default function AuthMethodDetail() {
         <span className="text-gray-700 font-medium">{method}</span>
       </div>
 
-      <div className="mb-5">
+      <div className="mb-5 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-semibold text-gray-900">{method}</h1>
           {loading
@@ -52,10 +62,25 @@ export default function AuthMethodDetail() {
             )
           }
         </div>
-        {methodInfo?.description && (
-          <AuthMethodMeta description={methodInfo.description} />
-        )}
+        <button
+          onClick={() => setShowGraph(true)}
+          title="View relationship graph"
+          className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+            <circle cx="6" cy="12" r="2" />
+            <circle cx="18" cy="6" r="2" />
+            <circle cx="18" cy="18" r="2" />
+            <path strokeLinecap="round" d="M8 11.2l8-4" />
+            <path strokeLinecap="round" d="M8 12.8l8 4" />
+          </svg>
+          Relationships
+        </button>
       </div>
+
+      {methodInfo?.description && (
+        <AuthMethodMeta description={methodInfo.description} />
+      )}
 
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200">

@@ -171,17 +171,21 @@ router.get(
         return res.json({ entities: [] });
       }
 
-      const entities: { id: string; name: string }[] = [];
+      const entities: { id: string; name: string; groupCount: number; policyCount: number }[] = [];
       await Promise.all(
         entityIds.map(async (id) => {
           try {
-            const resp = await vaultClient.get<{ data: { id: string; name: string } }>(
-              `/identity/entity/id/${id}`,
-              token
-            );
-            entities.push({ id: resp.data.id, name: resp.data.name || '' });
+            const resp = await vaultClient.get<{
+              data: { id: string; name: string; group_ids?: string[]; policies?: string[] };
+            }>(`/identity/entity/id/${id}`, token);
+            entities.push({
+              id: resp.data.id,
+              name: resp.data.name || '',
+              groupCount: resp.data.group_ids?.length || 0,
+              policyCount: resp.data.policies?.length || 0,
+            });
           } catch {
-            entities.push({ id, name: '' });
+            entities.push({ id, name: '', groupCount: 0, policyCount: 0 });
           }
         })
       );
@@ -211,17 +215,21 @@ router.get(
         return res.json({ groups: [] });
       }
 
-      const groups: { id: string; name: string }[] = [];
+      const groups: { id: string; name: string; memberCount: number; policyCount: number }[] = [];
       await Promise.all(
         groupIds.map(async (id) => {
           try {
-            const resp = await vaultClient.get<{ data: { id: string; name: string } }>(
-              `/identity/group/id/${id}`,
-              token
-            );
-            groups.push({ id: resp.data.id, name: resp.data.name || '' });
+            const resp = await vaultClient.get<{
+              data: { id: string; name: string; member_entity_ids?: string[]; policies?: string[] };
+            }>(`/identity/group/id/${id}`, token);
+            groups.push({
+              id: resp.data.id,
+              name: resp.data.name || '',
+              memberCount: resp.data.member_entity_ids?.length || 0,
+              policyCount: resp.data.policies?.length || 0,
+            });
           } catch {
-            groups.push({ id, name: '' });
+            groups.push({ id, name: '', memberCount: 0, policyCount: 0 });
           }
         })
       );
