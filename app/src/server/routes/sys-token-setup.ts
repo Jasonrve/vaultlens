@@ -12,6 +12,7 @@ const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify)
 
 const APPROLE_ROLE_NAME = 'vaultlens-system-token';
 const APPROLE_POLICY_NAME = 'vaultlens-system-token';
+const ADMIN_POLICY_NAME = 'vaultlens-admin';
 const CREDS_SECTION = 'sys_token_approle';
 
 // The minimal policy for the system token
@@ -69,6 +70,96 @@ path "sys/auth/*" {
 
 path "auth/token/lookup-self" {
   capabilities = ["read"]
+}
+`.trim();
+
+// VaultLens admin policy — grants full access to VaultLens features
+const ADMIN_POLICY_HCL = `
+# VaultLens Admin Policy
+# Grants admin-level access to VaultLens features (backup, restore, hooks, branding, audit devices, etc.)
+
+# Allow full access to all KV secret engines
+path "kv/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+# Allow managing secret engines
+path "sys/mounts/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "sys/mounts" {
+  capabilities = ["read", "list"]
+}
+
+# Allow managing auth methods
+path "sys/auth/*" {
+  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+}
+
+path "sys/auth" {
+  capabilities = ["read", "list"]
+}
+
+# Allow managing policies
+path "sys/policies/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "sys/policies" {
+  capabilities = ["read", "list"]
+}
+
+path "sys/policy/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "sys/policy" {
+  capabilities = ["read", "list"]
+}
+
+# Allow reading audit devices
+path "sys/audit" {
+  capabilities = ["read", "list", "sudo"]
+}
+
+path "sys/audit/*" {
+  capabilities = ["read", "list", "sudo"]
+}
+
+# Allow managing identity
+path "identity/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+# Allow reading system health and status
+path "sys/health" {
+  capabilities = ["read"]
+}
+
+path "sys/seal-status" {
+  capabilities = ["read"]
+}
+
+path "sys/leader" {
+  capabilities = ["read"]
+}
+
+path "sys/host-info" {
+  capabilities = ["read"]
+}
+
+path "sys/metrics" {
+  capabilities = ["read"]
+}
+
+path "sys/internal/counters/*" {
+  capabilities = ["read"]
+}
+
+# Allow capabilities checking
+path "sys/capabilities-self" {
+  capabilities = ["create", "update"]
 }
 `.trim();
 
@@ -260,14 +351,21 @@ router.post(
         );
       }
 
-      // 2. Create the policy
+      // 2. Create the system token policy
       await vaultClient.put(
         `/sys/policies/acl/${APPROLE_POLICY_NAME}`,
         req.vaultToken!,
         { policy: SYSTEM_TOKEN_POLICY_HCL }
       );
 
-      // 3. Create the AppRole role
+      // 2.5. Create the vaultlens-admin policy for admin users
+      await vaultClient.put(
+        `/sys/policies/acl/${ADMIN_POLICY_NAME}`,
+        req.vaultToken!,
+        { policy: ADMIN_POLICY_HCL }
+      );
+
+      // 4. Create the AppRole role
       await vaultClient.post(
         `/auth/approle/role/${APPROLE_ROLE_NAME}`,
         req.vaultToken!,
@@ -280,14 +378,14 @@ router.post(
         }
       );
 
-      // 4. Read the role-id
+      // 5. Read the role-id
       const roleIdResponse = await vaultClient.get<{ data: { role_id: string } }>(
         `/auth/approle/role/${APPROLE_ROLE_NAME}/role-id`,
         req.vaultToken!
       );
       const roleId = roleIdResponse.data.role_id;
 
-      // 5. Generate and store a persistent secret-id for long-term use
+      // 6. Generate and store a persistent secret-id for long-term use
       // This secret-id will be used by background services indefinitely
       // after the setup wizard completes.
       const secretIdResponse = await vaultClient.post<{ data: { secret_id: string } }>(
@@ -297,13 +395,13 @@ router.post(
       );
       const secretId = secretIdResponse.data.secret_id;
 
-      // 6. Encrypt both role-id and secret-id before storing
+      // 7. Encrypt both role-id and secret-id before storing
       // The encryption key is derived from VAULT_ADDR, so all containers
       // pointing to the same Vault instance can decrypt these credentials.
       const encryptedRoleId = encryptConfigValue(roleId);
       const encryptedSecretId = encryptConfigValue(secretId);
 
-      // 7. Bootstrap the system token cache BEFORE the config storage write.
+      // 8. Bootstrap the system token cache BEFORE the config storage write.
       //    When VAULTLENS_CONFIG_STORAGE=vault, writing to config storage requires
       //    a working system token (chicken-and-egg).  Performing an AppRole login
       //    now populates the cache so that getSystemToken() returns a valid token
@@ -322,7 +420,7 @@ router.post(
         // which is the correct behaviour (setup cannot complete without a working token).
       }
 
-      // 8. Store encrypted credentials in config storage
+      // 9. Store encrypted credentials in config storage
       // After this, the system token can authenticate without needing a bootstrap token.
       await getConfigStorage().set(CREDS_SECTION, {
         role_id: encryptedRoleId,

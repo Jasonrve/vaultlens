@@ -11,6 +11,7 @@ interface AuthState {
   loginWithToken: (token: string, tokenInfo: Partial<VaultTokenInfo>) => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  refreshTokenInfo: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -58,6 +59,18 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ tokenInfo: null, isAuthenticated: false });
       return;
     }
+    try {
+      const result = await api.getMe();
+      set({
+        tokenInfo: result.tokenInfo,
+        isAuthenticated: true,
+      });
+    } catch {
+      set({ tokenInfo: null, isAuthenticated: false });
+    }
+  },
+
+  refreshTokenInfo: async () => {
     try {
       const result = await api.getMe();
       set({

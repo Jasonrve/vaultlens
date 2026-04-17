@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useBrandingStore } from '../../stores/brandingStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -190,7 +190,14 @@ export default function Sidebar() {
   const isTools = location.pathname.startsWith('/tools');
   const isAdmin = location.pathname.startsWith('/admin');
   const { branding } = useBrandingStore();
-  const { tokenInfo } = useAuthStore();
+  const { tokenInfo, refreshTokenInfo } = useAuthStore();
+
+  // Refresh token info on mount always to ensure latest policies are reflected
+  // (policies may have changed since login, e.g. vaultlens-admin was assigned)
+  useEffect(() => {
+    void refreshTokenInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check if user has admin privileges (root or vaultlens-admin policy)
   const policies = tokenInfo?.policies ?? [];
@@ -250,7 +257,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-white/[0.07] px-4 py-3">
-        <span className="text-[11px] text-[#3d4554]">VaultLens v0.1</span>
+        <span className="text-[11px] text-[#3d4554]">VaultLens v{__APP_VERSION__}</span>
       </div>
     </aside>
   );

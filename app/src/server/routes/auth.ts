@@ -51,9 +51,9 @@ router.get(
         data: Record<string, { type: string; config?: Record<string, unknown> }>;
       }>('/sys/auth', token);
 
-      // Only expose OIDC/JWT methods — no need to enumerate all internal methods
+      // Only expose OIDC methods — JWT is a different auth type that doesn't support OIDC login flow
       const methods = Object.entries(response.data)
-        .filter(([, info]) => info.type === 'oidc' || info.type === 'jwt')
+        .filter(([, info]) => info.type === 'oidc')
         .map(([path, info]) => ({
           path: path.replace(/\/$/, ''),
           type: info.type,
