@@ -17,6 +17,8 @@ export const config = {
   rateLimitMax: parseInt(process.env['RATE_LIMIT_MAX'] || '500', 10),
   rateLimitWindowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || String(15 * 60 * 1000), 10),
   sharingRateLimitMax: parseInt(process.env['SHARING_RATE_LIMIT_MAX'] || '20', 10),
+  // Rate limit for the public /api/auth/methods endpoint (per minute)
+  authMethodsRateLimitMax: parseInt(process.env['AUTH_METHODS_RATE_LIMIT_MAX'] || '30', 10),
   // Audit log
   auditLogPath: process.env['VAULT_AUDIT_LOG_PATH'] || '',
   // Configuration storage: 'file' (default) or 'vault'

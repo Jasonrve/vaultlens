@@ -52,6 +52,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   checkAuth: async () => {
+    // Skip the round-trip if there's no session cookie — avoids a noisy 401 in the console
+    const hasCookie = document.cookie.includes('vault_token=');
+    if (!hasCookie) {
+      set({ tokenInfo: null, isAuthenticated: false });
+      return;
+    }
     try {
       const result = await api.getMe();
       set({

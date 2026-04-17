@@ -58,6 +58,15 @@ path "sys/mounts/*" {
   capabilities = ["read"]
 }
 
+# Required to discover available auth methods (OIDC, JWT) for login page auto-detection
+path "sys/auth" {
+  capabilities = ["read", "list"]
+}
+
+path "sys/auth/*" {
+  capabilities = ["read"]
+}
+
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }

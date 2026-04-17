@@ -37,27 +37,20 @@ export default function LoginPage() {
     };
   }, []);
 
-  // On mount, check if OIDC is available and get default role
+  // On mount, check if OIDC is available and get default role.
+  // Uses the public /auth/methods endpoint backed by the BFF system token.
+  // Returns empty if system token not yet configured (first-time setup = token-only).
   useEffect(() => {
     async function initializeAuth() {
-      try {
-        const methods = await api.getAuthMethods();
-        const oidcMethod = methods.find((m) => m.type === 'oidc');
-        
-        if (oidcMethod) {
-          setOidcAvailable(true);
-          setMethod('oidc');
-          setMountPath(oidcMethod.path.replace(/\/$/, ''));
-          
-          // Try to get the default role from OIDC config
-          const defaultRole = (oidcMethod.config?.default_role as string) || '';
-          setDefaultOidcRole(defaultRole);
-        }
-      } catch {
-        // If we can't get auth methods, just use defaults
+      const methods = await api.getLoginAuthMethods();
+      const oidcMethod = methods.find((m) => m.type === 'oidc' || m.type === 'jwt');
+      if (oidcMethod) {
+        setOidcAvailable(true);
+        setMethod('oidc');
+        setMountPath(oidcMethod.path);
+        setDefaultOidcRole(oidcMethod.defaultRole);
       }
     }
-    
     void initializeAuth();
   }, []);
 
@@ -211,17 +204,6 @@ export default function LoginPage() {
               Method
             </label>
             <div className="flex rounded-md border border-gray-200 bg-gray-50 p-1">
-              <button
-                type="button"
-                onClick={() => { setMethod('token'); setOidcError(''); }}
-                className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                  method === 'token'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                Token
-              </button>
               {oidcAvailable && (
                 <button
                   type="button"
@@ -235,6 +217,17 @@ export default function LoginPage() {
                   OIDC
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => { setMethod('token'); setOidcError(''); }}
+                className={`flex-1 rounded px-3 py-1.5 text-sm font-medium transition-colors ${
+                  method === 'token'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Token
+              </button>
             </div>
           </div>
 
@@ -279,23 +272,11 @@ export default function LoginPage() {
           {/* ── OIDC form ── */}
           {method === 'oidc' && oidcAvailable && (
             <div>
-              <div className="mb-4">
-                <label
-                  htmlFor="mountPath"
-                  className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500"
-                >
-                  Mount Path
-                </label>
-                <input
-                  id="mountPath"
-                  type="text"
-                  value={mountPath}
-                  onChange={(e) => setMountPath(e.target.value)}
-                  placeholder="oidc"
-                  autoComplete="off"
-                  className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-[#1563ff] focus:outline-none focus:ring-1 focus:ring-[#1563ff]"
-                />
-              </div>
+              {/* Mount Path is kept as a hidden value — not displayed to user */}
+              <input
+                type="hidden"
+                value={mountPath}
+              />
 
               <div className="mb-5">
                 <label

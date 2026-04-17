@@ -1,11 +1,72 @@
 import { Router, Response, NextFunction } from 'express';
+import rateLimit from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getSystemToken } from '../lib/systemToken.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+// ── Public: available auth method types (for login page) ─────────────────────
+// Uses the system token so Vault's /sys/auth can be queried without a user session.
+// Results are cached to avoid hitting Vault on every login page load.
+// Only available after system token is configured (first-time setup returns token-only).
+
+const authMethodsRateLimit = rateLimit({
+  windowMs: 60_000, // 1 minute
+  max: config.authMethodsRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+
+interface CachedAuthMethods {
+  methods: { path: string; type: string; defaultRole: string }[];
+  cachedAt: number;
+}
+let authMethodsCache: CachedAuthMethods | null = null;
+const AUTH_METHODS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+router.get(
+  '/methods',
+  authMethodsRateLimit,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      // Serve from cache if still fresh
+      if (authMethodsCache && Date.now() - authMethodsCache.cachedAt < AUTH_METHODS_CACHE_TTL_MS) {
+        res.json({ methods: authMethodsCache.methods });
+        return;
+      }
+
+      const token = await getSystemToken();
+      if (!token) {
+        // No system token available — return empty list for token-only login mode
+        res.json({ methods: [] });
+        return;
+      }
+
+      const response = await vaultClient.get<{
+        data: Record<string, { type: string; config?: Record<string, unknown> }>;
+      }>('/sys/auth', token);
+
+      // Only expose OIDC/JWT methods — no need to enumerate all internal methods
+      const methods = Object.entries(response.data)
+        .filter(([, info]) => info.type === 'oidc' || info.type === 'jwt')
+        .map(([path, info]) => ({
+          path: path.replace(/\/$/, ''),
+          type: info.type,
+          defaultRole: (info.config?.['default_role'] as string) || '',
+        }));
+
+      authMethodsCache = { methods, cachedAt: Date.now() };
+      res.json({ methods });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.post(
   '/login',

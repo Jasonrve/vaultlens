@@ -28,19 +28,23 @@ const APPROLE_BACKOFF_MAX_MS = 3_600_000; // 1 hour
 async function authenticateAppRole(): Promise<string | null> {
   // Respect backoff window to avoid log spam when credentials are wrong/missing.
   if (appRoleBackoffMs > 0 && Date.now() - appRoleLastFailTime < appRoleBackoffMs) {
+    console.debug(`[AppRole Auth] In backoff window (${appRoleBackoffMs}ms remaining)`);
     return null;
   }
   try {
     const storage = getConfigStorage();
     const creds = await storage.get(CREDS_SECTION);
-    if (!creds || !creds['role_id'] || !creds['secret_id']) return null;
+    if (!creds || !creds['role_id'] || !creds['secret_id']) {
+      console.debug('[AppRole Auth] No AppRole credentials found in config storage');
+      return null;
+    }
 
     // Decrypt the stored credentials
     const roleId = tryDecryptConfigValue(creds['role_id']);
     const secretId = tryDecryptConfigValue(creds['secret_id']);
 
     if (!roleId || !secretId) {
-      console.error('[AppRole Auth] Failed to decrypt stored credentials');
+      console.error('[AppRole Auth] Failed to decrypt stored credentials — the encryption key may be wrong or credentials are corrupted');
       appRoleLastFailTime = Date.now();
       appRoleBackoffMs = appRoleBackoffMs
         ? Math.min(appRoleBackoffMs * 2, APPROLE_BACKOFF_MAX_MS)
@@ -178,14 +182,19 @@ export function isSystemTokenConfigured(): boolean {
   try {
     const fs = require('fs') as typeof import('fs');
     const path = require('path') as typeof import('path');
-    const configPath = (config as Record<string, unknown>)['configStoragePath'] as string || './data';
+    // Use the same default path as FileConfigStorage
+    const configPath = config.configStoragePath || './data';
     const iniPath = path.resolve(configPath, 'config.ini');
     if (fs.existsSync(iniPath)) {
       const contents = fs.readFileSync(iniPath, 'utf-8');
-      if (contents.includes('[sys_token_approle]') && contents.includes('role_id=')) return true;
+      // Check for AppRole credentials — may be encrypted (v1:...) or plaintext
+      if (contents.includes('[sys_token_approle]') && contents.includes('role_id=')) {
+        return true;
+      }
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    // If there's an error reading the file, log it for debugging
+    console.debug('[systemToken] isSystemTokenConfigured() sync check failed:', e instanceof Error ? e.message : e);
   }
   return false;
 }

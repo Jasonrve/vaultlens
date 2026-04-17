@@ -95,31 +95,37 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
-          {{- $hasConfigVol := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
-          {{- if or $hasBackupVol $hasConfigVol }}
+          {{- $fileBackend := eq (.Values.configStorage.backend | default "file") "file" }}
+          {{- $hasConfigPVC := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
+          {{- if or $hasBackupVol (and $fileBackend) }}
           volumeMounts:
             {{- if $hasBackupVol }}
             - name: backups
               mountPath: {{ .Values.backup.path | default "/backups" | quote }}
             {{- end }}
-            {{- if $hasConfigVol }}
+            {{- if $fileBackend }}
             - name: config-storage
               mountPath: {{ .Values.configStorage.path | default "/config" | quote }}
             {{- end }}
           {{- end }}
       {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
-      {{- $hasConfigVol := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
-      {{- if or $hasBackupVol $hasConfigVol }}
+      {{- $fileBackend := eq (.Values.configStorage.backend | default "file") "file" }}
+      {{- $hasConfigPVC := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
+      {{- if or $hasBackupVol $fileBackend }}
       volumes:
         {{- if $hasBackupVol }}
         - name: backups
           persistentVolumeClaim:
             claimName: {{ .Values.backup.persistence.existingClaim | default (printf "%s-backups" (include "vaultlens.fullname" .)) }}
         {{- end }}
-        {{- if $hasConfigVol }}
+        {{- if $fileBackend }}
         - name: config-storage
+          {{- if $hasConfigPVC }}
           persistentVolumeClaim:
             claimName: {{ .Values.configStorage.persistence.existingClaim | default (printf "%s-config" (include "vaultlens.fullname" .)) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
