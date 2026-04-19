@@ -9,6 +9,8 @@ import morgan from 'morgan';
 import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { metricsMiddleware } from './middleware/metricsMiddleware.js';
+import { register } from './lib/metrics.js';
 import authRoutes from './routes/auth.js';
 import secretsRoutes from './routes/secrets.js';
 import policiesRoutes from './routes/policies.js';
@@ -128,6 +130,20 @@ app.use('/api', (_req, res, next) => {
 
 // HTTP parameter pollution protection
 app.use(hpp());
+
+// Prometheus metrics middleware — must be after body parsing, before routes
+app.use(metricsMiddleware);
+
+// Prometheus metrics endpoint — public, no auth, no CSRF
+// Serves in Prometheus text exposition format (text/plain; version=0.0.4)
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (err) {
+    res.status(500).end(err instanceof Error ? err.message : 'metrics error');
+  }
+});
 
 // Health check
 app.get('/api/health', (_req, res) => {

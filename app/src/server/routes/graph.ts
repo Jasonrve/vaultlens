@@ -117,6 +117,14 @@ router.get(
         const methodId = `auth-${normalizedPath}`;
         nodes.push(createNode(methodId, 'authMethod', `${info.type} (${path})`, 0, methodY, { authType: info.type }));
 
+        // Auth types that don't support standard /role list — skip silently.
+        // token: no roles; ldap/userpass/github/radius/cert: use groups/users/certs, not roles.
+        const NO_ROLE_TYPES = new Set(['token', 'ldap', 'userpass', 'github', 'radius', 'okta']);
+        if (NO_ROLE_TYPES.has(info.type)) {
+          methodY += NODE_SPACING_Y * 2;
+          continue;
+        }
+
         try {
           const rolesResponse = await vaultClient.list<{ data: { keys: string[] } }>(
             `/auth/${normalizedPath}/role`, token,
@@ -158,7 +166,15 @@ router.get(
             }
           });
         } catch (e) {
-          console.warn(`[graph] listing roles for '${path}' failed:`, e instanceof Error ? e.message : e);
+          // 404 = no roles configured; unsupported path = this auth type doesn't support /role
+          // Both are expected — log at debug level only, not as warnings.
+          const msg = e instanceof Error ? e.message : String(e);
+          const isExpected = e instanceof VaultError
+            ? (e.statusCode === 404 || msg.includes('unsupported path'))
+            : msg.includes('404') || msg.includes('unsupported path');
+          if (!isExpected) {
+            console.warn(`[graph] listing roles for '${path}' failed:`, msg);
+          }
           methodY += NODE_SPACING_Y * 2;
         }
       }

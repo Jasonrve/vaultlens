@@ -3,7 +3,8 @@ import rateLimit from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getSystemToken } from '../lib/systemToken.js';
+import { getSystemToken, clearSystemTokenCache } from '../lib/systemToken.js';
+import { authLoginsTotal, activeSessions } from '../lib/metrics.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
 const router = Router();
@@ -63,7 +64,15 @@ router.get(
       authMethodsCache = { methods, cachedAt: Date.now() };
       res.json({ methods });
     } catch (error) {
-      next(error);
+      // Always return an empty list on any failure — this is a public convenience
+      // endpoint used by the login page. Errors (e.g. invalid/stale system token,
+      // permission denied) must not block the login page or reveal internals.
+      // The user will fall back to token-only login and can configure the system
+      // token via /setup.
+      // Clear stale cached token so the next request re-authenticates
+      clearSystemTokenCache();
+      console.warn('[auth/methods] Failed to fetch auth methods (returning empty list):', error instanceof Error ? error.message : error);
+      res.json({ methods: [] });
     }
   }
 );
@@ -99,13 +108,17 @@ router.post(
         tokenInfo: {
           display_name: tokenInfo.display_name,
           policies: tokenInfo.policies,
+          identity_policies: tokenInfo.identity_policies ?? [],
           ttl: tokenInfo.ttl,
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
         },
       });
+      authLoginsTotal.inc({ method: 'token', result: 'success' });
+      activeSessions.inc();
     } catch (error) {
+      authLoginsTotal.inc({ method: 'token', result: 'failure' });
       next(error);
     }
   }
@@ -240,13 +253,17 @@ router.post(
         tokenInfo: {
           display_name: tokenInfo.display_name,
           policies: tokenInfo.policies,
+          identity_policies: tokenInfo.identity_policies ?? [],
           ttl: tokenInfo.ttl,
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
         },
       });
+      authLoginsTotal.inc({ method: 'oidc', result: 'success' });
+      activeSessions.inc();
     } catch (error) {
+      authLoginsTotal.inc({ method: 'oidc', result: 'failure' });
       next(error);
     }
   }
@@ -259,7 +276,7 @@ router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
     sameSite: 'lax',
     path: '/',
   });
-
+  activeSessions.dec();
   res.json({ success: true });
 });
 
@@ -276,6 +293,7 @@ router.get(
       tokenInfo: {
         display_name: req.tokenInfo.display_name,
         policies: req.tokenInfo.policies,
+        identity_policies: req.tokenInfo.identity_policies ?? [],
         ttl: req.tokenInfo.ttl,
         expire_time: req.tokenInfo.expire_time,
         entity_id: req.tokenInfo.entity_id,

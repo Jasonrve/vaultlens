@@ -8,6 +8,7 @@ import { config } from '../config/index.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { webhookFiresTotal, webhookDeliveryDurationSeconds } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -374,6 +375,7 @@ router.post(
 
       try {
         const cleanEndpoint = sanitizeEndpointUrl(endpoint);
+        const testStart = process.hrtime.bigint();
         const response = await axios.post(cleanEndpoint, payload, {
           timeout: 10000,
           headers: {
@@ -383,11 +385,14 @@ router.post(
           // Accept all HTTP status codes so we can report the actual status
           validateStatus: () => true,
         });
+        const testDuration = Number(process.hrtime.bigint() - testStart) / 1e9;
         if (response.status >= 200 && response.status < 300) {
+          webhookDeliveryDurationSeconds.observe({ result: 'success' }, testDuration);
           // Always return HTTP 200 from our server — put success/failure info
           // in the JSON body so the client's Axios interceptor never throws.
           res.json({ success: true, statusCode: response.status });
         } else {
+          webhookDeliveryDurationSeconds.observe({ result: 'failure' }, testDuration);
           res.json({
             success: false,
             statusCode: response.status,
@@ -591,6 +596,7 @@ async function fireWebhook(hookId: string, hookData: Record<string, string>, aud
     timestamp: auditEntry.time || new Date().toISOString(),
   };
 
+  const fireStart = process.hrtime.bigint();
   try {
     const cleanEndpoint = sanitizeEndpointUrl(hookData['endpoint']!);
     await axios.post(cleanEndpoint, payload, {
@@ -600,6 +606,7 @@ async function fireWebhook(hookId: string, hookData: Record<string, string>, aud
         'User-Agent': 'VaultLens-Webhook/1.0',
       },
     });
+    const fireDuration = Number(process.hrtime.bigint() - fireStart) / 1e9;
 
     // Update trigger stats
     const storage = getConfigStorage();
@@ -608,8 +615,13 @@ async function fireWebhook(hookId: string, hookData: Record<string, string>, aud
     await storage.set(`${HOOKS_SECTION_PREFIX}${hookId}`, hookData);
 
     console.log(`[Hooks] Fired webhook "${hookData['name']}" for path: ${auditEntry.request?.path}`);
+    webhookFiresTotal.inc({ result: 'success' });
+    webhookDeliveryDurationSeconds.observe({ result: 'success' }, fireDuration);
   } catch (err) {
+    const fireDuration = Number(process.hrtime.bigint() - fireStart) / 1e9;
     console.error(`[Hooks] Failed to fire webhook "${hookData['name']}":`, err instanceof Error ? err.message : err);
+    webhookFiresTotal.inc({ result: 'failure' });
+    webhookDeliveryDurationSeconds.observe({ result: 'failure' }, fireDuration);
   }
 }
 

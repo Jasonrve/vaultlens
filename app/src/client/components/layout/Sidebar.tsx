@@ -200,7 +200,8 @@ export default function Sidebar() {
   }, []);
 
   // Check if user has admin privileges (root or vaultlens-admin policy)
-  const policies = tokenInfo?.policies ?? [];
+  // Include identity_policies — policies granted via Vault identity entities/groups
+  const policies = [...(tokenInfo?.policies ?? []), ...(tokenInfo?.identity_policies ?? [])];
   const isAdminUser = policies.includes('root') || policies.includes('vaultlens-admin');
 
   return (

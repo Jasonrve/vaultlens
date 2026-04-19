@@ -5,6 +5,7 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { getSystemToken, isSystemTokenConfigured } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { rotationRunsTotal, rotationSecretsRotated } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -423,13 +424,16 @@ async function runRotationCheck(): Promise<void> {
           });
 
           console.log(`[Rotation] Rotated secrets at ${mount}/${secretPath}`);
+          rotationSecretsRotated.inc();
         } catch (err) {
           console.error(`[Rotation] Error rotating ${mount}/${secretPath}:`, err instanceof Error ? err.message : err);
         }
       }
     }
+    rotationRunsTotal.inc({ result: 'success' });
   } catch (err) {
     console.error('[Rotation] Scheduler error:', err instanceof Error ? err.message : err);
+    rotationRunsTotal.inc({ result: 'failure' });
   }
 
   lastSchedulerCheck = new Date().toISOString();

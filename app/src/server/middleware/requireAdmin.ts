@@ -10,7 +10,7 @@ export function requireAdmin(
   res: Response,
   next: NextFunction,
 ): void {
-  const policies = req.tokenInfo?.policies ?? [];
+  const policies = [...(req.tokenInfo?.policies ?? []), ...(req.tokenInfo?.identity_policies ?? [])];
   const isAdmin = policies.includes('root') || policies.includes('vaultlens-admin');
 
   if (!isAdmin) {

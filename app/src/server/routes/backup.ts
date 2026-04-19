@@ -6,6 +6,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { backupsTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -84,8 +85,10 @@ router.post(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const { filename, size, createdAt } = await takeSnapshot(req.vaultToken!);
+      backupsTotal.inc({ result: 'success' });
       res.json({ success: true, filename, size, createdAt });
     } catch (error) {
+      backupsTotal.inc({ result: 'failure' });
       next(error);
     }
   }
