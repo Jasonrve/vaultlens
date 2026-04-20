@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { VaultClient } from '../lib/vaultClient.js';
 import { getSystemToken, isSystemTokenConfigured } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { sharedSecretsCreatedTotal, sharedSecretsRetrievedTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 import { config } from '../config/index.js';
 
@@ -138,6 +139,7 @@ router.post(
         id: secretId,
         expiresAt: expiresAt.toISOString(),
       });
+      sharedSecretsCreatedTotal.inc();
     } catch (error) {
       next(error);
     }
@@ -222,6 +224,7 @@ router.get(
         expiresAt: stored.expiresAt,
         oneTime: stored.oneTime,
       });
+      sharedSecretsRetrievedTotal.inc();
     } catch (error) {
       next(error);
     }

@@ -68,6 +68,11 @@ path "sys/auth/*" {
   capabilities = ["read"]
 }
 
+# Required to read OIDC/JWT mount config (e.g. default_role) for login page auto-population
+path "auth/+/config" {
+  capabilities = ["read"]
+}
+
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }

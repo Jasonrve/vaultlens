@@ -3,12 +3,14 @@ import { useParams, useSearchParams } from 'react-router-dom';
 
 /**
  * Rendered inside the OIDC popup window after the provider redirects back.
- * Reads code + state from the URL, then postMessages them back to the opener
- * (the main login window) via the same-origin postMessage pattern used by
- * the official HashiCorp Vault UI.
+ * Communicates code+state to the parent window via:
+ *   1. localStorage (polled by parent — immune to COOP browsing-context isolation)
+ *   2. window.opener.postMessage (fast path when opener is accessible)
  *
  * Route: /oidc-callback/:mountPath  (e.g. /oidc-callback/oidc)
  */
+const OIDC_CALLBACK_KEY = 'vault-oidc-callback';
+
 export default function OidcCallbackPage() {
   const { mountPath } = useParams<{ mountPath: string }>();
   const [searchParams] = useSearchParams();
@@ -21,16 +23,36 @@ export default function OidcCallbackPage() {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
     const path = mountPath ?? searchParams.get('path') ?? 'oidc';
+    const payload = { source: 'oidc-callback', path, code: code ?? '', state: state ?? '' };
 
-    if (window.opener && window.opener !== window) {
-      window.opener.postMessage(
-        { source: 'oidc-callback', path, code: code ?? '', state: state ?? '' },
-        window.location.origin
-      );
+    console.log('[OIDC Popup] Callback page loaded. code present:', !!code, 'state present:', !!state, 'path:', path);
+    console.log('[OIDC Popup] Full URL:', window.location.href);
+
+    // Primary: write to localStorage — parent polls this every 500ms.
+    // Works regardless of COOP policy or browsing-context isolation.
+    try {
+      localStorage.setItem(OIDC_CALLBACK_KEY, JSON.stringify(payload));
+      console.log('[OIDC Popup] Wrote payload to localStorage key:', OIDC_CALLBACK_KEY);
+      // Verify it was written
+      const verify = localStorage.getItem(OIDC_CALLBACK_KEY);
+      console.log('[OIDC Popup] Verification read:', verify ? 'OK (length=' + verify.length + ')' : 'FAILED - null');
+    } catch (e) {
+      console.error('[OIDC Popup] localStorage.setItem failed:', e);
     }
 
-    // Close the popup after a short delay so the user sees the confirmation
-    const t = setTimeout(() => window.close(), 800);
+    // Secondary: postMessage — immediate delivery when opener is accessible
+    console.log('[OIDC Popup] window.opener:', window.opener ? 'present' : 'null');
+    if (window.opener && window.opener !== window) {
+      try {
+        window.opener.postMessage(payload, window.location.origin);
+        console.log('[OIDC Popup] postMessage sent to opener');
+      } catch (e) {
+        console.warn('[OIDC Popup] postMessage failed:', e);
+      }
+    }
+
+    // Close after a delay to show confirmation and give parent time to poll
+    const t = setTimeout(() => window.close(), 2000);
     return () => clearTimeout(t);
   }, [mountPath, searchParams]);
 

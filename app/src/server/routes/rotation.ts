@@ -5,6 +5,7 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { getSystemToken, isSystemTokenConfigured } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
+import { rotationRunsTotal, rotationSecretsRotated, rotationDurationSeconds, rotationScheduledCount } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -357,11 +358,13 @@ const SCHEDULER_INTERVAL_MS = 60 * 1000;
 
 async function runRotationCheck(): Promise<void> {
   if (!isSystemTokenConfigured()) return;
+  const rotationStart = process.hrtime.bigint();
 
   try {
     const sysToken = await getSystemToken();
     const kvMounts = await getKvV2Mounts(sysToken);
     const now = Date.now();
+    let scheduledCount = 0;
 
     for (const mount of kvMounts) {
       const allPaths = await listAllSecrets(mount, '', sysToken);
@@ -375,6 +378,7 @@ async function runRotationCheck(): Promise<void> {
 
           const intervalMs = parseInterval(rotateInterval);
           if (!intervalMs) continue;
+          scheduledCount++;
 
           const lastRotated = metadata.custom_metadata['last-rotated'];
           const baseTime = lastRotated
@@ -423,13 +427,19 @@ async function runRotationCheck(): Promise<void> {
           });
 
           console.log(`[Rotation] Rotated secrets at ${mount}/${secretPath}`);
+          rotationSecretsRotated.inc();
         } catch (err) {
           console.error(`[Rotation] Error rotating ${mount}/${secretPath}:`, err instanceof Error ? err.message : err);
         }
       }
     }
+    rotationScheduledCount.set(scheduledCount);
+    rotationRunsTotal.inc({ result: 'success' });
+    rotationDurationSeconds.observe({ result: 'success' }, Number(process.hrtime.bigint() - rotationStart) / 1e9);
   } catch (err) {
     console.error('[Rotation] Scheduler error:', err instanceof Error ? err.message : err);
+    rotationRunsTotal.inc({ result: 'failure' });
+    rotationDurationSeconds.observe({ result: 'failure' }, Number(process.hrtime.bigint() - rotationStart) / 1e9);
   }
 
   lastSchedulerCheck = new Date().toISOString();

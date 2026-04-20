@@ -3,7 +3,8 @@ import rateLimit from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getSystemToken } from '../lib/systemToken.js';
+import { getSystemToken, clearSystemTokenCache } from '../lib/systemToken.js';
+import { authLoginsTotal, activeSessions } from '../lib/metrics.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
 const router = Router();
@@ -52,18 +53,43 @@ router.get(
       }>('/sys/auth', token);
 
       // Only expose OIDC methods — JWT is a different auth type that doesn't support OIDC login flow
-      const methods = Object.entries(response.data)
-        .filter(([, info]) => info.type === 'oidc')
-        .map(([path, info]) => ({
-          path: path.replace(/\/$/, ''),
-          type: info.type,
-          defaultRole: (info.config?.['default_role'] as string) || '',
-        }));
+      // Note: default_role is NOT in /sys/auth — it lives in the OIDC-specific config at
+      // /auth/<mount>/config, so we fetch it separately for each method.
+      const methods = await Promise.all(
+        Object.entries(response.data)
+          .filter(([, info]) => info.type === 'oidc')
+          .map(async ([path, info]) => {
+            const mount = path.replace(/\/$/, '');
+            let defaultRole = '';
+            try {
+              const oidcConfig = await vaultClient.get<{ data?: { default_role?: string } }>(
+                `/auth/${encodeURIComponent(mount)}/config`,
+                token
+              );
+              defaultRole = oidcConfig.data?.default_role || '';
+            } catch {
+              // non-fatal — default_role stays empty
+            }
+            return {
+              path: mount,
+              type: info.type,
+              defaultRole,
+            };
+          })
+      );
 
       authMethodsCache = { methods, cachedAt: Date.now() };
       res.json({ methods });
     } catch (error) {
-      next(error);
+      // Always return an empty list on any failure — this is a public convenience
+      // endpoint used by the login page. Errors (e.g. invalid/stale system token,
+      // permission denied) must not block the login page or reveal internals.
+      // The user will fall back to token-only login and can configure the system
+      // token via /setup.
+      // Clear stale cached token so the next request re-authenticates
+      clearSystemTokenCache();
+      console.warn('[auth/methods] Failed to fetch auth methods (returning empty list):', error instanceof Error ? error.message : error);
+      res.json({ methods: [] });
     }
   }
 );
@@ -99,13 +125,17 @@ router.post(
         tokenInfo: {
           display_name: tokenInfo.display_name,
           policies: tokenInfo.policies,
+          identity_policies: tokenInfo.identity_policies ?? [],
           ttl: tokenInfo.ttl,
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
         },
       });
+      authLoginsTotal.inc({ method: 'token', result: 'success' });
+      activeSessions.inc();
     } catch (error) {
+      authLoginsTotal.inc({ method: 'token', result: 'failure' });
       next(error);
     }
   }
@@ -134,13 +164,17 @@ router.post(
 
       console.log(`[OIDC] Requesting auth_url — mount="${mount}", role="${role ?? '(none, using default_role)'}", redirect_uri="${redirectUri}"`);
 
-      // Probe the mount config so we can report useful diagnostics
+      // Probe the mount config so we can report useful diagnostics.
+      // Uses the system token — an empty token is rejected by Vault for this endpoint.
       let mountConfig: { data?: { default_role?: string; oidc_discovery_url?: string } } = {};
       try {
-        mountConfig = await vaultClient.get<typeof mountConfig>(
-          `/auth/${encodeURIComponent(mount)}/config`,
-          ''
-        );
+        const sysToken = await getSystemToken();
+        if (sysToken) {
+          mountConfig = await vaultClient.get<typeof mountConfig>(
+            `/auth/${encodeURIComponent(mount)}/config`,
+            sysToken
+          );
+        }
       } catch {
         // non-fatal — we still attempt the auth_url call
       }
@@ -154,18 +188,28 @@ router.post(
       const authUrl = response?.data?.auth_url;
       if (!authUrl) {
         // Vault returns auth_url="" (HTTP 200) for several reasons — build a diagnostic message.
+        // Note: mountConfig may be empty if the system token lacks auth/+/config permission.
+        const probeFailed = !mountConfig?.data;
         const defaultRole = mountConfig?.data?.default_role;
         const discoveryUrl = mountConfig?.data?.oidc_discovery_url;
         const effectiveRole = role?.trim() || defaultRole || null;
 
+        const defaultRoleLabel = probeFailed
+          ? '(unable to determine — grant auth/+/config read permission to the system token, or enter role manually)'
+          : (defaultRole ?? '(not set — configure default_role on the OIDC mount, or enter a role in the login form)');
+
+        const discoveryUrlLabel = probeFailed
+          ? '(unable to determine)'
+          : (discoveryUrl ?? '(not set)');
+
         const lines: string[] = [
           `Vault returned an empty auth_url for mount "${mount}". Common causes:`,
           '',
-          `  1. No role resolved — you ${role?.trim() ? `sent role="${role.trim()}"` : 'did not send a role'} and the mount's default_role is "${defaultRole ?? '(not set)'}".\n     Fix: enter a role name in the login form, or set default_role on the Vault OIDC mount.`,
+          `  1. No role resolved — you ${role?.trim() ? `sent role="${role.trim()}"` : 'did not send a role'} and the mount's default_role is "${defaultRoleLabel}".\n     Fix: enter the role name in the login form above.`,
           '',
-          `  2. redirect_uri mismatch — ensure exactly this URI is in the role's allowed_redirect_uris:\n     ${redirectUri}`,
+          `  2. redirect_uri not in allowed_redirect_uris — add exactly this URI to the Vault OIDC role:\n     ${redirectUri}`,
           '',
-          `  3. OIDC provider not configured — discovery_url on this mount is: "${discoveryUrl ?? '(unknown)'}"`,
+          `  3. OIDC provider not configured — discovery_url on this mount is: "${discoveryUrlLabel}"`,
         ];
 
         if (effectiveRole) {
@@ -240,13 +284,17 @@ router.post(
         tokenInfo: {
           display_name: tokenInfo.display_name,
           policies: tokenInfo.policies,
+          identity_policies: tokenInfo.identity_policies ?? [],
           ttl: tokenInfo.ttl,
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
         },
       });
+      authLoginsTotal.inc({ method: 'oidc', result: 'success' });
+      activeSessions.inc();
     } catch (error) {
+      authLoginsTotal.inc({ method: 'oidc', result: 'failure' });
       next(error);
     }
   }
@@ -259,7 +307,7 @@ router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
     sameSite: 'lax',
     path: '/',
   });
-
+  activeSessions.dec();
   res.json({ success: true });
 });
 
@@ -276,6 +324,7 @@ router.get(
       tokenInfo: {
         display_name: req.tokenInfo.display_name,
         policies: req.tokenInfo.policies,
+        identity_policies: req.tokenInfo.identity_policies ?? [],
         ttl: req.tokenInfo.ttl,
         expire_time: req.tokenInfo.expire_time,
         entity_id: req.tokenInfo.entity_id,

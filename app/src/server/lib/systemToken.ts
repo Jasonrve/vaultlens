@@ -167,6 +167,16 @@ export function seedSystemTokenCache(token: string, ttlSeconds: number): void {
 }
 
 /**
+ * Clear the in-memory system token cache.
+ * Call this when a Vault request fails with 403/401 using the cached token
+ * so that the next call re-authenticates instead of reusing a stale token.
+ */
+export function clearSystemTokenCache(): void {
+  cachedToken = null;
+  tokenExpiry = 0;
+}
+
+/**
  * Check whether the system token source is configured (synchronous).
  * Covers env-var sources. For AppRole, checks the module-level cachedToken
  * or falls back to a synchronous config file check.

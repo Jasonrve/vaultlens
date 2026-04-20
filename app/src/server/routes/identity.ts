@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { identityOperationsTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -18,6 +19,7 @@ router.get(
         data: { keys: string[] };
       }>('/identity/entity/id', req.vaultToken!);
 
+      identityOperationsTotal.inc({ entity_type: 'entity', operation: 'list' });
       res.json({ entityIds: response.data.keys });
     } catch (error) {
       next(error);
@@ -36,6 +38,7 @@ router.get(
         req.vaultToken!
       );
 
+      identityOperationsTotal.inc({ entity_type: 'entity', operation: 'read' });
       res.json({ entity: response.data });
     } catch (error) {
       next(error);
@@ -52,6 +55,7 @@ router.get(
         data: { keys: string[] };
       }>('/identity/group/id', req.vaultToken!);
 
+      identityOperationsTotal.inc({ entity_type: 'group', operation: 'list' });
       res.json({ groupIds: response.data.keys });
     } catch (error) {
       next(error);
@@ -70,6 +74,7 @@ router.get(
         req.vaultToken!
       );
 
+      identityOperationsTotal.inc({ entity_type: 'group', operation: 'read' });
       res.json({ group: response.data });
     } catch (error) {
       next(error);

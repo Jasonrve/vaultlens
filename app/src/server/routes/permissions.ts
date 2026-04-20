@@ -3,6 +3,7 @@ import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePolicyHCL } from './policies.js';
+import { permissionTestsTotal } from '../lib/metrics.js';
 import type {
   AuthenticatedRequest,
   GraphNode,
@@ -55,6 +56,7 @@ router.post(
       }
 
       res.json({ results });
+      permissionTestsTotal.inc({ test_type: 'self' });
     } catch (error) {
       next(error);
     }
@@ -343,6 +345,7 @@ router.post(
         nodes,
         edges,
       });
+      permissionTestsTotal.inc({ test_type: 'entity' });
     } catch (error) {
       next(error);
     }
