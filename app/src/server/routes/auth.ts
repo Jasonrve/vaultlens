@@ -53,13 +53,30 @@ router.get(
       }>('/sys/auth', token);
 
       // Only expose OIDC methods — JWT is a different auth type that doesn't support OIDC login flow
-      const methods = Object.entries(response.data)
-        .filter(([, info]) => info.type === 'oidc')
-        .map(([path, info]) => ({
-          path: path.replace(/\/$/, ''),
-          type: info.type,
-          defaultRole: (info.config?.['default_role'] as string) || '',
-        }));
+      // Note: default_role is NOT in /sys/auth — it lives in the OIDC-specific config at
+      // /auth/<mount>/config, so we fetch it separately for each method.
+      const methods = await Promise.all(
+        Object.entries(response.data)
+          .filter(([, info]) => info.type === 'oidc')
+          .map(async ([path, info]) => {
+            const mount = path.replace(/\/$/, '');
+            let defaultRole = '';
+            try {
+              const oidcConfig = await vaultClient.get<{ data?: { default_role?: string } }>(
+                `/auth/${encodeURIComponent(mount)}/config`,
+                token
+              );
+              defaultRole = oidcConfig.data?.default_role || '';
+            } catch {
+              // non-fatal — default_role stays empty
+            }
+            return {
+              path: mount,
+              type: info.type,
+              defaultRole,
+            };
+          })
+      );
 
       authMethodsCache = { methods, cachedAt: Date.now() };
       res.json({ methods });
@@ -147,13 +164,17 @@ router.post(
 
       console.log(`[OIDC] Requesting auth_url — mount="${mount}", role="${role ?? '(none, using default_role)'}", redirect_uri="${redirectUri}"`);
 
-      // Probe the mount config so we can report useful diagnostics
+      // Probe the mount config so we can report useful diagnostics.
+      // Uses the system token — an empty token is rejected by Vault for this endpoint.
       let mountConfig: { data?: { default_role?: string; oidc_discovery_url?: string } } = {};
       try {
-        mountConfig = await vaultClient.get<typeof mountConfig>(
-          `/auth/${encodeURIComponent(mount)}/config`,
-          ''
-        );
+        const sysToken = await getSystemToken();
+        if (sysToken) {
+          mountConfig = await vaultClient.get<typeof mountConfig>(
+            `/auth/${encodeURIComponent(mount)}/config`,
+            sysToken
+          );
+        }
       } catch {
         // non-fatal — we still attempt the auth_url call
       }
@@ -167,18 +188,28 @@ router.post(
       const authUrl = response?.data?.auth_url;
       if (!authUrl) {
         // Vault returns auth_url="" (HTTP 200) for several reasons — build a diagnostic message.
+        // Note: mountConfig may be empty if the system token lacks auth/+/config permission.
+        const probeFailed = !mountConfig?.data;
         const defaultRole = mountConfig?.data?.default_role;
         const discoveryUrl = mountConfig?.data?.oidc_discovery_url;
         const effectiveRole = role?.trim() || defaultRole || null;
 
+        const defaultRoleLabel = probeFailed
+          ? '(unable to determine — grant auth/+/config read permission to the system token, or enter role manually)'
+          : (defaultRole ?? '(not set — configure default_role on the OIDC mount, or enter a role in the login form)');
+
+        const discoveryUrlLabel = probeFailed
+          ? '(unable to determine)'
+          : (discoveryUrl ?? '(not set)');
+
         const lines: string[] = [
           `Vault returned an empty auth_url for mount "${mount}". Common causes:`,
           '',
-          `  1. No role resolved — you ${role?.trim() ? `sent role="${role.trim()}"` : 'did not send a role'} and the mount's default_role is "${defaultRole ?? '(not set)'}".\n     Fix: enter a role name in the login form, or set default_role on the Vault OIDC mount.`,
+          `  1. No role resolved — you ${role?.trim() ? `sent role="${role.trim()}"` : 'did not send a role'} and the mount's default_role is "${defaultRoleLabel}".\n     Fix: enter the role name in the login form above.`,
           '',
-          `  2. redirect_uri mismatch — ensure exactly this URI is in the role's allowed_redirect_uris:\n     ${redirectUri}`,
+          `  2. redirect_uri not in allowed_redirect_uris — add exactly this URI to the Vault OIDC role:\n     ${redirectUri}`,
           '',
-          `  3. OIDC provider not configured — discovery_url on this mount is: "${discoveryUrl ?? '(unknown)'}"`,
+          `  3. OIDC provider not configured — discovery_url on this mount is: "${discoveryUrlLabel}"`,
         ];
 
         if (effectiveRole) {

@@ -71,6 +71,13 @@ if (config.nodeEnv === 'production') {
         includeSubDomains: true,
       },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // OIDC login uses a popup that navigates to an external identity provider
+      // and back.  With the default COOP value of "same-origin", returning from
+      // the cross-origin redirect puts the popup into a new browsing-context
+      // group, severing window.opener, postMessage, BroadcastChannel, and even
+      // storage-event delivery.  "same-origin-allow-popups" keeps the opener
+      // link alive while still isolating against foreign embedders.
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' as const },
     }),
   );
 } else {
@@ -78,6 +85,8 @@ if (config.nodeEnv === 'production') {
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      // Required for OIDC popup flow — see production block for rationale.
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' as const },
     })
   );
 }
