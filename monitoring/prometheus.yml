@@ -6,7 +6,7 @@ scrape_configs:
   # VaultLens application metrics
   - job_name: 'vaultlens'
     static_configs:
-      - targets: ['host.docker.internal:3001']
+      - targets: ['192.168.208.1:3001']
     metrics_path: '/metrics'
     scrape_interval: 15s
 

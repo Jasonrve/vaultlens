@@ -3,6 +3,7 @@ import multer from 'multer';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { brandingUpdatesTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 export interface BrandingConfig {
@@ -124,6 +125,7 @@ router.put(
       }
 
       await writeBranding(current);
+      brandingUpdatesTotal.inc();
       res.json(current);
     } catch (error) {
       next(error);

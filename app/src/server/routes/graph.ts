@@ -3,6 +3,12 @@ import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { parsePolicyHCL } from './policies.js';
+import {
+  graphQueriesTotal,
+  graphComputationDurationSeconds,
+  graphNodeCount,
+  graphEdgeCount,
+} from '../lib/metrics.js';
 import type {
   AuthenticatedRequest,
   GraphNode,
@@ -97,8 +103,12 @@ router.get(
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
         const cached = getFromGraphCache('auth-policy-map');
-        if (cached) { res.json(cached); return; }
+        if (cached) {
+          graphQueriesTotal.inc({ graph_type: 'auth-policy', cache_hit: 'true' });
+          res.json(cached); return;
+        }
       }
+      const _graphStart = process.hrtime.bigint();
 
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
@@ -179,6 +189,10 @@ router.get(
         }
       }
 
+      graphQueriesTotal.inc({ graph_type: 'auth-policy', cache_hit: 'false' });
+      graphComputationDurationSeconds.observe({ graph_type: 'auth-policy' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
+      graphNodeCount.set({ graph_type: 'auth-policy' }, nodes.length);
+      graphEdgeCount.set({ graph_type: 'auth-policy' }, edges.length);
       res.json(setInGraphCache('auth-policy-map', nodes, edges));
     } catch (error) {
       next(error);
@@ -194,8 +208,12 @@ router.get(
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
         const cached = getFromGraphCache('policy-secret-map');
-        if (cached) { res.json(cached); return; }
+        if (cached) {
+          graphQueriesTotal.inc({ graph_type: 'policy-secret', cache_hit: 'true' });
+          res.json(cached); return;
+        }
       }
+      const _graphStart = process.hrtime.bigint();
 
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
@@ -241,6 +259,10 @@ router.get(
         }
       });
 
+      graphQueriesTotal.inc({ graph_type: 'policy-secret', cache_hit: 'false' });
+      graphComputationDurationSeconds.observe({ graph_type: 'policy-secret' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
+      graphNodeCount.set({ graph_type: 'policy-secret' }, nodes.length);
+      graphEdgeCount.set({ graph_type: 'policy-secret' }, edges.length);
       res.json(setInGraphCache('policy-secret-map', nodes, edges));
     } catch (error) {
       next(error);
@@ -256,8 +278,12 @@ router.get(
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
         const cached = getFromGraphCache('identity-map');
-        if (cached) { res.json(cached); return; }
+        if (cached) {
+          graphQueriesTotal.inc({ graph_type: 'identity', cache_hit: 'true' });
+          res.json(cached); return;
+        }
       }
+      const _graphStart = process.hrtime.bigint();
 
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
@@ -353,6 +379,10 @@ router.get(
         }
       }
 
+      graphQueriesTotal.inc({ graph_type: 'identity', cache_hit: 'false' });
+      graphComputationDurationSeconds.observe({ graph_type: 'identity' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
+      graphNodeCount.set({ graph_type: 'identity' }, nodes.length);
+      graphEdgeCount.set({ graph_type: 'identity' }, edges.length);
       res.json(setInGraphCache('identity-map', nodes, edges));
     } catch (error) {
       next(error);
@@ -622,6 +652,7 @@ router.get(
       }
 
       return res.json({ nodes, edges });
+      graphQueriesTotal.inc({ graph_type: 'user-identity', cache_hit: 'false' });
     } catch (error) {
       return next(error);
     }
@@ -636,8 +667,12 @@ router.get(
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
         const cached = getFromGraphCache('policy-relationships');
-        if (cached) { res.json(cached); return; }
+        if (cached) {
+          graphQueriesTotal.inc({ graph_type: 'policy-relationships', cache_hit: 'true' });
+          res.json(cached); return;
+        }
       }
+      const _graphStart = process.hrtime.bigint();
 
       const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
@@ -753,6 +788,10 @@ router.get(
         }
       });
 
+      graphQueriesTotal.inc({ graph_type: 'policy-relationships', cache_hit: 'false' });
+      graphComputationDurationSeconds.observe({ graph_type: 'policy-relationships' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
+      graphNodeCount.set({ graph_type: 'policy-relationships' }, nodes.length);
+      graphEdgeCount.set({ graph_type: 'policy-relationships' }, edges.length);
       res.json(setInGraphCache('policy-relationships', nodes, edges));
     } catch (error) {
       next(error);

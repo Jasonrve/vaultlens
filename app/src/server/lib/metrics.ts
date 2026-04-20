@@ -134,6 +134,206 @@ export const policyInitTotal = new Counter({
   registers: [register],
 });
 
+// ── Token validation (auth middleware) ────────────────────────────────────────
+
+export const tokenValidationsTotal = new Counter({
+  name: 'vaultlens_token_validations_total',
+  help: 'Total Vault token validation attempts in auth middleware',
+  labelNames: ['result'] as const, // success|failure
+  registers: [register],
+});
+
+// ── Policy route operations ───────────────────────────────────────────────────
+
+export const policyOperationsTotal = new Counter({
+  name: 'vaultlens_policy_operations_total',
+  help: 'Total ACL policy operations',
+  labelNames: ['operation'] as const, // list|read
+  registers: [register],
+});
+
+// ── Permission test operations ────────────────────────────────────────────────
+
+export const permissionTestsTotal = new Counter({
+  name: 'vaultlens_permission_tests_total',
+  help: 'Total permission/capability test requests',
+  labelNames: ['test_type'] as const, // self|entity
+  registers: [register],
+});
+
+// ── Identity route operations ─────────────────────────────────────────────────
+
+export const identityOperationsTotal = new Counter({
+  name: 'vaultlens_identity_operations_total',
+  help: 'Total identity/entity/group operations',
+  labelNames: ['entity_type', 'operation'] as const, // entity|group, list|read
+  registers: [register],
+});
+
+// ── Graph route operations ────────────────────────────────────────────────────
+
+export const graphQueriesTotal = new Counter({
+  name: 'vaultlens_graph_queries_total',
+  help: 'Total relationship graph queries',
+  labelNames: ['graph_type', 'cache_hit'] as const, // auth-policy|policy-secret|identity|entity-permissions, true|false
+  registers: [register],
+});
+
+export const graphComputationDurationSeconds = new Histogram({
+  name: 'vaultlens_graph_computation_duration_seconds',
+  help: 'Time to compute a relationship graph (cache misses only)',
+  labelNames: ['graph_type'] as const,
+  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10],
+  registers: [register],
+});
+
+export const graphNodeCount = new Gauge({
+  name: 'vaultlens_graph_node_count',
+  help: 'Number of nodes in the last computed graph',
+  labelNames: ['graph_type'] as const,
+  registers: [register],
+});
+
+export const graphEdgeCount = new Gauge({
+  name: 'vaultlens_graph_edge_count',
+  help: 'Number of edges in the last computed graph',
+  labelNames: ['graph_type'] as const,
+  registers: [register],
+});
+
+// ── Auth method route operations ──────────────────────────────────────────────
+
+export const authMethodOperationsTotal = new Counter({
+  name: 'vaultlens_auth_method_operations_total',
+  help: 'Total auth method management operations',
+  labelNames: ['operation'] as const, // list|read|configure|tune|roles_list|roles_read
+  registers: [register],
+});
+
+// ── Audit watcher metrics ─────────────────────────────────────────────────────
+
+export const auditEventsProcessedTotal = new Counter({
+  name: 'vaultlens_audit_events_processed_total',
+  help: 'Total audit log entries processed by the watcher',
+  registers: [register],
+});
+
+export const auditWatcherLagSeconds = new Gauge({
+  name: 'vaultlens_audit_watcher_lag_seconds',
+  help: 'Estimated lag between Vault audit log write time and webhook delivery',
+  registers: [register],
+});
+
+// ── Branding / config route operations ───────────────────────────────────────
+
+export const brandingUpdatesTotal = new Counter({
+  name: 'vaultlens_branding_updates_total',
+  help: 'Total branding configuration updates',
+  registers: [register],
+});
+
+// ── Config storage backend operations ────────────────────────────────────────
+
+export const configStorageOpsTotal = new Counter({
+  name: 'vaultlens_config_storage_ops_total',
+  help: 'Total config storage backend operations',
+  labelNames: ['operation', 'backend'] as const, // get|set|delete|list, file|vault
+  registers: [register],
+});
+
+export const configStorageDurationSeconds = new Histogram({
+  name: 'vaultlens_config_storage_duration_seconds',
+  help: 'Config storage operation duration in seconds',
+  labelNames: ['operation', 'backend'] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1],
+  registers: [register],
+});
+
+// ── Error tracking ────────────────────────────────────────────────────────────
+
+export const applicationErrorsTotal = new Counter({
+  name: 'vaultlens_application_errors_total',
+  help: 'Total application errors handled by the error handler',
+  labelNames: ['status_code', 'error_type'] as const, // vault_error|application_error
+  registers: [register],
+});
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+
+export const rateLimitHitsTotal = new Counter({
+  name: 'vaultlens_rate_limit_hits_total',
+  help: 'Total requests that hit the rate limiter (accepted + rejected)',
+  registers: [register],
+});
+
+export const rateLimitRejectedTotal = new Counter({
+  name: 'vaultlens_rate_limit_rejected_total',
+  help: 'Total requests rejected by the rate limiter (429 responses)',
+  registers: [register],
+});
+
+// ── Response sizes ────────────────────────────────────────────────────────────
+
+export const httpResponseSizeBytes = new Histogram({
+  name: 'http_response_size_bytes',
+  help: 'HTTP response body size in bytes',
+  labelNames: ['method', 'route', 'status_code'] as const,
+  buckets: [100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000],
+  registers: [register],
+});
+
+// ── Backup extended metrics ───────────────────────────────────────────────────
+
+export const backupDurationSeconds = new Histogram({
+  name: 'vaultlens_backup_duration_seconds',
+  help: 'Duration of backup operations in seconds',
+  labelNames: ['result'] as const,
+  buckets: [0.5, 1, 2.5, 5, 10, 30, 60, 120, 300],
+  registers: [register],
+});
+
+export const lastBackupTimestamp = new Gauge({
+  name: 'vaultlens_last_backup_timestamp_seconds',
+  help: 'Unix timestamp of the last successful backup',
+  registers: [register],
+});
+
+export const lastBackupSecretsCount = new Gauge({
+  name: 'vaultlens_last_backup_secrets_count',
+  help: 'Number of secrets in the last successful backup',
+  registers: [register],
+});
+
+export const lastBackupSizeBytes = new Gauge({
+  name: 'vaultlens_last_backup_size_bytes',
+  help: 'Size in bytes of the last successful backup',
+  registers: [register],
+});
+
+// ── Rotation extended metrics ─────────────────────────────────────────────────
+
+export const rotationDurationSeconds = new Histogram({
+  name: 'vaultlens_rotation_duration_seconds',
+  help: 'Duration of a full rotation scheduler run in seconds',
+  labelNames: ['result'] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
+  registers: [register],
+});
+
+export const rotationScheduledCount = new Gauge({
+  name: 'vaultlens_rotation_scheduled_count',
+  help: 'Number of secrets currently configured for auto-rotation',
+  registers: [register],
+});
+
+// ── Shared secrets active count ───────────────────────────────────────────────
+
+export const sharedSecretsActiveCount = new Gauge({
+  name: 'vaultlens_shared_secrets_active',
+  help: 'Current number of active (non-expired) shared secrets',
+  registers: [register],
+});
+
 // ── Helper to normalise Vault paths into low-cardinality category labels ──────
 // e.g. /auth/token/lookup-self -> auth/token, /secret/data/foo/bar -> kv/data
 export function categoriseVaultPath(path: string): string {

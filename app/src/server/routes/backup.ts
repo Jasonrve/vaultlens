@@ -6,7 +6,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
-import { backupsTotal } from '../lib/metrics.js';
+import { backupsTotal, backupDurationSeconds, lastBackupTimestamp, lastBackupSizeBytes, lastBackupSecretsCount } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -83,12 +83,19 @@ router.get(
 router.post(
   '/create',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const backupStart = process.hrtime.bigint();
     try {
       const { filename, size, createdAt } = await takeSnapshot(req.vaultToken!);
+      const durationSec = Number(process.hrtime.bigint() - backupStart) / 1e9;
       backupsTotal.inc({ result: 'success' });
+      backupDurationSeconds.observe({ result: 'success' }, durationSec);
+      lastBackupTimestamp.set(Date.now() / 1000);
+      lastBackupSizeBytes.set(size);
       res.json({ success: true, filename, size, createdAt });
     } catch (error) {
+      const durationSec = Number(process.hrtime.bigint() - backupStart) / 1e9;
       backupsTotal.inc({ result: 'failure' });
+      backupDurationSeconds.observe({ result: 'failure' }, durationSec);
       next(error);
     }
   }
@@ -386,6 +393,9 @@ router.post(
         (sum, eng) => sum + Object.keys(eng.secrets).length, 0
       );
 
+      lastBackupTimestamp.set(Date.now() / 1000);
+      lastBackupSizeBytes.set(stats.size);
+      lastBackupSecretsCount.set(secretCount);
       res.json({ success: true, filename, size: stats.size, createdAt: backupData.createdAt, secretCount });
     } catch (error) {
       next(error);

@@ -10,7 +10,7 @@ import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { metricsMiddleware } from './middleware/metricsMiddleware.js';
-import { register } from './lib/metrics.js';
+import { register, rateLimitHitsTotal, rateLimitRejectedTotal } from './lib/metrics.js';
 import authRoutes from './routes/auth.js';
 import secretsRoutes from './routes/secrets.js';
 import policiesRoutes from './routes/policies.js';
@@ -114,6 +114,14 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  skip: (req) => {
+    rateLimitHitsTotal.inc();
+    return false; // never skip — just count
+  },
+  handler: (req, res, next, options) => {
+    rateLimitRejectedTotal.inc();
+    res.status(options.statusCode).json(options.message);
+  },
 });
 app.use('/api', limiter);
 

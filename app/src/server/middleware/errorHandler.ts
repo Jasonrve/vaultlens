@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { VaultError } from '../lib/vaultClient.js';
+import { applicationErrorsTotal } from '../lib/metrics.js';
 
 export function errorHandler(
   err: Error,
@@ -9,6 +10,7 @@ export function errorHandler(
 ): void {
   if (err instanceof VaultError) {
     console.error(`[VaultError] ${req.method} ${req.path} → ${err.statusCode}: ${err.message}`);
+    applicationErrorsTotal.inc({ status_code: String(err.statusCode), error_type: 'vault_error' });
 
     // Never leak Vault error arrays to clients — they may contain token info
     res.status(err.statusCode).json({
@@ -22,6 +24,7 @@ export function errorHandler(
   }
 
   console.error(`[Error] ${req.method} ${req.path}:`, err);
+  applicationErrorsTotal.inc({ status_code: '500', error_type: 'application_error' });
 
   res.status(500).json({ error: 'Internal server error' });
 }

@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { httpRequestsTotal, httpRequestDurationSeconds } from '../lib/metrics.js';
+import { httpRequestsTotal, httpRequestDurationSeconds, httpResponseSizeBytes } from '../lib/metrics.js';
 
 /**
  * Normalise an Express request path into a low-cardinality route label.
@@ -45,6 +45,15 @@ export function metricsMiddleware(
     };
     httpRequestsTotal.inc(labels);
     httpRequestDurationSeconds.observe(labels, durationSec);
+
+    // Track response body size via Content-Length header (set by Express for buffered responses)
+    const contentLength = res.getHeader('content-length');
+    if (contentLength !== undefined) {
+      const sizeBytes = Number(contentLength);
+      if (!isNaN(sizeBytes)) {
+        httpResponseSizeBytes.observe(labels, sizeBytes);
+      }
+    }
   });
 
   next();
