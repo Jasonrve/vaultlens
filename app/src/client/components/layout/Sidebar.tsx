@@ -258,7 +258,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-white/[0.07] px-4 py-3">
-        <span className="text-[11px] text-[#3d4554]">VaultLens v{__APP_VERSION__}</span>
+        <span className="text-[11px] text-[#3d4554]">VaultLens</span>
       </div>
     </aside>
   );

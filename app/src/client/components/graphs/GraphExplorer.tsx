@@ -28,7 +28,7 @@ import {
 import type { ExpandableNodeData, QuickViewNode } from './graphNodeTypes';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const X_STEP = 220;
+
 const NODE_W = 160;   // approx rendered node width
 const NODE_H = 32;    // approx rendered node height
 const GHOST_W = 130;  // ghost overlay width
