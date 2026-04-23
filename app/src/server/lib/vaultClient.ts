@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError, Method } from 'axios';
 import https from 'https';
+import { vaultApiCallsTotal, vaultApiCallDurationSeconds, categoriseVaultPath } from './metrics.js';
 
 export class VaultError extends Error {
   public statusCode: number;
@@ -35,6 +36,10 @@ export class VaultClient {
     token: string,
     data?: unknown
   ): Promise<T> {
+    const pathCategory = categoriseVaultPath(path);
+    const methodStr = String(method).toUpperCase();
+    const startTime = process.hrtime.bigint();
+
     try {
       const headers: Record<string, string> = {};
       if (token) {
@@ -46,8 +51,14 @@ export class VaultClient {
         headers,
         data,
       });
+
+      const durationSec = Number(process.hrtime.bigint() - startTime) / 1e9;
+      vaultApiCallsTotal.inc({ method: methodStr, path_category: pathCategory, status: 'success' });
+      vaultApiCallDurationSeconds.observe({ method: methodStr, path_category: pathCategory }, durationSec);
+
       return response.data;
     } catch (error) {
+      const durationSec = Number(process.hrtime.bigint() - startTime) / 1e9;
       if (error instanceof AxiosError) {
         const status = error.response?.status || 500;
         const vaultErrors: string[] =
@@ -56,8 +67,12 @@ export class VaultClient {
           vaultErrors.length > 0
             ? vaultErrors.join(', ')
             : error.message;
+        vaultApiCallsTotal.inc({ method: methodStr, path_category: pathCategory, status: String(status) });
+        vaultApiCallDurationSeconds.observe({ method: methodStr, path_category: pathCategory }, durationSec);
         throw new VaultError(message, status, vaultErrors);
       }
+      vaultApiCallsTotal.inc({ method: methodStr, path_category: pathCategory, status: 'error' });
+      vaultApiCallDurationSeconds.observe({ method: methodStr, path_category: pathCategory }, durationSec);
       throw new VaultError(
         error instanceof Error ? error.message : 'Unknown Vault error',
         500

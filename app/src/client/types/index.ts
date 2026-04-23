@@ -12,6 +12,7 @@ export interface VaultTokenInfo {
   orphan: boolean;
   path: string;
   policies: string[];
+  identity_policies?: string[];
   ttl: number;
   type: string;
 }

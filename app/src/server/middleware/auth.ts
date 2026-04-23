@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
+import { tokenValidationsTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
@@ -39,8 +40,10 @@ export async function authMiddleware(
 
     req.vaultToken = token;
     req.tokenInfo = response.data;
+    tokenValidationsTotal.inc({ result: 'success' });
     next();
   } catch (error) {
+    tokenValidationsTotal.inc({ result: 'failure' });
     if (error instanceof VaultError) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;

@@ -9,6 +9,8 @@ import morgan from 'morgan';
 import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { metricsMiddleware } from './middleware/metricsMiddleware.js';
+import { register, rateLimitHitsTotal, rateLimitRejectedTotal } from './lib/metrics.js';
 import authRoutes from './routes/auth.js';
 import secretsRoutes from './routes/secrets.js';
 import policiesRoutes from './routes/policies.js';
@@ -69,6 +71,13 @@ if (config.nodeEnv === 'production') {
         includeSubDomains: true,
       },
       referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      // OIDC login uses a popup that navigates to an external identity provider
+      // and back.  With the default COOP value of "same-origin", returning from
+      // the cross-origin redirect puts the popup into a new browsing-context
+      // group, severing window.opener, postMessage, BroadcastChannel, and even
+      // storage-event delivery.  "same-origin-allow-popups" keeps the opener
+      // link alive while still isolating against foreign embedders.
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' as const },
     }),
   );
 } else {
@@ -76,6 +85,8 @@ if (config.nodeEnv === 'production') {
     helmet({
       contentSecurityPolicy: false,
       crossOriginEmbedderPolicy: false,
+      // Required for OIDC popup flow — see production block for rationale.
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' as const },
     })
   );
 }
@@ -112,6 +123,14 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' },
+  skip: (req) => {
+    rateLimitHitsTotal.inc();
+    return false; // never skip — just count
+  },
+  handler: (req, res, next, options) => {
+    rateLimitRejectedTotal.inc();
+    res.status(options.statusCode).json(options.message);
+  },
 });
 app.use('/api', limiter);
 
@@ -128,6 +147,20 @@ app.use('/api', (_req, res, next) => {
 
 // HTTP parameter pollution protection
 app.use(hpp());
+
+// Prometheus metrics middleware — must be after body parsing, before routes
+app.use(metricsMiddleware);
+
+// Prometheus metrics endpoint — public, no auth, no CSRF
+// Serves in Prometheus text exposition format (text/plain; version=0.0.4)
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (err) {
+    res.status(500).end(err instanceof Error ? err.message : 'metrics error');
+  }
+});
 
 // Health check
 app.get('/api/health', (_req, res) => {

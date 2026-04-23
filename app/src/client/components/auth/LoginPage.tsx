@@ -121,39 +121,28 @@ export default function LoginPage() {
       // Navigate the already-open popup to the provider
       popup.location.href = authUrl;
 
-      // ── Watch for premature closure ─────────────────────────────────────────
-      const closedInterval = setInterval(() => {
-        if (popup.closed) {
-          cleanup();
-          setOidcError('The authentication window was closed before completing. Please try again.');
-          setOidcLoading(false);
-        }
-      }, 500);
+      // ── Callback data polling + popup closure detection ────────────────────
+      const CALLBACK_KEY = 'vault-oidc-callback';
+      let callbackReceived = false;
+      const OIDC_TIMEOUT_MS = 120_000; // 2 minutes to complete provider login
+      const startedAt = Date.now();
 
-      // ── Receive postMessage from OidcCallbackPage (same-origin, trusted) ────
-      async function handleMessage(event: MessageEvent) {
-        if (
-          event.origin !== window.location.origin ||
-          !event.isTrusted ||
-          (event.data as { source?: string })?.source !== 'oidc-callback'
-        ) {
-          return;
-        }
+      // Clear any stale value from a previous attempt
+      try { localStorage.removeItem(CALLBACK_KEY); } catch { /* private mode */ }
 
+      console.log('[OIDC Parent] Popup opened, starting localStorage poll. Key:', CALLBACK_KEY);
+
+      async function processPayload(data: { path?: string; code?: string; state?: string }) {
+        if (callbackReceived) return; // deduplicate
+        callbackReceived = true;
         cleanup();
 
-        const { path, code, state } = event.data as {
-          path: string;
-          code: string;
-          state: string;
-        };
-
+        const { path, code, state } = data;
         if (!path || !code || !state) {
           setOidcError('Missing authentication parameters in callback. Please try again.');
           setOidcLoading(false);
           return;
         }
-
         try {
           const result = await api.oidcCallback(path, code, state);
           loginWithToken('', result.tokenInfo);
@@ -168,11 +157,48 @@ export default function LoginPage() {
         }
       }
 
+      // Poll every 500ms: check localStorage for callback data.
+      // popup.closed is unreliable (see comment above), so we only use the
+      // timeout as the give-up mechanism.
+      const pollInterval = setInterval(() => {
+        // 1. Check localStorage for callback data written by the popup
+        if (!callbackReceived) {
+          try {
+            const stored = localStorage.getItem(CALLBACK_KEY);
+            if (stored) {
+              console.log('[OIDC Parent] Received callback data from localStorage');
+              localStorage.removeItem(CALLBACK_KEY);
+              void processPayload(JSON.parse(stored) as { path: string; code: string; state: string });
+              return;
+            }
+          } catch { /* private mode */ }
+        }
+
+        // 2. Timeout: give up after OIDC_TIMEOUT_MS
+        if (!callbackReceived && Date.now() - startedAt > OIDC_TIMEOUT_MS) {
+          cleanup();
+          setOidcError('OIDC login timed out. Please try again.');
+          setOidcLoading(false);
+        }
+      }, 500);
+
+      // Fast path: postMessage — immediate when opener is accessible (no COOP issue)
+      function handleMessage(event: MessageEvent) {
+        if (
+          event.origin !== window.location.origin ||
+          !event.isTrusted ||
+          (event.data as { source?: string })?.source !== 'oidc-callback'
+        ) {
+          return;
+        }
+        void processPayload(event.data as { path: string; code: string; state: string });
+      }
       window.addEventListener('message', handleMessage);
 
       function cleanup() {
-        clearInterval(closedInterval);
+        clearInterval(pollInterval);
         window.removeEventListener('message', handleMessage);
+        try { localStorage.removeItem(CALLBACK_KEY); } catch { /* private mode */ }
         cleanupRef.current = null;
       }
 

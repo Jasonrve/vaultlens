@@ -200,7 +200,8 @@ export default function Sidebar() {
   }, []);
 
   // Check if user has admin privileges (root or vaultlens-admin policy)
-  const policies = tokenInfo?.policies ?? [];
+  // Include identity_policies — policies granted via Vault identity entities/groups
+  const policies = [...(tokenInfo?.policies ?? []), ...(tokenInfo?.identity_policies ?? [])];
   const isAdminUser = policies.includes('root') || policies.includes('vaultlens-admin');
 
   return (
@@ -257,7 +258,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="border-t border-white/[0.07] px-4 py-3">
-        <span className="text-[11px] text-[#3d4554]">VaultLens v{__APP_VERSION__}</span>
+        <span className="text-[11px] text-[#3d4554]">VaultLens</span>
       </div>
     </aside>
   );

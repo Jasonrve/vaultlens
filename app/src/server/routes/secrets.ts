@@ -3,6 +3,7 @@ import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { secretOperationsTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest, SecretEngine } from '../types/index.js';
 
 const router = Router();
@@ -267,6 +268,7 @@ router.get(
         mount: engineInfo.mount,
         version: engineInfo.version,
       });
+      secretOperationsTotal.inc({ operation: 'list' });
     } catch (error) {
       next(error);
     }
@@ -394,6 +396,7 @@ router.post(
         writeData
       );
 
+      secretOperationsTotal.inc({ operation: 'write' });
       res.json({ success: true, data: response });
     } catch (error) {
       next(error);
@@ -507,6 +510,7 @@ router.delete(
 
       await vaultClient.delete(vaultPath, req.vaultToken!);
 
+      secretOperationsTotal.inc({ operation: 'delete' });
       res.json({ success: true });
     } catch (error) {
       next(error);

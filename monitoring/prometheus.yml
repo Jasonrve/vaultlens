@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # VaultLens application metrics
+  - job_name: 'vaultlens'
+    static_configs:
+      - targets: ['192.168.208.1:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Vault server metrics (requires telemetry enabled in Vault config)
+  - job_name: 'vault'
+    static_configs:
+      - targets: ['vault:8200']
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    bearer_token: 'root'
+    scheme: 'http'
+    scrape_interval: 30s

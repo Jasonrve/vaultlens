@@ -7,6 +7,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getAuditBuffer, getAuditSocketStats } from '../lib/auditSocket.js';
 import { VaultError } from '../lib/vaultClient.js';
+import { auditEventsProcessedTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -233,6 +234,7 @@ router.get(
       const total = grouped.length;
       const paginated = grouped.slice(offset, offset + limit);
 
+      auditEventsProcessedTotal.inc(total);
       return res.json({ entries: paginated, total, offset, limit });
     } catch (error) {
       return next(error);

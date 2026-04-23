@@ -31,7 +31,28 @@
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "VAULT_SYSTEM_TOKEN": ""
+      }
+    },
+    {
+      "name": "Debug App + Monitoring (Remote Vault)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "${workspaceFolder}/app",
+      "preLaunchTask": "monitoring-up",
+      "console": "integratedTerminal",
+      "autoAttachChildProcesses": true,
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**"],
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "VAULT_SYSTEM_TOKEN": ""
+      }
     }
   ]
 }

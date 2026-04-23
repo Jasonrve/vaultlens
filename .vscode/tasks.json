@@ -14,6 +14,20 @@
         "showReuseMessage": false
       },
       "problemMatcher": []
+    },
+    {
+      "label": "monitoring-up",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "prometheus", "grafana"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
     }
   ]
 }

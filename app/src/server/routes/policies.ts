@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { policyOperationsTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest, PolicyPath } from '../types/index.js';
 
 const router = Router();
@@ -66,6 +67,7 @@ router.get(
         data: { keys: string[] };
       }>('/sys/policies/acl', req.vaultToken!);
 
+      policyOperationsTotal.inc({ operation: 'list' });
       res.json({ policies: response.data.keys });
     } catch (error) {
       next(error);
@@ -83,6 +85,7 @@ router.get(
         data: { name: string; rules?: string; policy?: string };
       }>(`/sys/policies/acl/${encodeURIComponent(name)}`, req.vaultToken!);
 
+      policyOperationsTotal.inc({ operation: 'read' });
       res.json({
         name: response.data.name ?? name,
         rules: response.data.rules ?? response.data.policy ?? '',
@@ -106,6 +109,7 @@ router.get(
       const hcl = response.data.rules ?? response.data.policy ?? '';
       const paths = parsePolicyHCL(hcl);
 
+      policyOperationsTotal.inc({ operation: 'parse' });
       res.json({ name: response.data.name ?? name, paths });
     } catch (error) {
       next(error);

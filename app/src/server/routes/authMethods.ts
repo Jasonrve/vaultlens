@@ -4,6 +4,7 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { authMethodOperationsTotal } from '../lib/metrics.js';
 import {
   getTemplate,
   saveTemplateOverride as saveTemplateToDisk,
@@ -67,6 +68,7 @@ router.get(
         config: info.config,
       }));
 
+      authMethodOperationsTotal.inc({ operation: 'list' });
       res.json({ authMethods: methods });
     } catch (error) {
       next(error);
@@ -98,6 +100,7 @@ router.get(
           data: { keys: string[] };
         }>(rolePath, req.vaultToken!);
 
+        authMethodOperationsTotal.inc({ operation: 'roles_list' });
         res.json({
           method,
           type: authType,
@@ -180,6 +183,7 @@ router.post(
         req.vaultToken!,
         body
       );
+      authMethodOperationsTotal.inc({ operation: 'configure' });
       return res.json({ success: true });
     } catch (error) {
       return next(error);
