@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './stores/authStore';
@@ -45,10 +45,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 /**
  * Enforces system token setup before allowing access to protected routes.
  * If system token hasn't been configured, forces redirect to wizard.
+ * If system token is configured but policies/AppRole are drifted, redirects
+ * to the repair wizard (passing the detected issues via router state).
  */
 function SystemTokenRequiredRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   const [systemTokenStatus, setSystemTokenStatus] = useState<{ hasSystemToken: boolean } | null>(null);
+  const [repairIssues, setRepairIssues] = useState<api.SetupHealthIssue[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -57,10 +60,25 @@ function SystemTokenRequiredRoute({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Skip the health check if the user explicitly dismissed the repair prompt
+    // during this browser session (avoids an infinite redirect loop on cancel).
+    const skipRepair = sessionStorage.getItem('vaultlens_skip_repair_check') === '1';
+
     api.getSysTokenStatus()
-      .then((status) => setSystemTokenStatus(status))
+      .then(async (status) => {
+        setSystemTokenStatus(status);
+        if (status.hasSystemToken && !skipRepair) {
+          try {
+            const health = await api.getSetupHealthCheck();
+            if (!health.healthy) {
+              setRepairIssues(health.issues);
+            }
+          } catch {
+            // Cannot verify health — assume healthy rather than blocking the user
+          }
+        }
+      })
       .catch(() => {
-        // If status check fails, deny access (force setup)
         setSystemTokenStatus({ hasSystemToken: false });
       })
       .finally(() => setLoading(false));
@@ -68,10 +86,15 @@ function SystemTokenRequiredRoute({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (loading) return <LoadingSpinner />;
-  
-  // Force redirect to setup if system token not configured
+
+  // Force setup if system token not configured
   if (!systemTokenStatus?.hasSystemToken) {
     return <Navigate to="/setup" replace />;
+  }
+
+  // Redirect to repair wizard if health check found issues
+  if (repairIssues.length > 0) {
+    return <Navigate to="/setup" state={{ repairIssues }} replace />;
   }
 
   return <>{children}</>;
@@ -79,9 +102,11 @@ function SystemTokenRequiredRoute({ children }: { children: React.ReactNode }) {
 
 /**
  * Guards the setup page to prevent access if system token is already configured.
+ * Allows access when navigated with repairIssues in router state (repair mode).
  */
 function SetupRouteGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
+  const location = useLocation();
   const [systemTokenStatus, setSystemTokenStatus] = useState<{ hasSystemToken: boolean } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -94,7 +119,6 @@ function SetupRouteGuard({ children }: { children: React.ReactNode }) {
     api.getSysTokenStatus()
       .then((status) => setSystemTokenStatus(status))
       .catch(() => {
-        // If status check fails, allow access to setup
         setSystemTokenStatus({ hasSystemToken: false });
       })
       .finally(() => setLoading(false));
@@ -102,9 +126,12 @@ function SetupRouteGuard({ children }: { children: React.ReactNode }) {
 
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (loading) return <LoadingSpinner />;
-  
-  // If system token is already configured, redirect to dashboard
-  if (systemTokenStatus?.hasSystemToken) {
+
+  // Allow access when repair mode is active (issues passed via router state)
+  const isRepairMode = !!(location.state as { repairIssues?: unknown } | null)?.repairIssues;
+
+  // If system token is already configured AND this is not a repair, redirect to dashboard
+  if (systemTokenStatus?.hasSystemToken && !isRepairMode) {
     return <Navigate to="/" replace />;
   }
 

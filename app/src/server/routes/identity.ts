@@ -171,21 +171,22 @@ router.get(
         return res.json({ entities: [] });
       }
 
-      const entities: { id: string; name: string; groupCount: number; policyCount: number }[] = [];
+      const entities: { id: string; name: string; aliasName: string; groupCount: number; policyCount: number }[] = [];
       await Promise.all(
         entityIds.map(async (id) => {
           try {
             const resp = await vaultClient.get<{
-              data: { id: string; name: string; group_ids?: string[]; policies?: string[] };
+              data: { id: string; name: string; group_ids?: string[]; policies?: string[]; aliases?: Array<{ name: string }> };
             }>(`/identity/entity/id/${id}`, token);
             entities.push({
               id: resp.data.id,
               name: resp.data.name || '',
+              aliasName: resp.data.aliases?.[0]?.name || '',
               groupCount: resp.data.group_ids?.length || 0,
               policyCount: resp.data.policies?.length || 0,
             });
           } catch {
-            entities.push({ id, name: '', groupCount: 0, policyCount: 0 });
+            entities.push({ id, name: '', aliasName: '', groupCount: 0, policyCount: 0 });
           }
         })
       );
@@ -236,6 +237,48 @@ router.get(
 
       groups.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
       return res.json({ groups });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// Resolve entity and group names from lists of IDs (used by detail pages to show friendly names)
+router.get(
+  '/resolve',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const token = req.vaultToken!;
+      const entityIdList = String(req.query['entityIds'] ?? '').split(',').filter(Boolean).slice(0, 100);
+      const groupIdList = String(req.query['groupIds'] ?? '').split(',').filter(Boolean).slice(0, 100);
+
+      const entityNames: Record<string, string> = {};
+      const groupNames: Record<string, string> = {};
+
+      await Promise.all([
+        ...entityIdList.map(async (id) => {
+          try {
+            const resp = await vaultClient.get<{ data: { id: string; name: string } }>(
+              `/identity/entity/id/${encodeURIComponent(id)}`, token
+            );
+            entityNames[id] = resp.data.name || id;
+          } catch {
+            entityNames[id] = id;
+          }
+        }),
+        ...groupIdList.map(async (id) => {
+          try {
+            const resp = await vaultClient.get<{ data: { id: string; name: string } }>(
+              `/identity/group/id/${encodeURIComponent(id)}`, token
+            );
+            groupNames[id] = resp.data.name || id;
+          } catch {
+            groupNames[id] = id;
+          }
+        }),
+      ]);
+
+      return res.json({ entityNames, groupNames });
     } catch (error) {
       return next(error);
     }

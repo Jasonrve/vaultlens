@@ -28,7 +28,7 @@ const APPROLE_BACKOFF_MAX_MS = 3_600_000; // 1 hour
 async function authenticateAppRole(): Promise<string | null> {
   // Respect backoff window to avoid log spam when credentials are wrong/missing.
   if (appRoleBackoffMs > 0 && Date.now() - appRoleLastFailTime < appRoleBackoffMs) {
-    console.debug(`[AppRole Auth] In backoff window (${appRoleBackoffMs}ms remaining)`);
+    // Silent — caller falls back to static token; no need to log on every call.
     return null;
   }
   try {
@@ -44,7 +44,12 @@ async function authenticateAppRole(): Promise<string | null> {
     const secretId = tryDecryptConfigValue(creds['secret_id']);
 
     if (!roleId || !secretId) {
-      console.error('[AppRole Auth] Failed to decrypt stored credentials — the encryption key may be wrong or credentials are corrupted');
+      const hasFallback = !!config.vaultSystemToken;
+      if (hasFallback) {
+        console.debug('[AppRole Auth] Failed to decrypt stored credentials (falling back to static token)');
+      } else {
+        console.error('[AppRole Auth] Failed to decrypt stored credentials — the encryption key may be wrong or credentials are corrupted');
+      }
       appRoleLastFailTime = Date.now();
       appRoleBackoffMs = appRoleBackoffMs
         ? Math.min(appRoleBackoffMs * 2, APPROLE_BACKOFF_MAX_MS)
@@ -74,7 +79,27 @@ async function authenticateAppRole(): Promise<string | null> {
     console.log(`[AppRole Auth] Authenticated to Vault via AppRole (ttl=${lease_duration}s)`);
     return client_token;
   } catch (e) {
-    console.error('[AppRole Auth] Failed to authenticate:', e instanceof Error ? e.message : e);
+    const hasFallback = !!config.vaultSystemToken;
+    const errMsg = e instanceof Error ? e.message : String(e);
+    if (hasFallback) {
+      console.debug('[AppRole Auth] Failed to authenticate (falling back to static token):', errMsg);
+    } else {
+      console.error('[AppRole Auth] Failed to authenticate:', errMsg);
+    }
+    // If the credentials themselves are invalid/stale, clear them so we don't keep retrying
+    const isInvalidCreds =
+      errMsg.toLowerCase().includes('invalid role') ||
+      errMsg.toLowerCase().includes('invalid secret id') ||
+      errMsg.toLowerCase().includes('role id is invalid');
+    if (isInvalidCreds) {
+      try {
+        const storage = getConfigStorage();
+        await storage.delete(CREDS_SECTION);
+        console.log('[AppRole Auth] Cleared stale AppRole credentials from storage — re-run setup to reconfigure');
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
     appRoleLastFailTime = Date.now();
     appRoleBackoffMs = appRoleBackoffMs
       ? Math.min(appRoleBackoffMs * 2, APPROLE_BACKOFF_MAX_MS)

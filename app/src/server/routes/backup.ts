@@ -162,6 +162,41 @@ router.post(
   }
 );
 
+// GET /api/backup/download/:filename — download a backup file
+router.get(
+  '/download/:filename',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const safeFilename = path.basename(String(req.params['filename']));
+      if (!safeFilename.endsWith('.snap') && !safeFilename.endsWith('.json')) {
+        res.status(400).json({ error: 'Invalid backup filename' });
+        return;
+      }
+
+      const filePath = path.join(BACKUP_DIR, safeFilename);
+      if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: 'Backup file not found' });
+        return;
+      }
+
+      const stats = fs.statSync(filePath);
+      const contentType = safeFilename.endsWith('.snap')
+        ? 'application/octet-stream'
+        : 'application/json';
+
+      res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', stats.size);
+
+      const readStream = fs.createReadStream(filePath);
+      readStream.pipe(res);
+      readStream.on('error', next);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // DELETE /api/backup/:filename — delete a backup file
 router.delete(
   '/:filename',

@@ -150,6 +150,21 @@ export async function getPolicy(name: string) {
   return data;
 }
 
+export async function updatePolicy(name: string, policy: string) {
+  const { data } = await api.put<{ success: boolean; name: string }>(
+    `/policies/${encodeURIComponent(name)}`,
+    { policy }
+  );
+  return data;
+}
+
+export async function deletePolicy(name: string) {
+  const { data } = await api.delete<{ success: boolean; name: string }>(
+    `/policies/${encodeURIComponent(name)}`,
+  );
+  return data;
+}
+
 export async function getPolicyPaths(name: string) {
   const { data } = await api.get<{ name: string; paths: PolicyPath[] }>(
     `/policies/${name}/paths`,
@@ -292,7 +307,7 @@ export async function getGroups() {
 
 export async function getEntitiesSummary() {
   const { data } = await api.get<{
-    entities: { id: string; name: string; groupCount: number; policyCount: number }[];
+    entities: { id: string; name: string; aliasName: string; groupCount: number; policyCount: number }[];
   }>('/identity/entities-summary');
   return data.entities;
 }
@@ -302,6 +317,16 @@ export async function getGroupsSummary() {
     groups: { id: string; name: string; memberCount: number; policyCount: number }[];
   }>('/identity/groups-summary');
   return data.groups;
+}
+
+export async function resolveNames(entityIds: string[], groupIds: string[]) {
+  const params = new URLSearchParams();
+  if (entityIds.length) params.set('entityIds', entityIds.join(','));
+  if (groupIds.length) params.set('groupIds', groupIds.join(','));
+  const { data } = await api.get<{ entityNames: Record<string, string>; groupNames: Record<string, string> }>(
+    `/identity/resolve?${params.toString()}`
+  );
+  return data;
 }
 
 export async function getGroup(id: string) {
@@ -347,6 +372,13 @@ export async function getUserIdentityMap(options?: { entityName?: string; entity
 export async function getPolicyRelationshipsMap(refresh = false) {
   const { data } = await api.get<GraphData>('/graph/policy-relationships', {
     params: refresh ? { refresh: 'true' } : undefined,
+  });
+  return data;
+}
+
+export async function getSecretPathRelationships(path: string) {
+  const { data } = await api.get<GraphData>('/graph/secret-path-relationships', {
+    params: { path },
   });
   return data;
 }
@@ -424,12 +456,46 @@ export interface AuditLogEntry {
   hasResponse: boolean;
 }
 
+export interface AuditDevice {
+  path: string;
+  type: string;
+  description: string;
+  options: Record<string, string>;
+  local: boolean;
+}
+
+export interface AuditSourceInfo {
+  source: 'file' | 'socket';
+  socket: {
+    enabled: boolean;
+    listening: boolean;
+    port: number;
+    host: string;
+    connectedClients: number;
+    totalEventsReceived: number;
+    bufferSize: number;
+    firstEventAt: string | null;
+    lastEventAt: string | null;
+  };
+}
+
+export async function getAuditSource(): Promise<AuditSourceInfo> {
+  const { data } = await api.get<AuditSourceInfo>('/audit/source');
+  return data;
+}
+
+export async function getAuditDevices(): Promise<AuditDevice[]> {
+  const { data } = await api.get<{ devices: AuditDevice[] }>('/audit/devices');
+  return data.devices;
+}
+
 export async function getAuditLogs(params?: {
   offset?: number;
   limit?: number;
   search?: string;
   operation?: string;
   mountType?: string;
+  mountPath?: string;
 }) {
   const query = new URLSearchParams();
   if (params?.offset) query.set('offset', String(params.offset));
@@ -437,6 +503,7 @@ export async function getAuditLogs(params?: {
   if (params?.search) query.set('search', params.search);
   if (params?.operation) query.set('operation', params.operation);
   if (params?.mountType) query.set('mountType', params.mountType);
+  if (params?.mountPath) query.set('mountPath', params.mountPath);
   const qs = query.toString();
   const { data } = await api.get<{ entries: AuditLogEntry[]; total: number; offset: number; limit: number }>(
     `/audit/logs${qs ? `?${qs}` : ''}`,
@@ -593,6 +660,15 @@ export async function deleteBackup(filename: string) {
   return data;
 }
 
+export function downloadBackup(filename: string): void {
+  const a = document.createElement('a');
+  a.href = `/api/backup/download/${encodeURIComponent(filename)}`;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export async function getBackupSchedule() {
   const { data } = await api.get<{
     enabled: boolean;
@@ -730,6 +806,33 @@ export async function testAppRole() {
 export async function deleteAppRole() {
   const { data } = await api.delete<{ success: boolean; message: string }>(
     '/sys-token-setup/approle'
+  );
+  return data;
+}
+
+// ── Setup Health Check ────────────────────────────────────────────────────────
+export interface SetupHealthIssue {
+  type: 'missing' | 'outdated';
+  item: 'system-policy' | 'admin-policy' | 'approle-role';
+  name: string;
+  description: string;
+  expectedHcl?: string;
+}
+
+export interface SetupHealthCheck {
+  healthy: boolean;
+  issues: SetupHealthIssue[];
+}
+
+export async function getSetupHealthCheck(): Promise<SetupHealthCheck> {
+  const { data } = await api.get<SetupHealthCheck>('/sys-token-setup/health-check');
+  return data;
+}
+
+export async function repairSetup(issues: SetupHealthIssue[]): Promise<{ success: boolean; message: string }> {
+  const { data } = await api.post<{ success: boolean; message: string }>(
+    '/sys-token-setup/repair',
+    { issues }
   );
   return data;
 }

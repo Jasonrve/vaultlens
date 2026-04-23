@@ -14,11 +14,10 @@ until vault status > /dev/null 2>&1; do
 done
 echo "✓ Vault is ready"
 
-# ── Enable Audit Device (file-based) ──────────────────────────────────────────
+# ── Audit Devices ──────────────────────────────────────────────────────────────
 echo ""
-echo "→ Enabling file audit device..."
-vault audit enable file file_path=/vault/audit/vault-audit.log hmac_accessor=false 2>/dev/null || echo "  (already enabled)"
-echo "✓ File audit device enabled at /vault/audit/vault-audit.log (hmac_accessor=false)"
+echo "→ Socket audit is configured via VAULT_AUDIT_SOURCE=socket (server-managed)"
+echo "✓ File audit disabled for local testing — using socket only"
 
 # ── Enable KV v2 secret engine ────────────────────────────────────────────────
 echo ""
@@ -459,6 +458,7 @@ echo "    Entities: demo-user, alice, bob, charlie"
 echo "    Groups: developers, admins"
 echo ""
 echo "  Audit: file → /vault/audit/vault-audit.log (hmac_accessor=false)"
+echo "         socket device auto-registered by VaultLens on startup (VAULT_AUDIT_SOURCE=socket)"
 echo ""
 echo "  Run VaultLens:  cd app && npm run dev"
 echo ""

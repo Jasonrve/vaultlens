@@ -5,6 +5,8 @@ import readline from 'readline';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { getAuditBuffer, getAuditSocketStats } from '../lib/auditSocket.js';
+import { VaultError } from '../lib/vaultClient.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -12,7 +14,7 @@ const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify)
 
 router.use(authMiddleware);
 
-// Configurable audit log path (Finding #5)
+// Configurable audit log path (file mode only)
 const AUDIT_LOG_FILE = config.auditLogPath
   ? path.resolve(config.auditLogPath)
   : path.resolve(process.cwd(), '..', 'vault', 'audit', 'vault-audit.log');
@@ -81,7 +83,21 @@ interface GroupedAuditEntry {
   hasResponse: boolean;
 }
 
+// GET /api/audit/source — returns the active audit log source and socket stats
+router.get(
+  '/source',
+  (_req: AuthenticatedRequest, res: Response) => {
+    const stats = getAuditSocketStats();
+    res.json({
+      source: config.auditSource,
+      socket: stats,
+    });
+  },
+);
+
 // GET /api/audit/logs — read and return grouped audit log entries (server-side paginated)
+// In socket mode: reads from the in-memory ring buffer (no file I/O).
+// In file mode: reads from the on-disk audit log file.
 router.get(
   '/logs',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -94,33 +110,55 @@ router.get(
       const search = String(req.query['search'] ?? '').toLowerCase();
       const filterOperation = String(req.query['operation'] ?? '');
       const filterMountType = String(req.query['mountType'] ?? '');
+      const filterMountPath = String(req.query['mountPath'] ?? '').replace(/\/$/, '');
 
-      if (!fs.existsSync(AUDIT_LOG_FILE)) {
-        return res.json({ entries: [], total: 0 });
-      }
+      let rawEntries: AuditEntry[];
 
-      // Read all lines (JSONL format) — read from end for most recent first
-      // Cap at 20 000 lines to prevent memory exhaustion on large audit logs
-      const MAX_AUDIT_LINES = 20_000;
-      const entries: AuditEntry[] = [];
-      const fileStream = fs.createReadStream(AUDIT_LOG_FILE, { encoding: 'utf-8' });
-      const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-      for await (const line of rl) {
-        if (!line.trim()) continue;
-        if (entries.length >= MAX_AUDIT_LINES) break;
-        try {
-          entries.push(JSON.parse(line) as AuditEntry);
-        } catch {
-          // Skip malformed lines
+      if (config.auditSource === 'socket') {
+        // ── Socket mode: read from in-memory ring buffer (no file I/O) ───────
+        rawEntries = getAuditBuffer() as AuditEntry[];
+      } else {
+        // ── File mode: read from on-disk audit log file ───────────────────────
+        if (!fs.existsSync(AUDIT_LOG_FILE)) {
+          return res.json({ entries: [], total: 0 });
         }
+
+        // Read efficiently from the end of the file so large multi-GB logs have no impact.
+        // We grab the last CHUNK_SIZE_BYTES bytes, which covers ~20k typical audit entries.
+        // The first line of a mid-file chunk may be incomplete and is skipped.
+        const MAX_AUDIT_LINES = 20_000;
+        const CHUNK_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB window from end
+
+        const fileStats = await fs.promises.stat(AUDIT_LOG_FILE);
+        const fileSize = fileStats.size;
+        const startByte = Math.max(0, fileSize - CHUNK_SIZE_BYTES);
+
+        const fileEntries: AuditEntry[] = [];
+        const fileStream = fs.createReadStream(AUDIT_LOG_FILE, {
+          encoding: 'utf-8',
+          start: startByte,
+        });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+        let skipFirst = startByte > 0; // first line may be incomplete when starting mid-file
+        for await (const line of rl) {
+          if (skipFirst) { skipFirst = false; continue; }
+          if (!line.trim()) continue;
+          if (fileEntries.length >= MAX_AUDIT_LINES) break;
+          try {
+            fileEntries.push(JSON.parse(line) as AuditEntry);
+          } catch {
+            // Skip malformed lines
+          }
+        }
+        rawEntries = fileEntries;
       }
 
       // Group requests and responses by request ID
       const requestMap = new Map<string, AuditEntry>();
       const responseMap = new Map<string, AuditEntry>();
 
-      for (const entry of entries) {
+      for (const entry of rawEntries) {
         const reqId = entry.request?.id;
         if (!reqId) continue;
         if (entry.type === 'request') {
@@ -152,6 +190,11 @@ router.get(
         // Apply filters
         if (filterOperation && operation !== filterOperation) continue;
         if (filterMountType && mountType !== filterMountType) continue;
+        if (filterMountPath) {
+          // mountPoint in audit logs is e.g. "auth/github/" for auth mounts
+          const cleanMountPoint = mountPoint.replace(/^auth\//, '').replace(/\/$/, '');
+          if (cleanMountPoint !== filterMountPath && !mountPoint.includes(filterMountPath)) continue;
+        }
         if (search) {
           const searchFields = [
             reqPath, operation, mountType, displayName,
@@ -192,6 +235,45 @@ router.get(
 
       return res.json({ entries: paginated, total, offset, limit });
     } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// GET /api/audit/devices — list Vault audit backends (file, socket, syslog, etc.)
+router.get(
+  '/devices',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const response = await vaultClient.get<{
+        data: Record<string, {
+          type: string;
+          description: string;
+          options: Record<string, string>;
+          local: boolean;
+        }>;
+      }>('/sys/audit', req.vaultToken!);
+
+      const rawDevices = response?.data ?? response;
+      const devices = Object.entries(rawDevices as Record<string, {
+        type: string;
+        description: string;
+        options: Record<string, string>;
+        local: boolean;
+      }>).map(([devicePath, device]) => ({
+        path: devicePath,
+        type: device.type ?? 'unknown',
+        description: device.description ?? '',
+        options: device.options ?? {},
+        local: device.local ?? false,
+      }));
+
+      return res.json({ devices });
+    } catch (error) {
+      if (error instanceof VaultError && error.statusCode === 403) {
+        // Return empty list rather than 403 — not all tokens have sys/audit access
+        return res.json({ devices: [] });
+      }
       return next(error);
     }
   }

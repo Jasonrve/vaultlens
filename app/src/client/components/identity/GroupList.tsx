@@ -41,17 +41,29 @@ export default function GroupList() {
             {groups.map(({ id, name, memberCount, policyCount }) => (
               <tr key={id} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <Link
                       to={`/access/groups/${id}`}
                       className="text-sm text-[#1563ff] hover:text-[#1250d4]"
                     >
                       {name || <span className="italic text-gray-400">unnamed</span>}
                     </Link>
-                    <div className="flex gap-2 text-xs text-gray-300">
-                      {memberCount > 0 && <span>Members: {memberCount}</span>}
-                      {policyCount > 0 && <span>Policies: {policyCount}</span>}
-                    </div>
+                    {memberCount > 0 && (
+                      <span
+                        title={`${memberCount} member${memberCount !== 1 ? 's' : ''}`}
+                        className="text-xs text-gray-400"
+                      >
+                        {memberCount}m
+                      </span>
+                    )}
+                    {policyCount > 0 && (
+                      <span
+                        title={`${policyCount} polic${policyCount !== 1 ? 'ies' : 'y'}`}
+                        className="text-xs text-gray-400"
+                      >
+                        {policyCount}p
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3">

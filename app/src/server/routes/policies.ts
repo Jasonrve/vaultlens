@@ -113,4 +113,60 @@ router.get(
   }
 );
 
+// PUT /:name — create or update a policy's HCL content
+router.put(
+  '/:name',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const name = String(req.params['name']);
+
+      // Protect built-in Vault policies
+      if (name === 'root' || name === 'default') {
+        res.status(403).json({ error: 'Cannot modify built-in Vault policies (root, default)' });
+        return;
+      }
+
+      const { policy } = req.body as { policy?: string };
+      if (!policy || typeof policy !== 'string') {
+        res.status(400).json({ error: 'Policy HCL content is required' });
+        return;
+      }
+
+      await vaultClient.put(
+        `/sys/policies/acl/${encodeURIComponent(name)}`,
+        req.vaultToken!,
+        { policy }
+      );
+
+      res.json({ success: true, name });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /:name — delete a policy
+router.delete(
+  '/:name',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const name = String(req.params['name']);
+
+      if (name === 'root' || name === 'default') {
+        res.status(403).json({ error: 'Cannot delete built-in Vault policies (root, default)' });
+        return;
+      }
+
+      await vaultClient.delete(
+        `/sys/policies/acl/${encodeURIComponent(name)}`,
+        req.vaultToken!,
+      );
+
+      res.json({ success: true, name });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 export default router;

@@ -172,22 +172,22 @@ export default function DevIntegrationTab({ method, role }: Props) {
   }
 
   // ── View mode ──────────────────────────────────────────────────────────────
-  
-  // If no custom content exists, show different UI for admins vs non-admins
-  if (!isCustomized) {
+  const hasContent = content.trim().length > 0;
+
+  // No content at all
+  if (!hasContent) {
     if (!canCustomize) {
-      // Non-admin users see nothing if there's no custom guide
+      // Non-admin users see nothing if there's no guide
       return null;
     }
-    
     // Admin sees empty state with explanation
     return (
       <div>
         <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-4">
           <h3 className="mb-2 font-semibold text-amber-900">📝 Developer Guide</h3>
           <p className="mb-3 text-sm text-amber-800">
-            This guide is empty. Add content to help developers integrate with this auth method and role. 
-            Once you add content, regular users will be able to see this guide with all the template variables 
+            This guide is empty. Add content to help developers integrate with this auth method and role.
+            Once you add content, regular users will be able to see this guide with all the template variables
             automatically filled in with the actual values.
           </p>
           <button

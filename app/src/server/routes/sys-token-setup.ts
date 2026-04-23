@@ -73,6 +73,16 @@ path "auth/token/lookup-self" {
 }
 `.trim();
 
+// Helper: strip comments and blank lines so two logically-identical policies
+// can be compared regardless of formatting differences.
+function normalizeHcl(hcl: string): string {
+  return hcl
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0 && !l.startsWith('#'))
+    .join('\n');
+}
+
 // VaultLens admin policy — grants full access to VaultLens features
 const ADMIN_POLICY_HCL = `
 # VaultLens Admin Policy
@@ -488,6 +498,239 @@ router.post(
         policies,
         tokenTtl: lease_duration,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── GET /api/sys-token-setup/health-check ────────────────────────────────────
+// Checks whether the two VaultLens policies and (if AppRole creds are stored)
+// the AppRole role are present in Vault and match the expected content.
+// Gracefully skips any check that fails with 403/400 (insufficient permissions).
+router.get(
+  '/health-check',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const issues: Array<{
+        type: 'missing' | 'outdated';
+        item: 'system-policy' | 'admin-policy' | 'approle-role';
+        name: string;
+        description: string;
+        expectedHcl?: string;
+      }> = [];
+
+      // Determine whether AppRole credentials are stored.
+      // Only check the system-token policy and AppRole role when in AppRole mode.
+      let approleConfigured = false;
+      try {
+        const creds = await getConfigStorage().get(CREDS_SECTION);
+        approleConfigured = !!(creds && creds['role_id']);
+      } catch { /* storage unavailable — treat as not configured */ }
+
+      // ── Check system-token policy (AppRole mode only) ──────────────────────
+      if (approleConfigured) {
+        try {
+          const policyRes = await vaultClient.get<{ policy: string }>(
+            `/sys/policies/acl/${APPROLE_POLICY_NAME}`,
+            req.vaultToken!
+          );
+          if (normalizeHcl(policyRes.policy ?? '') !== normalizeHcl(SYSTEM_TOKEN_POLICY_HCL)) {
+            issues.push({
+              type: 'outdated',
+              item: 'system-policy',
+              name: APPROLE_POLICY_NAME,
+              description: `Policy "${APPROLE_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
+              expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
+            });
+          }
+        } catch (e) {
+          if (e instanceof VaultError && e.statusCode === 404) {
+            issues.push({
+              type: 'missing',
+              item: 'system-policy',
+              name: APPROLE_POLICY_NAME,
+              description: `Policy "${APPROLE_POLICY_NAME}" is missing from Vault.`,
+              expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
+            });
+          } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
+            throw e;
+          }
+          // 403/400 → user can't read policies; skip this check
+        }
+      }
+
+      // ── Check admin policy (always) ────────────────────────────────────────
+      try {
+        const policyRes = await vaultClient.get<{ policy: string }>(
+          `/sys/policies/acl/${ADMIN_POLICY_NAME}`,
+          req.vaultToken!
+        );
+        if (normalizeHcl(policyRes.policy ?? '') !== normalizeHcl(ADMIN_POLICY_HCL)) {
+          issues.push({
+            type: 'outdated',
+            item: 'admin-policy',
+            name: ADMIN_POLICY_NAME,
+            description: `Policy "${ADMIN_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
+            expectedHcl: ADMIN_POLICY_HCL,
+          });
+        }
+      } catch (e) {
+        if (e instanceof VaultError && e.statusCode === 404) {
+          issues.push({
+            type: 'missing',
+            item: 'admin-policy',
+            name: ADMIN_POLICY_NAME,
+            description: `Policy "${ADMIN_POLICY_NAME}" is missing from Vault.`,
+            expectedHcl: ADMIN_POLICY_HCL,
+          });
+        } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
+          throw e;
+        }
+      }
+
+      // ── Check AppRole role (AppRole mode only) ─────────────────────────────
+      if (approleConfigured) {
+        try {
+          await vaultClient.get(
+            `/auth/approle/role/${APPROLE_ROLE_NAME}`,
+            req.vaultToken!
+          );
+        } catch (e) {
+          if (e instanceof VaultError && e.statusCode === 404) {
+            issues.push({
+              type: 'missing',
+              item: 'approle-role',
+              name: APPROLE_ROLE_NAME,
+              description: `AppRole role "${APPROLE_ROLE_NAME}" is missing from Vault. Background services cannot authenticate.`,
+            });
+          } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
+            throw e;
+          }
+        }
+      }
+
+      res.json({ healthy: issues.length === 0, issues });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── POST /api/sys-token-setup/repair ─────────────────────────────────────────
+// Re-applies any missing or outdated policies and/or re-creates the AppRole
+// role using the provided issue list. Uses the logged-in user's token.
+router.post(
+  '/repair',
+  authMiddleware,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { issues } = req.body as {
+        issues: Array<{ item: string }>;
+      };
+
+      const needsSystemPolicy = issues.some((i) => i.item === 'system-policy');
+      const needsAdminPolicy = issues.some((i) => i.item === 'admin-policy');
+      const needsApprole = issues.some((i) => i.item === 'approle-role');
+
+      // ── Re-apply policies ──────────────────────────────────────────────────
+      if (needsSystemPolicy) {
+        await vaultClient.put(
+          `/sys/policies/acl/${APPROLE_POLICY_NAME}`,
+          req.vaultToken!,
+          { policy: SYSTEM_TOKEN_POLICY_HCL }
+        );
+      }
+
+      if (needsAdminPolicy) {
+        await vaultClient.put(
+          `/sys/policies/acl/${ADMIN_POLICY_NAME}`,
+          req.vaultToken!,
+          { policy: ADMIN_POLICY_HCL }
+        );
+      }
+
+      // ── Re-create AppRole role (if missing) ───────────────────────────────
+      if (needsApprole) {
+        // Ensure the system-token policy exists first (role depends on it)
+        await vaultClient.put(
+          `/sys/policies/acl/${APPROLE_POLICY_NAME}`,
+          req.vaultToken!,
+          { policy: SYSTEM_TOKEN_POLICY_HCL }
+        );
+
+        // Enable AppRole if not already active
+        let approleEnabled = false;
+        try {
+          const authMounts = await vaultClient.get<{ data: Record<string, { type: string }> }>(
+            '/sys/auth',
+            req.vaultToken!
+          );
+          approleEnabled = Object.values(authMounts.data).some((m) => m.type === 'approle');
+        } catch (e) {
+          if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 404))) {
+            throw e;
+          }
+        }
+
+        if (!approleEnabled) {
+          await vaultClient.post('/sys/auth/approle', req.vaultToken!, {
+            type: 'approle',
+            description: 'AppRole auth method for VaultLens system token',
+          });
+        }
+
+        // Create the role
+        await vaultClient.post(
+          `/auth/approle/role/${APPROLE_ROLE_NAME}`,
+          req.vaultToken!,
+          {
+            token_policies: [APPROLE_POLICY_NAME],
+            token_ttl: '1h',
+            token_max_ttl: '24h',
+            secret_id_ttl: '0',
+            secret_id_num_uses: 0,
+          }
+        );
+
+        // Fetch new role-id
+        const roleIdRes = await vaultClient.get<{ data: { role_id: string } }>(
+          `/auth/approle/role/${APPROLE_ROLE_NAME}/role-id`,
+          req.vaultToken!
+        );
+        const roleId = roleIdRes.data.role_id;
+
+        // Generate a new secret-id
+        const secretIdRes = await vaultClient.post<{ data: { secret_id: string } }>(
+          `/auth/approle/role/${APPROLE_ROLE_NAME}/secret-id`,
+          req.vaultToken!,
+          {}
+        );
+        const secretId = secretIdRes.data.secret_id;
+
+        // Encrypt and bootstrap before storing
+        const encryptedRoleId = encryptConfigValue(roleId);
+        const encryptedSecretId = encryptConfigValue(secretId);
+
+        try {
+          const bootstrapLogin = await vaultClient.post<{
+            auth: { client_token: string; lease_duration: number };
+          }>('/auth/approle/login', '', { role_id: roleId, secret_id: secretId });
+          seedSystemTokenCache(
+            bootstrapLogin.auth.client_token,
+            bootstrapLogin.auth.lease_duration
+          );
+        } catch { /* non-critical */ }
+
+        await getConfigStorage().set(CREDS_SECTION, {
+          role_id: encryptedRoleId,
+          secret_id: encryptedSecretId,
+          stored_at: new Date().toISOString(),
+        });
+      }
+
+      res.json({ success: true, message: 'Repair completed successfully.' });
     } catch (error) {
       next(error);
     }

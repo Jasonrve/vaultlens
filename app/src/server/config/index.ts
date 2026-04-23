@@ -19,8 +19,16 @@ export const config = {
   sharingRateLimitMax: parseInt(process.env['SHARING_RATE_LIMIT_MAX'] || '20', 10),
   // Rate limit for the public /api/auth/methods endpoint (per minute)
   authMethodsRateLimitMax: parseInt(process.env['AUTH_METHODS_RATE_LIMIT_MAX'] || '30', 10),
-  // Audit log
+  // Audit log — source: 'file' (default) or 'socket'
   auditLogPath: process.env['VAULT_AUDIT_LOG_PATH'] || '',
+  auditSource: (process.env['VAULT_AUDIT_SOURCE'] || 'file') as 'file' | 'socket',
+  // TCP socket server that receives Vault audit events in real-time
+  auditSocketPort: parseInt(process.env['VAULT_AUDIT_SOCKET_PORT'] || '9090', 10),
+  auditSocketHost: process.env['VAULT_AUDIT_SOCKET_HOST'] || '0.0.0.0',
+  // Address from Vault's perspective used when auto-registering the socket audit device
+  // On Docker Desktop (Windows/macOS): host.docker.internal:9090
+  // On Linux Docker: 172.17.0.1:9090  (or set VAULT_AUDIT_SOCKET_VAULT_ADDRESS explicitly)
+  auditSocketVaultAddress: process.env['VAULT_AUDIT_SOCKET_VAULT_ADDRESS'] || 'host.docker.internal:9090',
   // Configuration storage: 'file' (default) or 'vault'
   configStorage: (process.env['VAULTLENS_CONFIG_STORAGE'] || 'file') as 'file' | 'vault',
   configStoragePath: process.env['VAULTLENS_CONFIG_PATH'] || '',

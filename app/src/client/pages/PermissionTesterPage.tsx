@@ -316,10 +316,22 @@ export default function PermissionTesterPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Permission Tester</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Simulate and validate permissions without executing real operations.
-          Uses Vault&apos;s capabilities endpoints to test access.
-        </p>
+        <div className="mt-1 flex items-start gap-2">
+          {entityId ? (
+            <span className="mt-0.5 shrink-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              Simulated
+            </span>
+          ) : (
+            <span className="mt-0.5 shrink-0 rounded border border-green-300 bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+              Via Vault API
+            </span>
+          )}
+          <p className="text-sm text-gray-500">
+            {entityId
+              ? 'Results are simulated — Vault has no impersonation API, so policies are matched client-side based on the entity\'s assigned policies.'
+              : 'Results are real — queried live from Vault using your current token via /sys/capabilities-self.'}
+          </p>
+        </div>
       </div>
 
       {/* Test Form */}
@@ -420,9 +432,20 @@ export default function PermissionTesterPage() {
                 </svg>
               )}
               <div>
-                <h3 className={`text-sm font-semibold ${result.allowed ? 'text-green-800' : 'text-red-800'}`}>
-                  {result.allowed ? 'Permission Granted' : 'Permission Denied'}
-                </h3>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <h3 className={`text-sm font-semibold ${result.allowed ? 'text-green-800' : 'text-red-800'}`}>
+                    {result.allowed ? 'Permission Granted' : 'Permission Denied'}
+                  </h3>
+                  {entityId ? (
+                    <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      Simulated
+                    </span>
+                  ) : (
+                    <span className="rounded border border-green-300 bg-white/60 px-1.5 py-0.5 text-[10px] font-medium text-green-700">
+                      Via Vault API
+                    </span>
+                  )}
+                </div>
                 <p className={`text-xs ${result.allowed ? 'text-green-600' : 'text-red-600'}`}>
                   <span className="font-mono">{result.operation}</span> on{' '}
                   <span className="font-mono">{result.path}</span>

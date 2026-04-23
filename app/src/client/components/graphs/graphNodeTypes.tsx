@@ -86,6 +86,7 @@ export interface QuickViewNode {
   capabilities?: string[];
   isAuthPath?: boolean;
   authType?: string;
+  method?: string; // for role nodes: the auth method mount path
 }
 
 /** Returns Tailwind classes for a capability badge */
@@ -104,6 +105,6 @@ export const NODE_COLORS: Record<string, string> = {
   authMethod: '#6366f1',
   role: '#f59e0b',
   entity: '#60A5FA',
-  group: '#f59e0b',
+  group: '#14b8a6',
   me: '#1563ff',
 };

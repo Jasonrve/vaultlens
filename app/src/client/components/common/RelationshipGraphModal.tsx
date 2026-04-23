@@ -47,7 +47,7 @@ const NODE_COLORS: Record<string, string> = {
   authMethod: '#7c3aed',
   role: '#f59e0b',
   entity: '#60A5FA',
-  group: '#f59e0b',
+  group: '#14b8a6',
   me: '#1563ff',
 };
 

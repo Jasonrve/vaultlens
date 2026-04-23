@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
+import SecretPathRelationshipModal from '../common/SecretPathRelationshipModal';
 
 export default function SecretsList() {
   const { '*': splat = '' } = useParams();
@@ -11,6 +12,7 @@ export default function SecretsList() {
   const [keys, setKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRelGraph, setShowRelGraph] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -38,6 +40,12 @@ export default function SecretsList() {
 
   return (
     <div>
+      {showRelGraph && (
+        <SecretPathRelationshipModal
+          path={showRelGraph}
+          onClose={() => setShowRelGraph(null)}
+        />
+      )}
       <div className="mb-4">
         <Breadcrumb items={breadcrumbItems} />
       </div>
@@ -60,6 +68,7 @@ export default function SecretsList() {
               <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
                 Key
               </th>
+              <th className="w-10" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
@@ -68,6 +77,8 @@ export default function SecretsList() {
               const linkPath = isFolder
                 ? `/secrets/${normalizedSplat}${key}`
                 : `/secrets/view/${normalizedSplat}${key}`;
+              // Full Vault path for relationship lookup (without /data/ prefix — use raw path)
+              const fullPath = `${normalizedSplat}${key}`;
               return (
                 <tr key={key} className="hover:bg-gray-50">
                   <td className="px-4 py-3">
@@ -79,12 +90,36 @@ export default function SecretsList() {
                       <span className={isFolder ? 'font-medium' : ''}>{key}</span>
                     </Link>
                   </td>
+                  <td className="w-10 px-2 py-3 text-right">
+                    {!isFolder && (
+                      <button
+                        onClick={() => setShowRelGraph(fullPath)}
+                        title="View access relationships"
+                        className="text-gray-300 hover:text-gray-500 transition-colors"
+                        aria-label={`View relationships for ${key}`}
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                        >
+                          <circle cx="6" cy="12" r="2" />
+                          <circle cx="18" cy="6" r="2" />
+                          <circle cx="18" cy="18" r="2" />
+                          <path strokeLinecap="round" d="M8 11.2l8-4" />
+                          <path strokeLinecap="round" d="M8 12.8l8 4" />
+                        </svg>
+                      </button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {keys.length === 0 && (
               <tr>
-                <td className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
                   No secrets found at this path
                 </td>
               </tr>

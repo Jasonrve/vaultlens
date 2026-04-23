@@ -3,11 +3,12 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import app from './app.js';
 import { config } from './config/index.js';
-import { isSystemTokenConfigured } from './lib/systemToken.js';
+import { isSystemTokenConfigured, getSystemToken } from './lib/systemToken.js';
 import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
 import { ensureVaultLensAdminPolicy } from './lib/policyInit.js';
 import { startAuditWatcher } from './routes/hooks.js';
+import { startAuditSocketServer, autoRegisterSocketAuditWithVault } from './lib/auditSocket.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,11 @@ async function start(): Promise<void> {
     if (config.nodeEnv === 'production') {
       console.error('[SECURITY] WARNING: TLS verification is disabled in a production environment. This allows man-in-the-middle attacks.');
     }
+  }
+
+  // Start audit socket server before HTTP server so Vault can connect immediately
+  if (config.auditSource === 'socket') {
+    startAuditSocketServer(config.auditSocketPort, config.auditSocketHost);
   }
 
   if (config.nodeEnv !== 'production') {
@@ -65,6 +71,24 @@ async function start(): Promise<void> {
       ensureVaultLensAdminPolicy().catch(err => {
         console.error('[Policy Init] Failed to ensure vaultlens-admin policy:', err instanceof Error ? err.message : err);
       });
+
+      // Auto-register socket audit device with Vault when socket mode is enabled
+      if (config.auditSource === 'socket') {
+        getSystemToken().then((token) => {
+          return autoRegisterSocketAuditWithVault(
+            config.vaultAddr,
+            token,
+            config.auditSocketVaultAddress,
+            config.vaultSkipTlsVerify,
+          );
+        }).catch((err: unknown) => {
+          console.warn(
+            '[Audit Socket] Could not auto-register socket audit device with Vault:',
+            err instanceof Error ? err.message : String(err),
+            '\n  Ensure VAULT_AUDIT_SOCKET_VAULT_ADDRESS is reachable from Vault and the system token has sys/audit/* permissions.',
+          );
+        });
+      }
     }
   });
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../lib/api';
+import SuggestionsCombobox from '../components/common/SuggestionsCombobox';
 
 const AUDIT_FIELDS: { id: string; label: string }[] = [
   { id: 'accessor', label: 'Accessor' },
@@ -15,6 +16,59 @@ type FormState = {
   matchFields: string[];
   matchValues: Record<string, string>;
 };
+
+type FormErrors = {
+  name?: string;
+  secretPath?: string;
+  endpoint?: string;
+};
+
+function validateForm(form: FormState): FormErrors {
+  const errors: FormErrors = {};
+
+  if (!form.name.trim()) {
+    errors.name = 'Name is required';
+  }
+
+  if (!form.secretPath.trim()) {
+    errors.secretPath = 'Secret path pattern is required';
+  } else if (form.secretPath.includes('..')) {
+    errors.secretPath = 'Path pattern must not contain ".."';
+  } else if (!/^[a-zA-Z0-9\-_.*+/%]+(\/[a-zA-Z0-9\-_.*+/%]*)*$/.test(form.secretPath.trim())) {
+    errors.secretPath =
+      'Invalid path pattern. Use alphanumeric characters, hyphens, underscores, slashes, and * / + wildcards only.';
+  }
+
+  if (!form.endpoint.trim()) {
+    errors.endpoint = 'Endpoint URL is required';
+  } else {
+    try {
+      const url = new URL(form.endpoint.trim());
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        errors.endpoint = 'Endpoint must use http:// or https:// protocol';
+      } else {
+        const hostname = url.hostname;
+        const ssrfPatterns = [
+          /^localhost$/i,
+          /^127\./,
+          /^10\./,
+          /^192\.168\./,
+          /^172\.(1[6-9]|2\d|3[01])\./,
+          /^169\.254\./,
+          /^\[?::1\]?$/,
+          /^\[?fc[0-9a-f][0-9a-f]:/i,
+        ];
+        if (ssrfPatterns.some((p) => p.test(hostname))) {
+          errors.endpoint = 'Endpoint must not target localhost or private network addresses';
+        }
+      }
+    } catch {
+      errors.endpoint = 'Invalid URL format — must be a full URL (e.g. https://hooks.example.com/...)';
+    }
+  }
+
+  return errors;
+}
 
 const EMPTY_FORM: FormState = {
   name: '',
@@ -34,6 +88,8 @@ export default function HooksPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [testing, setTesting] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [auditFieldSuggestions, setAuditFieldSuggestions] = useState<Record<string, string[]>>({});
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -50,9 +106,44 @@ export default function HooksPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // When the form opens, fetch recent audit log entries and extract unique
+  // field values to populate the filter value datalists.
+  useEffect(() => {
+    if (!showForm) return;
+    api.getAuditLogs({ limit: 200 }).then((result) => {
+      const acc: Record<string, Set<string>> = {
+        accessor: new Set(),
+        display_name: new Set(),
+        entity_id: new Set(),
+        user: new Set(),
+      };
+      for (const entry of result.entries) {
+        const isHmac = (v: string) => !v || v.startsWith('hmac-sha256:');
+        if (!isHmac(entry.clientTokenAccessor)) acc.accessor.add(entry.clientTokenAccessor);
+        if (!isHmac(entry.displayName)) {
+          acc.display_name.add(entry.displayName);
+          acc.user.add(entry.displayName);
+        }
+        if (!isHmac(entry.entityId)) acc.entity_id.add(entry.entityId);
+      }
+      setAuditFieldSuggestions({
+        accessor: [...acc.accessor],
+        display_name: [...acc.display_name],
+        entity_id: [...acc.entity_id],
+        user: [...acc.user],
+      });
+    }).catch(() => { /* suggestions are optional */ });
+  }, [showForm]);
+
   const handleSave = async () => {
     setError(null);
     setSuccessMsg(null);
+    const errors = validateForm(form);
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    setFormErrors({});
     try {
       if (editingId) {
         await api.updateHook(editingId, {
@@ -86,6 +177,7 @@ export default function HooksPage() {
     });
     setEditingId(hook.id);
     setShowForm(true);
+    setFormErrors({});
   };
 
   const handleDelete = async (id: string) => {
@@ -157,7 +249,7 @@ export default function HooksPage() {
             Refresh
           </button>
           <button
-            onClick={() => { setShowForm(true); setEditingId(null); setForm(EMPTY_FORM); }}
+            onClick={() => { setShowForm(true); setEditingId(null); setForm(EMPTY_FORM); setFormErrors({}); }}
             className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
           >
             Add Webhook
@@ -202,10 +294,11 @@ export default function HooksPage() {
               <input
                 type="text"
                 value={form.name}
-                onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))}
+                onChange={e => { setForm(prev => ({ ...prev, name: e.target.value })); setFormErrors(prev => ({ ...prev, name: undefined })); }}
                 placeholder="e.g. Notify DevOps"
-                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
+                className={`w-full rounded border px-3 py-1.5 text-sm ${formErrors.name ? 'border-red-400 focus:ring-red-400' : 'border-gray-300'}`}
               />
+              {formErrors.name && <p className="mt-0.5 text-[11px] text-red-600">{formErrors.name}</p>}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -214,24 +307,29 @@ export default function HooksPage() {
               <input
                 type="text"
                 value={form.secretPath}
-                onChange={e => setForm(prev => ({ ...prev, secretPath: e.target.value }))}
+                onChange={e => { setForm(prev => ({ ...prev, secretPath: e.target.value })); setFormErrors(prev => ({ ...prev, secretPath: undefined })); }}
                 placeholder="e.g. kv/production/ or kv/*/prod/*"
-                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
+                className={`w-full rounded border px-3 py-1.5 text-sm ${formErrors.secretPath ? 'border-red-400 focus:ring-red-400' : 'border-gray-300'}`}
               />
-              <p className="text-[11px] text-gray-400 mt-0.5">
-                Use <code className="bg-gray-100 px-0.5 rounded">*</code> as a wildcard to match any path segment.
-                Without wildcards, all sub-paths are matched as a prefix.
-              </p>
+              {formErrors.secretPath ? (
+                <p className="mt-0.5 text-[11px] text-red-600">{formErrors.secretPath}</p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-0.5">
+                  Use <code className="bg-gray-100 px-0.5 rounded">*</code> as a wildcard to match any path segment.
+                  Without wildcards, all sub-paths are matched as a prefix.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Endpoint URL</label>
               <input
                 type="url"
                 value={form.endpoint}
-                onChange={e => setForm(prev => ({ ...prev, endpoint: e.target.value }))}
+                onChange={e => { setForm(prev => ({ ...prev, endpoint: e.target.value })); setFormErrors(prev => ({ ...prev, endpoint: undefined })); }}
                 placeholder="https://hooks.example.com/webhook"
-                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
+                className={`w-full rounded border px-3 py-1.5 text-sm ${formErrors.endpoint ? 'border-red-400 focus:ring-red-400' : 'border-gray-300'}`}
               />
+              {formErrors.endpoint && <p className="mt-0.5 text-[11px] text-red-600">{formErrors.endpoint}</p>}
             </div>
 
             {/* Audit field matching */}
@@ -257,18 +355,21 @@ export default function HooksPage() {
                       {f.label}
                     </label>
                     {form.matchFields.includes(f.id) && (
-                      <input
-                        type="text"
-                        value={form.matchValues[f.id] ?? ''}
-                        onChange={e =>
-                          setForm(prev => ({
-                            ...prev,
-                            matchValues: { ...prev.matchValues, [f.id]: e.target.value },
-                          }))
-                        }
-                        placeholder={`Filter by ${f.label.toLowerCase()}…`}
-                        className="flex-1 rounded border border-gray-300 px-2 py-1 text-xs"
-                      />
+                      <>
+                        <SuggestionsCombobox
+                          value={form.matchValues[f.id] ?? ''}
+                          onChange={(v) =>
+                            setForm(prev => ({
+                              ...prev,
+                              matchValues: { ...prev.matchValues, [f.id]: v },
+                            }))
+                          }
+                          suggestions={auditFieldSuggestions[f.id] ?? []}
+                          placeholder={`Filter by ${f.label.toLowerCase()}…`}
+                          className="flex-1"
+                          inputClassName="w-full rounded border border-gray-300 px-2 py-1 text-xs focus:border-blue-400 focus:outline-none"
+                        />
+                      </>
                     )}
                   </div>
                 ))}
@@ -284,7 +385,7 @@ export default function HooksPage() {
                 {editingId ? 'Update' : 'Create'}
               </button>
               <button
-                onClick={() => { setShowForm(false); setEditingId(null); }}
+                onClick={() => { setShowForm(false); setEditingId(null); setFormErrors({}); }}
                 className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
               >
                 Cancel

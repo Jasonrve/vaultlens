@@ -102,17 +102,16 @@ export async function saveTemplateOverride(authType: string, content: string): P
 }
 
 /**
- * Delete a template override (reset to default by removing the file if it's a custom one).
- * For now, this just removes from cache and reloads from disk.
+ * Delete a template override (reset to built-in default by removing the disk file).
  */
 export async function deleteTemplateOverride(authType: string): Promise<void> {
   try {
     const filePath = validateTemplatePath(`${authType.toLowerCase()}.md`);
     if (fs.existsSync(filePath)) {
-      // For now, we just reload from disk
-      // In a real scenario, you might want to restore from a backup or git
-      await loadTemplates();
+      fs.unlinkSync(filePath);
     }
+    delete templateCache[authType.toLowerCase()];
+    console.log(`[DevIntegrationLoader] Template override deleted: ${authType}`);
   } catch (error) {
     console.error('[DevIntegrationLoader] Error deleting template:', error);
     throw error;

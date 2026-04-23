@@ -279,6 +279,7 @@ function GraphCanvas({
               // Pass through extra node data for quick-view panel
               nodeType: raw.type,
               capabilities: raw.data.capabilities,
+              method: raw.data.method as string | undefined,
             } satisfies ExpandableNodeData,
           };
         }),
@@ -668,7 +669,7 @@ function NodeQuickViewPanel({ node, onClose }: { node: QuickViewNode; onClose: (
   const headerColor = (t: string) => {
     const colors: Record<string, string> = {
       policy: 'bg-emerald-600', secretPath: node.isAuthPath ? 'bg-violet-700' : 'bg-indigo-600',
-      authMethod: 'bg-indigo-600', role: 'bg-amber-500', entity: 'bg-blue-700', group: 'bg-amber-500',
+      authMethod: 'bg-indigo-600', role: 'bg-amber-500', entity: 'bg-blue-700', group: 'bg-teal-500',
     };
     return colors[t] ?? 'bg-gray-700';
   };
@@ -679,6 +680,9 @@ function NodeQuickViewPanel({ node, onClose }: { node: QuickViewNode; onClose: (
       case 'authMethod': return `/access/auth-methods/${encodeURIComponent(node.label.replace(/\s*\(.*\)$/, '').trim())}`;
       case 'entity': return `/access/entities/${node.id.replace(/^entity-/, '')}`;
       case 'group': return `/access/groups/${node.id.replace(/^group-/, '')}`;
+      case 'role': return node.method
+        ? `/access/auth-methods/${encodeURIComponent(node.method)}/roles/${encodeURIComponent(node.label)}`
+        : null;
       default: return null;
     }
   };
@@ -908,6 +912,7 @@ export default function GraphExplorer({
       capabilities: d.capabilities as string[] | undefined,
       isAuthPath: d.isAuthPath,
       authType: d.authType as string | undefined,
+      method: d.method as string | undefined,
     });
   }, []);
 

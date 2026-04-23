@@ -37,3 +37,34 @@ services:
     entrypoint: /bin/sh
     command: /vault/scripts/bootstrap.sh
     restart: "no"
+
+  vaultlens:
+    image: node:22-alpine
+    container_name: vaultlens-app
+    working_dir: /app
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      PORT: "3001"
+      NODE_ENV: "development"
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_SYSTEM_TOKEN: "root"
+      VAULT_SKIP_TLS_VERIFY: "false"
+      VAULT_AUDIT_SOURCE: "socket"
+      VAULT_AUDIT_SOCKET_PORT: "9090"
+      VAULT_AUDIT_SOCKET_HOST: "0.0.0.0"
+      # Vault connects to the vaultlens service by name on the shared Docker network
+      VAULT_AUDIT_SOCKET_VAULT_ADDRESS: "vaultlens:9090"
+      VAULTLENS_CONFIG_STORAGE: "file"
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./app:/app
+    command: sh -c "npm install && npm run build && npm start"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health > /dev/null 2>&1 && echo OK || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s

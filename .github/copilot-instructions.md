@@ -150,6 +150,18 @@ docs/                        # Architecture, API reference, security, audit repo
 - `requireAdmin` middleware (from `middleware/requireAdmin.ts`) checks for `root` policy or `vaultlens-admin` policy.
 - Applied to: branding mutations, backup, hooks, audit device management.
 
+### Two Built-in VaultLens Policies
+VaultLens auto-creates two policies at startup (`ensureVaultLensAdminPolicy()` in `lib/policyInit.ts`):
+
+| Policy | Purpose | Who gets it |
+|--------|---------|------------|
+| `vaultlens-admin` | UI access flag — grants access to VaultLens admin menu items (backup, branding, webhooks, rotation, analytics). Minimal Vault permissions (sys/health, sys/seal-status, sys/audit read). | Human admin users |
+| `vaultlens-system` | Full permissions for background services (rotation, audit watcher, backup scheduler, shared secrets, policy init, socket audit registration). | VaultLens system token only |
+
+- **`vaultlens-admin`** is a thin UI-flag policy. VaultLens proxies all secret/auth/policy operations through the user's own token, so Vault's ACL controls what the user can see/do.
+- **`vaultlens-system`** has broad permissions for background tasks and should **never** be assigned to human users.
+- See also: `vault/policies/vaultlens-admin.hcl` and `vault/policies/vaultlens-system.hcl`
+
 ### System Token
 - `getSystemToken()` (from `lib/systemToken.ts`) is a **server-only** Vault token used exclusively for:
   - **Secure merge** — reading the existing secret so the server can merge user-supplied keys without exposing values the user cannot already read
@@ -290,7 +302,7 @@ Three services start at server boot (only when system token is available):
 | Audit Watcher | `startAuditWatcher()` in `hooks.ts` | 5s | Polls Vault audit log, matches events to webhook path patterns, fires HTTP POST with HMAC |
 | Backup Scheduler | `startBackupScheduler()` in `backup.ts` | Configurable | Creates full KV backup at configured interval (`Nd`/`Nh`/`Nm`/`Nw` format) |
 
-**Policy Init:** `ensureVaultLensAdminPolicy()` runs once at startup to create the `vaultlens-admin` policy in Vault if it doesn't exist.
+**Policy Init:** `ensureVaultLensAdminPolicy()` runs once at startup to create both `vaultlens-admin` and `vaultlens-system` policies in Vault if they don't exist.
 
 ---
 
@@ -442,4 +454,13 @@ docker-compose* text eol=lf
 -  **DO:** Let the user commit manually push when ready
 -  **DO:** Check lint after all multifile changes
 -  **DO:** Make sure that docker build still works for all large changes
+
+## UI Convention: Always Show Friendly Names
+- **Never display raw UUIDs/IDs** as the primary label in any UI component.
+- In any list, badge, or detail view, **always resolve and display the human-readable name** (entity name, group name, policy name, role name, etc.).
+- When an ID must also be shown (e.g., for copy-ability or debugging), render it as secondary text in a smaller soft-gray monospace font alongside the friendly name.
+- For entities: prefer alias name first, then entity name, then ID as a last resort.
+- For groups/entities in membership lists: fetch names via `/api/identity/resolve` and display names; keep the raw ID as a `title` tooltip on the element.
+- For auth method mounts: display the mount path and type; avoid displaying raw accessors unless on a dedicated detail view.
+
 ---

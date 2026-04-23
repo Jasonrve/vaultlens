@@ -37,6 +37,8 @@ export default [
         crypto: 'readonly',
         btoa: 'readonly',
         atob: 'readonly',
+        sessionStorage: 'readonly',
+        localStorage: 'readonly',
         // DOM types
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',
@@ -52,6 +54,8 @@ export default [
         FormData: 'readonly',
         Node: 'readonly',
         ResizeObserver: 'readonly',
+        // Vite compile-time replacements
+        __APP_VERSION__: 'readonly',
       },
     },
     plugins: {

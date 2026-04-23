@@ -127,7 +127,7 @@ router.get(
           let roleY = methodY;
           for (const roleName of roleNames) {
             const roleId = `role-${normalizedPath}-${roleName}`;
-            nodes.push(createNode(roleId, 'role', roleName, NODE_SPACING_X, roleY));
+            nodes.push(createNode(roleId, 'role', roleName, NODE_SPACING_X, roleY, { method: normalizedPath }));
             edges.push(createEdge(methodId, roleId));
             roleY += NODE_SPACING_Y;
           }
@@ -738,6 +738,200 @@ router.get(
       });
 
       res.json(setInGraphCache('policy-relationships', nodes, edges));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── Secret path relationship graph ──────────────────────────────────────────
+// Returns a graph: secretPath → policies → (groups → entities) and (auth method roles)
+// Query: ?path=kv/data/myapp/secret
+router.get(
+  '/secret-path-relationships',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const rawPath = typeof req.query['path'] === 'string' ? req.query['path'] : '';
+      if (!rawPath) {
+        res.status(400).json({ error: 'path query parameter is required' });
+        return;
+      }
+
+      const token = req.vaultToken!;
+      const nodes: GraphNode[] = [];
+      const edges: GraphEdge[] = [];
+
+      /** Convert a Vault HCL path pattern to a RegExp for matching */
+      function vaultPatternToRegex(pattern: string): RegExp {
+        const escaped = pattern
+          .split(/(\*|\+)/g)
+          .map((part) => {
+            if (part === '*') return '.*';
+            if (part === '+') return '[^/]+';
+            return part.replace(/[.^${}()|[\]\\]/g, '\\$&');
+          })
+          .join('');
+        return new RegExp('^' + escaped + '$');
+      }
+
+      // Root node: the queried secret path
+      const rootId = 'secret-root';
+      nodes.push(createNode(rootId, 'secretPath', rawPath, 0, 0, { path: rawPath }));
+
+      // 1. List all policies
+      let policyNames: string[] = [];
+      try {
+        const resp = await vaultClient.list<{ data: { keys: string[] } }>('/sys/policies/acl', token);
+        policyNames = resp.data.keys;
+      } catch { /* no access to policy list */ }
+
+      // 2. Find policies that cover this path
+      const matchingPolicies: string[] = [];
+      await concurrentMap(policyNames, CONCURRENT_LIMIT, async (policyName) => {
+        try {
+          const pr = await vaultClient.get<{ data: { rules?: string; policy?: string } }>(
+            `/sys/policies/acl/${encodeURIComponent(policyName)}`, token,
+          );
+          const rules = pr.data.rules ?? pr.data.policy ?? '';
+          const paths = parsePolicyHCL(rules);
+          for (const p of paths) {
+            try {
+              if (vaultPatternToRegex(p.path).test(rawPath)) {
+                matchingPolicies.push(policyName);
+                break;
+              }
+            } catch { /* invalid pattern — skip */ }
+          }
+        } catch { /* skip inaccessible policy */ }
+      });
+
+      if (matchingPolicies.length === 0) {
+        res.json({ nodes, edges });
+        return;
+      }
+
+      // Add policy nodes
+      matchingPolicies.forEach((policyName, i) => {
+        const pId = `policy-${policyName}`;
+        nodes.push(createNode(pId, 'policy', policyName, NODE_SPACING_X, i * NODE_SPACING_Y));
+        edges.push(createEdge(rootId, pId));
+      });
+
+      // 3. Collect groups that include matching policies
+      interface GroupInfo { id: string; name: string; policies: string[] }
+      const groups: GroupInfo[] = [];
+      try {
+        const gr = await vaultClient.list<{ data: { keys: string[] } }>('/identity/group/id', token);
+        await concurrentMap(gr.data.keys, CONCURRENT_LIMIT, async (gId) => {
+          try {
+            const gResp = await vaultClient.get<{
+              data: { id: string; name: string; policies: string[]; member_entity_ids?: string[] };
+            }>(`/identity/group/id/${gId}`, token);
+            const groupPolicies = gResp.data.policies ?? [];
+            if (matchingPolicies.some((p) => groupPolicies.includes(p))) {
+              groups.push({
+                id: gResp.data.id,
+                name: gResp.data.name,
+                policies: groupPolicies,
+              });
+            }
+          } catch { /* skip */ }
+        });
+      } catch { /* groups not accessible */ }
+
+      let groupY = 0;
+      const addedGroupIds = new Set<string>();
+      for (const g of groups) {
+        const gNodeId = `group-${g.id}`;
+        if (!addedGroupIds.has(gNodeId)) {
+          nodes.push(createNode(gNodeId, 'group', g.name || g.id, NODE_SPACING_X * 2, groupY));
+          addedGroupIds.add(gNodeId);
+          groupY += NODE_SPACING_Y;
+        }
+        for (const pName of matchingPolicies) {
+          if (g.policies.includes(pName)) {
+            edges.push(createEdge(`policy-${pName}`, gNodeId));
+          }
+        }
+      }
+
+      // 4. Collect entities in matching groups
+      let entityY = 0;
+      const addedEntityIds = new Set<string>();
+      await concurrentMap(groups, CONCURRENT_LIMIT, async (g) => {
+        try {
+          const gResp = await vaultClient.get<{
+            data: { member_entity_ids?: string[] };
+          }>(`/identity/group/id/${g.id}`, token);
+          const entityIds = gResp.data.member_entity_ids ?? [];
+          await concurrentMap(entityIds, CONCURRENT_LIMIT, async (eId) => {
+            try {
+              const eResp = await vaultClient.get<{
+                data: { id: string; name: string };
+              }>(`/identity/entity/id/${eId}`, token);
+              const eNodeId = `entity-${eId}`;
+              if (!addedEntityIds.has(eNodeId)) {
+                nodes.push(createNode(eNodeId, 'entity', eResp.data.name || eId, NODE_SPACING_X * 3, entityY));
+                addedEntityIds.add(eNodeId);
+                entityY += NODE_SPACING_Y;
+              }
+              edges.push(createEdge(`group-${g.id}`, eNodeId));
+            } catch { /* skip */ }
+          });
+        } catch { /* skip */ }
+      });
+
+      // 5. Collect auth method roles that include matching policies
+      interface RoleInfo { mountPath: string; mountType: string; roleName: string; policies: string[] }
+      const roles: RoleInfo[] = [];
+      try {
+        const authResp = await vaultClient.get<{
+          data: Record<string, { type: string }>;
+        }>('/sys/auth', token);
+        for (const [path, info] of Object.entries(authResp.data)) {
+          const normalizedPath = path.replace(/\/$/, '');
+          try {
+            const rolesResp = await vaultClient.list<{ data: { keys: string[] } }>(
+              `/auth/${normalizedPath}/role`, token,
+            );
+            await concurrentMap(rolesResp.data.keys, CONCURRENT_LIMIT, async (roleName) => {
+              try {
+                const rd = await vaultClient.get<{
+                  data: { token_policies?: string[]; policies?: string[] };
+                }>(`/auth/${normalizedPath}/role/${roleName}`, token);
+                const rPolicies = [...new Set([...(rd.data.token_policies ?? []), ...(rd.data.policies ?? [])])];
+                if (matchingPolicies.some((p) => rPolicies.includes(p))) {
+                  roles.push({ mountPath: normalizedPath, mountType: info.type, roleName, policies: rPolicies });
+                }
+              } catch { /* skip */ }
+            });
+          } catch { /* no roles */ }
+        }
+      } catch { /* /sys/auth not accessible */ }
+
+      let roleY = 0;
+      const addedAuthIds = new Set<string>();
+      for (const r of roles) {
+        const roleNodeId = `role-${r.mountPath}-${r.roleName}`;
+        nodes.push(createNode(roleNodeId, 'role', r.roleName, NODE_SPACING_X * 2, groupY + roleY));
+        roleY += NODE_SPACING_Y;
+        for (const pName of matchingPolicies) {
+          if (r.policies.includes(pName)) {
+            edges.push(createEdge(`policy-${pName}`, roleNodeId));
+          }
+        }
+        // Auth method node
+        const amNodeId = `auth-${r.mountPath}`;
+        if (!addedAuthIds.has(amNodeId)) {
+          nodes.push(createNode(amNodeId, 'authMethod', `${r.mountType} (${r.mountPath}/)`, NODE_SPACING_X * 3, groupY + entityY + roleY, {
+            authType: r.mountType,
+          }));
+          addedAuthIds.add(amNodeId);
+        }
+        edges.push(createEdge(roleNodeId, amNodeId));
+      }
+
+      res.json({ nodes, edges });
     } catch (error) {
       next(error);
     }

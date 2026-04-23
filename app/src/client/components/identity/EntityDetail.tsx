@@ -13,11 +13,20 @@ export default function EntityDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(false);
+  const [groupNames, setGroupNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     api
       .getEntity(id)
-      .then(setEntity)
+      .then((e) => {
+        setEntity(e);
+        // Resolve group names for display
+        if (e.group_ids?.length) {
+          api.resolveNames([], e.group_ids)
+            .then((res) => setGroupNames(res.groupNames))
+            .catch(() => {});
+        }
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
   }, [id]);
@@ -109,8 +118,8 @@ export default function EntityDetail() {
           <div className="flex flex-wrap gap-2 p-4">
             {entity.group_ids?.length ? (
               entity.group_ids.map((gid) => (
-                <Link key={gid} to={`/access/groups/${gid}`}>
-                  <Badge text={gid} variant="list" />
+                <Link key={gid} to={`/access/groups/${gid}`} title={gid}>
+                  <Badge text={groupNames[gid] || gid} variant="list" />
                 </Link>
               ))
             ) : (

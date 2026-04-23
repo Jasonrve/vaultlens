@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as api from '../lib/api';
 
-type Step = 'status' | 'permissions' | 'preview' | 'create' | 'done' | 'error';
+type Step = 'status' | 'permissions' | 'preview' | 'repair-review' | 'create' | 'done' | 'error';
 
 interface StepDef {
   id: Step;
@@ -17,11 +17,17 @@ const STEPS: StepDef[] = [
   { id: 'done', label: 'Complete' },
 ];
 
-function StepIndicator({ current }: { current: Step }) {
-  const currentIndex = STEPS.findIndex((s) => s.id === current);
+const REPAIR_STEPS: StepDef[] = [
+  { id: 'repair-review', label: 'Review Issues' },
+  { id: 'create', label: 'Apply Fix' },
+  { id: 'done', label: 'Complete' },
+];
+
+function StepIndicator({ current, steps }: { current: Step; steps: StepDef[] }) {
+  const currentIndex = steps.findIndex((s) => s.id === current);
   return (
     <div className="flex items-center gap-0">
-      {STEPS.map((step, idx) => {
+      {steps.map((step, idx) => {
         const done = idx < currentIndex;
         const active = idx === currentIndex;
         return (
@@ -30,7 +36,7 @@ function StepIndicator({ current }: { current: Step }) {
               ${done ? 'bg-green-500 text-white' : active ? 'bg-[#1563ff] text-white' : 'bg-gray-200 text-gray-500'}`}>
               {done ? '✓' : idx + 1}
             </div>
-            {idx < STEPS.length - 1 && (
+            {idx < steps.length - 1 && (
               <div className={`mx-2 h-1 w-8 ${done ? 'bg-green-400' : 'bg-gray-200'}`} />
             )}
           </div>
@@ -40,23 +46,46 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
+function IssueBadge({ type }: { type: 'missing' | 'outdated' }) {
+  return type === 'missing' ? (
+    <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+      Missing
+    </span>
+  ) : (
+    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+      Outdated
+    </span>
+  );
+}
+
 export default function SystemTokenSetupPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<Step>('status');
+  const location = useLocation();
+
+  // Repair mode: issues passed from SystemTokenRequiredRoute via router state.
+  // useState with lazy initializer ensures the value is stable across re-renders.
+  const [repairIssues] = useState<api.SetupHealthIssue[]>(
+    () => (location.state as { repairIssues?: api.SetupHealthIssue[] } | null)?.repairIssues ?? []
+  );
+  const isRepairMode = repairIssues.length > 0;
+
+  const [step, setStep] = useState<Step>(isRepairMode ? 'repair-review' : 'status');
   const [permissions, setPermissions] = useState<Awaited<ReturnType<typeof api.checkSysTokenPermissions>> | null>(null);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.previewSysTokenSetup>> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isRepairMode); // repair-review needs no initial load
   const [error, setError] = useState<string | null>(null);
   const [autoAdvance, setAutoAdvance] = useState(true);
+  const [expandedHcl, setExpandedHcl] = useState<string | null>(null);
 
-  // Step 1: Check status
+  const activeSteps = isRepairMode ? REPAIR_STEPS : STEPS;
+
+  // Step 1: Check status (initial setup only)
   useEffect(() => {
     if (step !== 'status') return;
     setLoading(true);
     setError(null);
     api.getSysTokenStatus()
       .then((s) => {
-        // If system token is already configured, redirect to dashboard
         if (s.hasSystemToken) {
           navigate('/', { replace: true });
           return;
@@ -91,7 +120,7 @@ export default function SystemTokenSetupPage() {
       .finally(() => setLoading(false));
   }, [step, autoAdvance]);
 
-  // Step 3: Preview
+  // Step 3: Preview (initial setup only)
   useEffect(() => {
     if (step !== 'preview') return;
     setLoading(true);
@@ -99,7 +128,6 @@ export default function SystemTokenSetupPage() {
     api.previewSysTokenSetup()
       .then((result) => {
         setPreview(result);
-        // Don't auto-advance — wait for user to review and decide
         setAutoAdvance(false);
       })
       .catch((e: unknown) => {
@@ -109,32 +137,39 @@ export default function SystemTokenSetupPage() {
       .finally(() => setLoading(false));
   }, [step, autoAdvance]);
 
-  // Step 4: Create AppRole (auto-run once user approves)
+  // Step 4: Create AppRole (initial setup) OR Repair (repair mode)
   useEffect(() => {
     if (step !== 'create') return;
     setLoading(true);
     setError(null);
-    api.createAppRole()
-      .then(() => api.testAppRole()) // Immediately test after creation
-      .then(() => {
-        setStep('done');
-      })
+    const work = isRepairMode
+      ? api.repairSetup(repairIssues)
+      : api.createAppRole().then(() => api.testAppRole());
+    work
+      .then(() => setStep('done'))
       .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : 'Failed to configure AppRole');
+        setError(e instanceof Error ? e.message : isRepairMode ? 'Repair failed' : 'Failed to configure AppRole');
         setAutoAdvance(false);
       })
       .finally(() => setLoading(false));
+  // repairIssues and isRepairMode are stable (from useState with lazy initializer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
 
   // Auto-return to dashboard after completion
   useEffect(() => {
     if (step === 'done') {
+      // After successful repair, set the skip-flag to prevent immediate re-redirect on the next dashboard mount.
+      // The flag will be cleared on next browser session, allowing fresh health checks.
+      if (isRepairMode) {
+        sessionStorage.setItem('vaultlens_skip_repair_check', '1');
+      }
       const timer = setTimeout(() => {
         navigate('/', { replace: true });
       }, 2000);
       return () => clearTimeout(timer);
     }
-  }, [step, navigate]);
+  }, [step, navigate, isRepairMode]);
 
   function handleApprove() {
     setAutoAdvance(true);
@@ -142,6 +177,10 @@ export default function SystemTokenSetupPage() {
   }
 
   function handleCancel() {
+    if (isRepairMode) {
+      // Set a session flag so SystemTokenRequiredRoute doesn't immediately re-redirect
+      sessionStorage.setItem('vaultlens_skip_repair_check', '1');
+    }
     navigate('/', { replace: true });
   }
 
@@ -149,15 +188,19 @@ export default function SystemTokenSetupPage() {
     <div className="flex h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-2xl space-y-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">Set Up Background Services</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            {isRepairMode ? 'Configuration Issues Detected' : 'Set Up Background Services'}
+          </h1>
           <p className="mt-2 text-base text-gray-600">
-            VaultLens needs AppRole authentication to enable rotation, backup, and webhooks.
+            {isRepairMode
+              ? 'Some VaultLens components are missing or out of date. Review the issues below and approve the fix.'
+              : 'VaultLens needs AppRole authentication to enable rotation, backup, and webhooks.'}
           </p>
         </div>
 
         <div className="rounded-lg bg-white p-8 shadow">
           <div className="mb-8">
-            <StepIndicator current={step} />
+            <StepIndicator current={step} steps={activeSteps} />
           </div>
 
           {error && step !== 'error' && (
@@ -217,7 +260,7 @@ export default function SystemTokenSetupPage() {
             </div>
           )}
 
-          {/* Preview */}
+          {/* Preview (initial setup) */}
           {step === 'preview' && (
             <div className="space-y-4">
               {preview?.approleNeedsEnabled && (
@@ -244,10 +287,59 @@ export default function SystemTokenSetupPage() {
             </div>
           )}
 
-          {/* Creating */}
+          {/* Repair review */}
+          {step === 'repair-review' && (
+            <div className="space-y-5">
+              <p className="text-sm text-gray-600">
+                The following issues were detected with your VaultLens configuration. Approving will apply the fixes automatically.
+              </p>
+              <div className="space-y-3">
+                {repairIssues.map((issue) => (
+                  <div key={issue.item} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <IssueBadge type={issue.type} />
+                          <span className="text-sm font-medium text-gray-900">{issue.name}</span>
+                        </div>
+                        <p className="text-sm text-gray-600">{issue.description}</p>
+                        <p className="text-xs text-gray-500">
+                          {issue.item === 'approle-role'
+                            ? 'Will be re-created. New credentials will be generated and stored securely.'
+                            : `Will be ${issue.type === 'missing' ? 'created' : 'updated'} with the current expected content.`}
+                        </p>
+                      </div>
+                      {issue.expectedHcl && (
+                        <button
+                          onClick={() => setExpandedHcl(expandedHcl === issue.item ? null : issue.item)}
+                          className="shrink-0 text-xs text-[#1563ff] hover:underline"
+                        >
+                          {expandedHcl === issue.item ? 'Hide HCL' : 'View HCL'}
+                        </button>
+                      )}
+                    </div>
+                    {expandedHcl === issue.item && issue.expectedHcl && (
+                      <pre className="mt-3 text-xs bg-white border border-gray-200 rounded p-3 overflow-auto max-h-40 font-mono text-gray-700 whitespace-pre-wrap">
+                        {issue.expectedHcl}
+                      </pre>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="rounded bg-blue-50 border border-blue-200 p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Effect:</strong> Background services (rotation, backup, webhooks) will be restored. All existing secrets are unaffected.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Creating / Repairing */}
           {step === 'create' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">Setting up AppRole infrastructure…</p>
+              <p className="text-sm text-gray-600">
+                {isRepairMode ? 'Applying fixes…' : 'Setting up AppRole infrastructure…'}
+              </p>
               <div className="h-2 w-40 animate-pulse rounded bg-[#1563ff]" />
             </div>
           )}
@@ -263,8 +355,12 @@ export default function SystemTokenSetupPage() {
                 </div>
               </div>
               <div className="text-center">
-                <p className="font-semibold text-gray-900">AppRole Configured</p>
-                <p className="mt-1 text-sm text-gray-600">Background services are now enabled.</p>
+                <p className="font-semibold text-gray-900">
+                  {isRepairMode ? 'Configuration Repaired' : 'AppRole Configured'}
+                </p>
+                <p className="mt-1 text-sm text-gray-600">
+                  {isRepairMode ? 'All issues have been resolved.' : 'Background services are now enabled.'}
+                </p>
               </div>
               <p className="text-xs text-gray-500 text-center">Redirecting to dashboard…</p>
             </div>
@@ -297,6 +393,7 @@ export default function SystemTokenSetupPage() {
 
           {/* Action buttons */}
           <div className="mt-8 flex items-center justify-between gap-3 border-t border-gray-200 pt-6">
+            {/* Initial setup: approve after preview */}
             {step === 'preview' && !loading && (
               <>
                 <button
@@ -313,6 +410,25 @@ export default function SystemTokenSetupPage() {
                 </button>
               </>
             )}
+
+            {/* Repair mode: approve or skip */}
+            {step === 'repair-review' && (
+              <>
+                <button
+                  onClick={handleCancel}
+                  className="rounded border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Skip for now
+                </button>
+                <button
+                  onClick={handleApprove}
+                  className="rounded px-4 py-2 text-sm font-medium text-white bg-[#1563ff] hover:bg-[#1250d4]"
+                >
+                  Approve &amp; Fix →
+                </button>
+              </>
+            )}
+
             {(step === 'create' || (step === 'permissions' && !autoAdvance && loading)) && (
               <div className="text-center flex-1">
                 <div className="inline-flex items-center gap-2">

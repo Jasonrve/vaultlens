@@ -307,6 +307,12 @@ export default function BackupRestorePage() {
                             </button>
                           )}
                           <button
+                            onClick={() => api.downloadBackup(backup.filename)}
+                            className="rounded border border-blue-300 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50"
+                          >
+                            Download
+                          </button>
+                          <button
                             onClick={() => handleDelete(backup.filename)}
                             disabled={deleting === backup.filename}
                             className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"

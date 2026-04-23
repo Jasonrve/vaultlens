@@ -6,10 +6,12 @@ import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
 import {
   getTemplate,
+  saveTemplateOverride as saveTemplateToDisk,
   substituteTemplate,
   saveTemplateOverride,
   deleteTemplateOverride,
 } from '../lib/devIntegrationLoader.js';
+import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -365,15 +367,12 @@ router.get(
         }
       }
 
-      // Get template from disk cache
+      // Get template from disk cache (disk file = admin has customized it)
       const fileTemplate = getTemplate(authTypeKey);
-      
-      // Check for admin override in config storage
-      const storage = getConfigStorage();
-      const overrideSection = await storage.get(`devtemplate-${authTypeKey}`);
-      const isCustomized = !!(overrideSection && overrideSection['content']);
-      // Start with empty content; only use custom content if admin has created it
-      const rawTemplate = isCustomized ? overrideSection!['content'] : '';
+      // isCustomized = true only when an admin has saved a custom override on disk
+      const isCustomized = fileTemplate !== undefined;
+      // Fall back to built-in default template if no disk override exists
+      const rawTemplate = fileTemplate ?? defaultTemplates[authTypeKey] ?? '';
 
       // Admin capability check (re-use same logic as requireAdmin without middleware)
       const policies = req.tokenInfo?.policies ?? [];
@@ -416,7 +415,7 @@ router.put(
       const authTypeKey = authType.toLowerCase();
 
       // Save override to disk
-      await saveTemplateOverride(authTypeKey, body.content);
+      await saveTemplateToDisk(authTypeKey, body.content);
 
       return res.json({ success: true, authType });
     } catch (error) {
@@ -442,10 +441,10 @@ router.delete(
       const authType = await getAuthTypeForMount(mount, req.vaultToken!);
       const authTypeKey = authType.toLowerCase();
 
-      // Delete override from disk and config-storage (for backward compatibility)
+      // Delete disk override so built-in default is restored
       await deleteTemplateOverride(authTypeKey);
-      const storage = getConfigStorage();
-      await storage.delete(`devtemplate-${authTypeKey}`).catch(() => {});
+
+      return res.json({ success: true, authType });
 
       return res.json({ success: true, authType });
     } catch (error) {

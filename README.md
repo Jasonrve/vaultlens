@@ -300,6 +300,34 @@ VaultLens supports multiple deployment methods:
 
 *Either `VAULT_SYSTEM_TOKEN` or `VAULT_K8S_AUTH_ROLE` is required for full functionality.
 
+### VaultLens Policies
+
+VaultLens uses two auto-created Vault policies to separate concerns between user-initiated operations and background services. VaultLens automatically creates both policies on startup if they don't already exist.
+
+#### `vaultlens-admin` — Admin UI Access
+
+**Purpose:** UI access control flag for administrative features. Does NOT grant broad Vault access.
+
+**Assign to:** Human administrators and users who need access to VaultLens admin features (backup, branding, webhooks, rotation scheduler, analytics, audit logs).
+
+---
+
+#### `vaultlens-system` — System Token (Background Services)
+
+**Purpose:** Full permissions for VaultLens background services. Do NOT assign to human users.
+
+**Used by:** VaultLens system token (AppRole or Kubernetes auth) for background operations only.
+
+**Background services that use this token:**
+- 🔄 **Secret rotation scheduler** — Reads and rotates KV v2 secrets based on `rotate-interval` metadata
+- 👁️ **Audit log watcher** — Monitors Vault audit log, fires webhook HTTP callbacks
+- 💾 **Backup scheduler** — Creates and manages full KV secret backups
+- 🔗 **Shared secrets** — Encrypts secrets in the cubbyhole for password sharing
+- ⚡ **Policy initialization** — Auto-creates `vaultlens-admin` and `vaultlens-system` policies on startup
+- 🔊 **Audit device registration** — Auto-registers socket audit device for webhooks
+
+---
+
 ### Kubernetes / Helm
 
 ```bash

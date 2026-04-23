@@ -17,8 +17,9 @@ export default function DashboardPage() {
       api.getSysTokenStatus().catch(() => null),
     ])
       .then(([engines, policies, authMethods, tokenStatus]) => {
+        const HIDDEN_ENGINE_TYPES = new Set(['identity', 'system']);
         setStats({
-          engines: engines.length,
+          engines: engines.filter((e) => !HIDDEN_ENGINE_TYPES.has(e.type)).length,
           policies: policies.length,
           authMethods: authMethods.length,
         });
