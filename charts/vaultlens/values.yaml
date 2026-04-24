@@ -35,9 +35,12 @@ config:
     port: "9090"
     # -- Host to bind the socket audit listener to (0.0.0.0 for all interfaces)
     host: "0.0.0.0"
-    # -- Address that Vault uses to connect to the socket audit listener (pod DNS name)
-    # In Kubernetes, use <pod-name>.<namespace>.svc.cluster.local or just the service name
-    vaultAddress: "vaultlens:9090"
+    # -- Address that Vault uses to connect to the socket audit listener.
+    # Leave empty to auto-compute as <release-name>.<namespace>.svc.cluster.local:<port>,
+    # which is the correct in-cluster DNS name for cross-namespace Vault → VaultLens traffic.
+    # Override only if VaultLens and Vault run in the same namespace (use just the service name)
+    # or when using a custom DNS name / external address.
+    vaultAddress: ""
 
 # -- Backup storage configuration
 backup:

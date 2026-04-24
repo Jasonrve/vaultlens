@@ -40,6 +40,11 @@ spec:
             - name: http
               containerPort: {{ .Values.config.port | default 3001 }}
               protocol: TCP
+            {{- if eq (.Values.config.audit.source | default "socket") "socket" }}
+            - name: audit-socket
+              containerPort: {{ .Values.config.socketAudit.port | default 9090 | int }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: NODE_ENV
               value: "production"
@@ -65,7 +70,7 @@ spec:
             - name: VAULT_AUDIT_SOCKET_HOST
               value: {{ .Values.config.socketAudit.host | default "0.0.0.0" | quote }}
             - name: VAULT_AUDIT_SOCKET_VAULT_ADDRESS
-              value: {{ .Values.config.socketAudit.vaultAddress | default (printf "%s:9090" (include "vaultlens.fullname" .)) | quote }}
+              value: {{ .Values.config.socketAudit.vaultAddress | default (printf "%s.%s.svc.cluster.local:%s" (include "vaultlens.fullname" .) .Release.Namespace (.Values.config.socketAudit.port | default "9090")) | quote }}
             {{- end }}
             - name: VAULTLENS_BACKUP_PATH
               value: {{ .Values.backup.path | default "/backups" | quote }}
