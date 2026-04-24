@@ -4,179 +4,29 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
 import { encryptConfigValue, tryDecryptConfigValue } from '../lib/configEncryption.js';
-import { seedSystemTokenCache } from '../lib/systemToken.js';
+import { getSystemToken, seedSystemTokenCache } from '../lib/systemToken.js';
+import { SYSTEM_TOKEN_POLICY_HCL, ADMIN_POLICY_HCL } from '../lib/policyLoader.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
 
 const APPROLE_ROLE_NAME = 'vaultlens-system-token';
-const APPROLE_POLICY_NAME = 'vaultlens-system-token';
+const APPROLE_POLICY_NAME = 'vaultlens-system-policy';
 const ADMIN_POLICY_NAME = 'vaultlens-admin';
 const CREDS_SECTION = 'sys_token_approle';
 
-// The minimal policy for the system token
-const SYSTEM_TOKEN_POLICY_HCL = `
-# VaultLens system token policy
-# Grants permissions required for rotation, backup, webhook audit monitoring, and secure merge
-
-# Read/write access to ALL KV secret engines (required for secure merge across all engines)
-path "+/data/*" {
-  capabilities = ["read", "create", "update"]
-}
-
-path "+/metadata/*" {
-  capabilities = ["read", "list"]
-}
-
-# Legacy mounts using root path
-path "secret/data/*" {
-  capabilities = ["read", "create", "update"]
-}
-
-path "secret/metadata/*" {
-  capabilities = ["read", "list"]
-}
-
-path "sys/audit" {
-  capabilities = ["read", "sudo"]
-}
-
-path "sys/audit/*" {
-  capabilities = ["read", "sudo"]
-}
-
-path "sys/policies/acl/*" {
-  capabilities = ["read", "list"]
-}
-
-# Required for engine version detection (KV v1 vs v2) when user token lacks sys access
-path "sys/mounts" {
-  capabilities = ["read"]
-}
-
-path "sys/mounts/*" {
-  capabilities = ["read"]
-}
-
-# Required to discover available auth methods (OIDC, JWT) for login page auto-detection
-path "sys/auth" {
-  capabilities = ["read", "list"]
-}
-
-path "sys/auth/*" {
-  capabilities = ["read"]
-}
-
-# Required to read OIDC/JWT mount config (e.g. default_role) for login page auto-population
-path "auth/+/config" {
-  capabilities = ["read"]
-}
-
-path "auth/token/lookup-self" {
-  capabilities = ["read"]
-}
-`.trim();
-
 // Helper: strip comments and blank lines so two logically-identical policies
 // can be compared regardless of formatting differences.
+// Also normalizes CRLF→LF since Vault may return \r\n in policy content.
 function normalizeHcl(hcl: string): string {
   return hcl
+    .replace(/\r\n/g, '\n')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && !l.startsWith('#'))
     .join('\n');
 }
-
-// VaultLens admin policy — grants full access to VaultLens features
-const ADMIN_POLICY_HCL = `
-# VaultLens Admin Policy
-# Grants admin-level access to VaultLens features (backup, restore, hooks, branding, audit devices, etc.)
-
-# Allow full access to all KV secret engines
-path "kv/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-# Allow managing secret engines
-path "sys/mounts/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "sys/mounts" {
-  capabilities = ["read", "list"]
-}
-
-# Allow managing auth methods
-path "sys/auth/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "sys/auth" {
-  capabilities = ["read", "list"]
-}
-
-# Allow managing policies
-path "sys/policies/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "sys/policies" {
-  capabilities = ["read", "list"]
-}
-
-path "sys/policy/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "sys/policy" {
-  capabilities = ["read", "list"]
-}
-
-# Allow reading audit devices
-path "sys/audit" {
-  capabilities = ["read", "list", "sudo"]
-}
-
-path "sys/audit/*" {
-  capabilities = ["read", "list", "sudo"]
-}
-
-# Allow managing identity
-path "identity/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-# Allow reading system health and status
-path "sys/health" {
-  capabilities = ["read"]
-}
-
-path "sys/seal-status" {
-  capabilities = ["read"]
-}
-
-path "sys/leader" {
-  capabilities = ["read"]
-}
-
-path "sys/host-info" {
-  capabilities = ["read"]
-}
-
-path "sys/metrics" {
-  capabilities = ["read"]
-}
-
-path "sys/internal/counters/*" {
-  capabilities = ["read"]
-}
-
-# Allow capabilities checking
-path "sys/capabilities-self" {
-  capabilities = ["create", "update"]
-}
-`.trim();
 
 // ── GET /api/sys-token-setup/status ─────────────────────────────────────────
 router.get(
@@ -512,12 +362,48 @@ router.post(
 // ── GET /api/sys-token-setup/health-check ────────────────────────────────────
 // Checks whether the two VaultLens policies and (if AppRole creds are stored)
 // the AppRole role are present in Vault and match the expected content.
-// Gracefully skips any check that fails with 403/400 (insufficient permissions).
+// Uses the system token as the primary read token.
+// Falls back to the logged-in user's token when the system token gets 403 —
+// this handles the bootstrap case where vaultlens-system-policy is missing so
+// the AppRole-derived system token has no sys/policies/acl/* read permissions.
 router.get(
   '/health-check',
   authMiddleware,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      // Resolve the system token.  On first-run or after Vault re-init the
+      // system policy may be absent, so the AppRole token will have no read
+      // access to sys/policies/acl/*.  In that scenario we fall back to the
+      // logged-in user's token so the health-check still produces useful output.
+      let systemToken: string;
+      try {
+        systemToken = await getSystemToken();
+      } catch {
+        // Cannot obtain system token — fall back to the user's token for reads.
+        systemToken = req.vaultToken!;
+      }
+
+      // Helper: read a policy with system token, falling back to user token on 403.
+      const readPolicy = async (name: string): Promise<string | null> => {
+        for (const token of [systemToken, req.vaultToken!]) {
+          try {
+            const res = await vaultClient.get<{ data: { policy: string } }>(`/sys/policies/acl/${name}`, token);
+            return res.data?.policy ?? null;
+          } catch (e) {
+            if (e instanceof VaultError && e.statusCode === 403) {
+              // Try next token
+              continue;
+            }
+            if (e instanceof VaultError && e.statusCode === 404) {
+              return null; // definitively missing
+            }
+            throw e;
+          }
+        }
+        // Both tokens got 403 — cannot verify; treat as missing so repair is offered.
+        return null;
+      };
+
       const issues: Array<{
         type: 'missing' | 'outdated';
         item: 'system-policy' | 'admin-policy' | 'approle-role';
@@ -526,73 +412,51 @@ router.get(
         expectedHcl?: string;
       }> = [];
 
-      // Determine whether AppRole credentials are stored.
-      // Only check the system-token policy and AppRole role when in AppRole mode.
+      // Determine whether AppRole credentials are stored (AppRole role check is gated on this).
       let approleConfigured = false;
       try {
         const creds = await getConfigStorage().get(CREDS_SECTION);
         approleConfigured = !!(creds && creds['role_id']);
       } catch { /* storage unavailable — treat as not configured */ }
 
-      // ── Check system-token policy (AppRole mode only) ──────────────────────
-      if (approleConfigured) {
-        try {
-          const policyRes = await vaultClient.get<{ policy: string }>(
-            `/sys/policies/acl/${APPROLE_POLICY_NAME}`,
-            req.vaultToken!
-          );
-          if (normalizeHcl(policyRes.policy ?? '') !== normalizeHcl(SYSTEM_TOKEN_POLICY_HCL)) {
-            issues.push({
-              type: 'outdated',
-              item: 'system-policy',
-              name: APPROLE_POLICY_NAME,
-              description: `Policy "${APPROLE_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
-              expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
-            });
-          }
-        } catch (e) {
-          if (e instanceof VaultError && e.statusCode === 404) {
-            issues.push({
-              type: 'missing',
-              item: 'system-policy',
-              name: APPROLE_POLICY_NAME,
-              description: `Policy "${APPROLE_POLICY_NAME}" is missing from Vault.`,
-              expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
-            });
-          } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
-            throw e;
-          }
-          // 403/400 → user can't read policies; skip this check
-        }
+      // ── Check system-token policy (always — required regardless of auth source) ──
+      const systemPolicyContent = await readPolicy(APPROLE_POLICY_NAME);
+      if (systemPolicyContent === null) {
+        issues.push({
+          type: 'missing',
+          item: 'system-policy',
+          name: APPROLE_POLICY_NAME,
+          description: `Policy "${APPROLE_POLICY_NAME}" is missing from Vault.`,
+          expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
+        });
+      } else if (normalizeHcl(systemPolicyContent) !== normalizeHcl(SYSTEM_TOKEN_POLICY_HCL)) {
+        issues.push({
+          type: 'outdated',
+          item: 'system-policy',
+          name: APPROLE_POLICY_NAME,
+          description: `Policy "${APPROLE_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
+          expectedHcl: SYSTEM_TOKEN_POLICY_HCL,
+        });
       }
 
       // ── Check admin policy (always) ────────────────────────────────────────
-      try {
-        const policyRes = await vaultClient.get<{ policy: string }>(
-          `/sys/policies/acl/${ADMIN_POLICY_NAME}`,
-          req.vaultToken!
-        );
-        if (normalizeHcl(policyRes.policy ?? '') !== normalizeHcl(ADMIN_POLICY_HCL)) {
-          issues.push({
-            type: 'outdated',
-            item: 'admin-policy',
-            name: ADMIN_POLICY_NAME,
-            description: `Policy "${ADMIN_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
-            expectedHcl: ADMIN_POLICY_HCL,
-          });
-        }
-      } catch (e) {
-        if (e instanceof VaultError && e.statusCode === 404) {
-          issues.push({
-            type: 'missing',
-            item: 'admin-policy',
-            name: ADMIN_POLICY_NAME,
-            description: `Policy "${ADMIN_POLICY_NAME}" is missing from Vault.`,
-            expectedHcl: ADMIN_POLICY_HCL,
-          });
-        } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
-          throw e;
-        }
+      const adminPolicyContent = await readPolicy(ADMIN_POLICY_NAME);
+      if (adminPolicyContent === null) {
+        issues.push({
+          type: 'missing',
+          item: 'admin-policy',
+          name: ADMIN_POLICY_NAME,
+          description: `Policy "${ADMIN_POLICY_NAME}" is missing from Vault.`,
+          expectedHcl: ADMIN_POLICY_HCL,
+        });
+      } else if (normalizeHcl(adminPolicyContent) !== normalizeHcl(ADMIN_POLICY_HCL)) {
+        issues.push({
+          type: 'outdated',
+          item: 'admin-policy',
+          name: ADMIN_POLICY_NAME,
+          description: `Policy "${ADMIN_POLICY_NAME}" exists but its content differs from what VaultLens expects.`,
+          expectedHcl: ADMIN_POLICY_HCL,
+        });
       }
 
       // ── Check AppRole role (AppRole mode only) ─────────────────────────────
@@ -600,7 +464,7 @@ router.get(
         try {
           await vaultClient.get(
             `/auth/approle/role/${APPROLE_ROLE_NAME}`,
-            req.vaultToken!
+            systemToken
           );
         } catch (e) {
           if (e instanceof VaultError && e.statusCode === 404) {
@@ -610,7 +474,8 @@ router.get(
               name: APPROLE_ROLE_NAME,
               description: `AppRole role "${APPROLE_ROLE_NAME}" is missing from Vault. Background services cannot authenticate.`,
             });
-          } else if (!(e instanceof VaultError && (e.statusCode === 403 || e.statusCode === 400))) {
+          } else if (!(e instanceof VaultError && e.statusCode === 403)) {
+            // 403 = system token can't read AppRole — skip silently (non-critical for this check)
             throw e;
           }
         }

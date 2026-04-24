@@ -6,10 +6,11 @@
   "scripts": {
     "predev": "node scripts/predev.mjs",
     "dev": "tsx watch --clear-screen=false src/server/server.ts",
-    "build": "npm run build:client && npm run build:server && npm run copy-templates",
+    "build": "npm run build:client && npm run build:server && npm run copy-templates && npm run copy-policies",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.json",
     "copy-templates": "node -e \"const fs=require('fs'),path=require('path');const src=path.join('src','server','templates');const dst=path.join('dist','server','templates');if(fs.existsSync(src)){fs.cpSync(src,dst,{recursive:true});console.log('[build] Templates copied to dist/server/templates')}else{console.log('[build] Templates directory not found, skipping copy')}\"",
+    "copy-policies": "node -e \"const fs=require('fs'),path=require('path');const src=path.join('src','server','policies');const dst=path.join('dist','server','policies');fs.cpSync(src,dst,{recursive:true});console.log('[build] Policies copied to dist/server/policies')\"",
     "start": "node dist/server/server.js",
     "lint": "eslint src/client",
     "preview": "vite preview"

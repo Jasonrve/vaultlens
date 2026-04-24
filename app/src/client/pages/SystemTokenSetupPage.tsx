@@ -71,6 +71,7 @@ export default function SystemTokenSetupPage() {
 
   const [step, setStep] = useState<Step>(isRepairMode ? 'repair-review' : 'status');
   const [permissions, setPermissions] = useState<Awaited<ReturnType<typeof api.checkSysTokenPermissions>> | null>(null);
+  const [repairPermissions, setRepairPermissions] = useState<Awaited<ReturnType<typeof api.checkSysTokenPermissions>> | null>(null);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.previewSysTokenSetup>> | null>(null);
   const [loading, setLoading] = useState(!isRepairMode); // repair-review needs no initial load
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +79,16 @@ export default function SystemTokenSetupPage() {
   const [expandedHcl, setExpandedHcl] = useState<string | null>(null);
 
   const activeSteps = isRepairMode ? REPAIR_STEPS : STEPS;
+
+  // Repair mode: check if logged-in user has sufficient permissions to apply fixes
+  useEffect(() => {
+    if (step !== 'repair-review') return;
+    setLoading(true);
+    api.checkSysTokenPermissions()
+      .then((result) => setRepairPermissions(result))
+      .catch(() => setRepairPermissions(null))
+      .finally(() => setLoading(false));
+  }, [step]);
 
   // Step 1: Check status (initial setup only)
   useEffect(() => {
@@ -326,11 +337,30 @@ export default function SystemTokenSetupPage() {
                   </div>
                 ))}
               </div>
-              <div className="rounded bg-blue-50 border border-blue-200 p-3">
-                <p className="text-sm text-blue-800">
-                  <strong>Effect:</strong> Background services (rotation, backup, webhooks) will be restored. All existing secrets are unaffected.
-                </p>
-              </div>
+              {loading && (
+                <div className="h-2 w-32 animate-pulse rounded bg-gray-200" />
+              )}
+              {!loading && repairPermissions && !repairPermissions.canCreate && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-2">
+                  <p className="text-sm font-semibold text-red-800">Insufficient permissions</p>
+                  <p className="text-sm text-red-700">
+                    Your account does not have the Vault permissions required to apply these fixes.
+                    Please contact a Vault administrator to complete this setup.
+                  </p>
+                  <ul className="mt-1 space-y-1">
+                    {repairPermissions.missingCapabilities.map((cap) => (
+                      <li key={cap} className="text-xs text-red-600 font-mono">• {cap}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {!loading && repairPermissions?.canCreate && (
+                <div className="rounded bg-blue-50 border border-blue-200 p-3">
+                  <p className="text-sm text-blue-800">
+                    <strong>Effect:</strong> Background services (rotation, backup, webhooks) will be restored. All existing secrets are unaffected.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -412,7 +442,7 @@ export default function SystemTokenSetupPage() {
             )}
 
             {/* Repair mode: approve or skip */}
-            {step === 'repair-review' && (
+            {step === 'repair-review' && !loading && (
               <>
                 <button
                   onClick={handleCancel}
@@ -422,7 +452,8 @@ export default function SystemTokenSetupPage() {
                 </button>
                 <button
                   onClick={handleApprove}
-                  className="rounded px-4 py-2 text-sm font-medium text-white bg-[#1563ff] hover:bg-[#1250d4]"
+                  disabled={repairPermissions !== null && !repairPermissions.canCreate}
+                  className="rounded px-4 py-2 text-sm font-medium text-white bg-[#1563ff] hover:bg-[#1250d4] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Approve &amp; Fix →
                 </button>

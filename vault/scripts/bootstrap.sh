@@ -38,9 +38,6 @@ echo "  ✓ readonly policy applied"
 vault policy write app-specific /vault/policies/app-specific.hcl
 echo "  ✓ app-specific policy applied"
 
-vault policy write vaultlens-admin /vault/policies/vaultlens-admin.hcl
-echo "  ✓ vaultlens-admin policy applied"
-
 # ── Seed example secrets ──────────────────────────────────────────────────────
 echo ""
 echo "→ Seeding example secrets..."

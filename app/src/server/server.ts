@@ -6,7 +6,6 @@ import { config } from './config/index.js';
 import { isSystemTokenConfigured, getSystemToken } from './lib/systemToken.js';
 import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
-import { ensureVaultLensAdminPolicy } from './lib/policyInit.js';
 import { startAuditWatcher } from './routes/hooks.js';
 import { startAuditSocketServer, autoRegisterSocketAuditWithVault } from './lib/auditSocket.js';
 
@@ -66,11 +65,6 @@ async function start(): Promise<void> {
       // Start background services that need system token
       startRotationScheduler();
       startAuditWatcher();
-
-      // Ensure vaultlens-admin policy exists
-      ensureVaultLensAdminPolicy().catch(err => {
-        console.error('[Policy Init] Failed to ensure vaultlens-admin policy:', err instanceof Error ? err.message : err);
-      });
 
       // Auto-register socket audit device with Vault when socket mode is enabled
       if (config.auditSource === 'socket') {

@@ -74,7 +74,23 @@ function SystemTokenRequiredRoute({ children }: { children: React.ReactNode }) {
               setRepairIssues(health.issues);
             }
           } catch {
-            // Cannot verify health — assume healthy rather than blocking the user
+            // Health check API itself failed (network error, server error).
+            // Treat both VaultLens policies as missing so the user is directed
+            // to repair rather than silently passing through to the dashboard.
+            setRepairIssues([
+              {
+                type: 'missing' as const,
+                item: 'system-policy' as const,
+                name: 'vaultlens-system-policy',
+                description: 'Could not verify policy status. Click Approve to re-apply VaultLens policies.',
+              },
+              {
+                type: 'missing' as const,
+                item: 'admin-policy' as const,
+                name: 'vaultlens-admin',
+                description: 'Could not verify policy status. Click Approve to re-apply VaultLens policies.',
+              },
+            ]);
           }
         }
       })
