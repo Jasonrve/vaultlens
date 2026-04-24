@@ -155,7 +155,9 @@ export default function SystemTokenSetupPage() {
     setError(null);
     const work = isRepairMode
       ? api.repairSetup(repairIssues)
-      : api.createAppRole().then(() => api.testAppRole());
+      : api.createAppRole()
+          .then(() => api.testAppRole())
+          .then(() => preview?.auditSocketEnabled ? api.registerAuditSocket() : Promise.resolve());
     work
       .then(() => setStep('done'))
       .catch((e: unknown) => {
@@ -293,6 +295,9 @@ export default function SystemTokenSetupPage() {
                   <li>• <strong>Policy:</strong> {preview?.policy.name}</li>
                   <li>• <strong>AppRole:</strong> {preview?.approleRole.name}</li>
                   <li>• <strong>Permissions:</strong> System-level access for background services</li>
+                  {preview?.auditSocketEnabled && (
+                    <li>• <strong>Audit Socket:</strong> Register socket audit device with Vault (address: {preview.auditSocketVaultAddress})</li>
+                  )}
                 </ul>
               </div>
             </div>
@@ -317,7 +322,9 @@ export default function SystemTokenSetupPage() {
                         <p className="text-xs text-gray-500">
                           {issue.item === 'approle-role'
                             ? 'Will be re-created. New credentials will be generated and stored securely.'
-                            : `Will be ${issue.type === 'missing' ? 'created' : 'updated'} with the current expected content.`}
+                            : issue.item === 'audit-socket'
+                              ? 'The socket audit device will be registered with Vault so audit events stream to VaultLens in real time.'
+                              : `Will be ${issue.type === 'missing' ? 'created' : 'updated'} with the current expected content.`}
                         </p>
                       </div>
                       {issue.expectedHcl && (

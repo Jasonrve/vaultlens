@@ -3,11 +3,11 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import app from './app.js';
 import { config } from './config/index.js';
-import { isSystemTokenConfigured, getSystemToken } from './lib/systemToken.js';
+import { isSystemTokenConfigured } from './lib/systemToken.js';
 import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
 import { startAuditWatcher } from './routes/hooks.js';
-import { startAuditSocketServer, autoRegisterSocketAuditWithVault } from './lib/auditSocket.js';
+import { startAuditSocketServer } from './lib/auditSocket.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -66,22 +66,8 @@ async function start(): Promise<void> {
       startRotationScheduler();
       startAuditWatcher();
 
-      // Auto-register socket audit device with Vault when socket mode is enabled
       if (config.auditSource === 'socket') {
-        getSystemToken().then((token) => {
-          return autoRegisterSocketAuditWithVault(
-            config.vaultAddr,
-            token,
-            config.auditSocketVaultAddress,
-            config.vaultSkipTlsVerify,
-          );
-        }).catch((err: unknown) => {
-          console.warn(
-            '[Audit Socket] Could not auto-register socket audit device with Vault:',
-            err instanceof Error ? err.message : String(err),
-            '\n  Ensure VAULT_AUDIT_SOCKET_VAULT_ADDRESS is reachable from Vault and the system token has sys/audit/* permissions.',
-          );
-        });
+        console.log('[Audit Socket] Listening for Vault audit events. Register the socket audit device via the /setup flow.');
       }
     }
   });

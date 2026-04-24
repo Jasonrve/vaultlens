@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
 import { encryptConfigValue, tryDecryptConfigValue } from '../lib/configEncryption.js';
 import { getSystemToken, seedSystemTokenCache } from '../lib/systemToken.js';
+import { autoRegisterSocketAuditWithVault } from '../lib/auditSocket.js';
 import { SYSTEM_TOKEN_POLICY_HCL, ADMIN_POLICY_HCL } from '../lib/policyLoader.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
@@ -180,6 +181,8 @@ router.get(
           tokenMaxTtl: '24h',
           policies: [APPROLE_POLICY_NAME],
         },
+        auditSocketEnabled: config.auditSource === 'socket',
+        auditSocketVaultAddress: config.auditSource === 'socket' ? config.auditSocketVaultAddress : undefined,
       });
     } catch (error) {
       next(error);
@@ -406,7 +409,7 @@ router.get(
 
       const issues: Array<{
         type: 'missing' | 'outdated';
-        item: 'system-policy' | 'admin-policy' | 'approle-role';
+        item: 'system-policy' | 'admin-policy' | 'approle-role' | 'audit-socket';
         name: string;
         description: string;
         expectedHcl?: string;
@@ -481,6 +484,32 @@ router.get(
         }
       }
 
+      // ── Check socket audit device (socket mode only) ──────────────────────
+      if (config.auditSource === 'socket') {
+        try {
+          const auditDevices = await vaultClient.get<{ data: Record<string, { type: string }> }>(
+            '/sys/audit',
+            systemToken
+          );
+          const socketRegistered = Object.values(auditDevices.data).some(
+            (device) => device.type === 'socket'
+          );
+          if (!socketRegistered) {
+            issues.push({
+              type: 'missing',
+              item: 'audit-socket',
+              name: 'vaultlens-socket',
+              description: 'Socket audit device is not registered with Vault. Real-time audit log streaming will not work.',
+            });
+          }
+        } catch (e) {
+          // 403 = system token has no sys/audit read access — skip check silently
+          if (!(e instanceof VaultError && e.statusCode === 403)) {
+            throw e;
+          }
+        }
+      }
+
       res.json({ healthy: issues.length === 0, issues });
     } catch (error) {
       next(error);
@@ -503,6 +532,7 @@ router.post(
       const needsSystemPolicy = issues.some((i) => i.item === 'system-policy');
       const needsAdminPolicy = issues.some((i) => i.item === 'admin-policy');
       const needsApprole = issues.some((i) => i.item === 'approle-role');
+      const needsAuditSocket = issues.some((i) => i.item === 'audit-socket');
 
       // ── Re-apply policies ──────────────────────────────────────────────────
       if (needsSystemPolicy) {
@@ -600,7 +630,44 @@ router.post(
         });
       }
 
+      // ── Re-register socket audit device ──────────────────────────────────
+      if (needsAuditSocket && config.auditSource === 'socket') {
+        const token = await getSystemToken();
+        await autoRegisterSocketAuditWithVault(
+          config.vaultAddr,
+          token,
+          config.auditSocketVaultAddress,
+          config.vaultSkipTlsVerify,
+        );
+      }
+
       res.json({ success: true, message: 'Repair completed successfully.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── POST /api/sys-token-setup/register-audit-socket ──────────────────────────
+// Registers the socket audit device with Vault using the system token.
+// Called from the setup wizard after the user explicitly approves.
+router.post(
+  '/register-audit-socket',
+  authMiddleware,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (config.auditSource !== 'socket') {
+        res.status(400).json({ error: 'Socket audit is not enabled on this server (VAULT_AUDIT_SOURCE is not \'socket\').' });
+        return;
+      }
+      const token = await getSystemToken();
+      await autoRegisterSocketAuditWithVault(
+        config.vaultAddr,
+        token,
+        config.auditSocketVaultAddress,
+        config.vaultSkipTlsVerify,
+      );
+      res.json({ success: true, message: `Socket audit device registered with Vault (address: ${config.auditSocketVaultAddress}).` });
     } catch (error) {
       next(error);
     }

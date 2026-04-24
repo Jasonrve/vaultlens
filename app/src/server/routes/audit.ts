@@ -3,10 +3,10 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { config } from '../config/index.js';
-import { VaultClient } from '../lib/vaultClient.js';
+import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getAuditBuffer, getAuditSocketStats } from '../lib/auditSocket.js';
-import { VaultError } from '../lib/vaultClient.js';
+import { getAuditBuffer, getAuditSocketStats, autoRegisterSocketAuditWithVault } from '../lib/auditSocket.js';
+import { getSystemToken } from '../lib/systemToken.js';
 import { auditEventsProcessedTotal } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
@@ -277,6 +277,67 @@ router.get(
         return res.json({ devices: [] });
       }
       return next(error);
+    }
+  }
+);
+
+// POST /api/audit/register-socket — register the socket audit device with Vault
+// Uses the system token; requires VAULT_AUDIT_SOURCE=socket.
+router.post(
+  '/register-socket',
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (config.auditSource !== 'socket') {
+        res.status(400).json({ error: "Socket audit is not enabled (VAULT_AUDIT_SOURCE is not 'socket')." });
+        return;
+      }
+      const token = await getSystemToken();
+      await autoRegisterSocketAuditWithVault(
+        config.vaultAddr,
+        token,
+        config.auditSocketVaultAddress,
+        config.vaultSkipTlsVerify,
+      );
+      res.json({ success: true, message: `Socket audit device registered with Vault (address: ${config.auditSocketVaultAddress}).` });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// DELETE /api/audit/socket — remove all socket-type audit devices from Vault
+// Uses the logged-in user's token so Vault's ACL controls access.
+router.delete(
+  '/socket',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const response = await vaultClient.get<{
+        data: Record<string, { type: string }>;
+      }>('/sys/audit', req.vaultToken!);
+
+      const rawDevices = response?.data ?? response;
+      const socketPaths = Object.entries(rawDevices as Record<string, { type: string }>)
+        .filter(([, device]) => device.type === 'socket')
+        .map(([p]) => p);
+
+      if (socketPaths.length === 0) {
+        res.status(404).json({ error: 'No socket audit devices found.' });
+        return;
+      }
+
+      for (const devicePath of socketPaths) {
+        // Vault's delete path for audit devices is /sys/audit/:path (no trailing slash)
+        const cleanPath = devicePath.replace(/\/$/, '');
+        await vaultClient.delete(`/sys/audit/${cleanPath}`, req.vaultToken!);
+      }
+
+      res.json({ success: true, message: `Removed ${socketPaths.length} socket audit device(s).` });
+    } catch (error) {
+      if (error instanceof VaultError && error.statusCode === 403) {
+        res.status(403).json({ error: 'You do not have permission to manage audit devices.' });
+        return;
+      }
+      next(error);
     }
   }
 );

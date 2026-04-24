@@ -782,6 +782,8 @@ export async function previewSysTokenSetup() {
   const { data } = await api.get<{
     policy: { name: string; hcl: string };
     approleRole: { name: string; mount: string; tokenTtl: string; tokenMaxTtl: string; policies: string[] };
+    auditSocketEnabled: boolean;
+    auditSocketVaultAddress?: string;
   }>('/sys-token-setup/preview');
   return data;
 }
@@ -803,6 +805,20 @@ export async function testAppRole() {
   return data;
 }
 
+export async function registerAuditSocket() {
+  const { data } = await api.post<{ success: boolean; message: string }>(
+    '/audit/register-socket', {}
+  );
+  return data;
+}
+
+export async function deregisterAuditSocket() {
+  const { data } = await api.delete<{ success: boolean; message: string }>(
+    '/audit/socket'
+  );
+  return data;
+}
+
 export async function deleteAppRole() {
   const { data } = await api.delete<{ success: boolean; message: string }>(
     '/sys-token-setup/approle'
@@ -813,7 +829,7 @@ export async function deleteAppRole() {
 // ── Setup Health Check ────────────────────────────────────────────────────────
 export interface SetupHealthIssue {
   type: 'missing' | 'outdated';
-  item: 'system-policy' | 'admin-policy' | 'approle-role';
+  item: 'system-policy' | 'admin-policy' | 'approle-role' | 'audit-socket';
   name: string;
   description: string;
   expectedHcl?: string;

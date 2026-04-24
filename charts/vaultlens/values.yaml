@@ -21,8 +21,23 @@ config:
   corsOrigin: ""
   # -- Server port
   port: "3001"
-  # -- Audit log file path (leave empty for default)
-  auditLogPath: ""
+  # -- Audit log configuration
+  audit:
+    # -- Audit source: 'file' (default, Vault audit log file) or 'socket' (real-time via websocket)
+    source: "socket"
+    # -- Audit log file path (only used when source is 'file'; leave empty for default)
+    logPath: ""
+  # -- Socket audit configuration (when audit.source is 'socket')
+  socketAudit:
+    # -- Enable socket audit mode for real-time audit log streaming via websocket
+    enabled: true
+    # -- Port for the socket audit listener (VaultLens side)
+    port: "9090"
+    # -- Host to bind the socket audit listener to (0.0.0.0 for all interfaces)
+    host: "0.0.0.0"
+    # -- Address that Vault uses to connect to the socket audit listener (pod DNS name)
+    # In Kubernetes, use <pod-name>.<namespace>.svc.cluster.local or just the service name
+    vaultAddress: "vaultlens:9090"
 
 # -- Backup storage configuration
 backup:
