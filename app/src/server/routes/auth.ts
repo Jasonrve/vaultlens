@@ -131,6 +131,7 @@ router.post(
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
           accessor: tokenInfo.accessor,
+          meta: tokenInfo.meta ?? null,
           id: token,
         },
       });
@@ -292,6 +293,7 @@ router.post(
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
           accessor: tokenInfo.accessor,
+          meta: tokenInfo.meta ?? null,
           id: clientToken,
         },
       });
@@ -334,6 +336,7 @@ router.get(
         entity_id: req.tokenInfo.entity_id,
         type: req.tokenInfo.type,
         accessor: req.tokenInfo.accessor,
+        meta: req.tokenInfo.meta ?? null,
         id: req.vaultToken,
       },
     });

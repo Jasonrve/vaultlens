@@ -134,6 +134,14 @@ export default function Header() {
                   </div>
                 )}
 
+                {/* Role (shown for OIDC / auth method logins) */}
+                {tokenInfo.meta?.role && (
+                  <div className="px-3 pb-2 border-b border-gray-100 mb-2">
+                    <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">Role</p>
+                    <p className="text-sm text-gray-700 font-medium mt-0.5">{tokenInfo.meta.role}</p>
+                  </div>
+                )}
+
                 {/* Policies */}
                 {tokenInfo.policies && tokenInfo.policies.length > 0 && (
                   <div className="px-3 pb-2">

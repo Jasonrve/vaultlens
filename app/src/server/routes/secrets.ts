@@ -341,11 +341,29 @@ router.get(
         }
       }
 
+      // When restricted, check what capabilities the user actually has on this path
+      let capabilities: string[] | undefined;
+      if (restricted) {
+        try {
+          const capsResponse = await vaultClient.post<Record<string, unknown>>(
+            '/sys/capabilities-self',
+            req.vaultToken!,
+            { paths: [vaultPath] }
+          );
+          const caps = (capsResponse as Record<string, unknown>)[vaultPath] ??
+            (capsResponse as { capabilities?: string[] }).capabilities ?? [];
+          capabilities = Array.isArray(caps) ? caps : [];
+        } catch {
+          capabilities = [];
+        }
+      }
+
       res.json({
         keys: fieldKeys,
         mount: engineInfo.mount,
         version: engineInfo.version,
         restricted,
+        ...(capabilities ? { capabilities } : {}),
       });
     } catch (error) {
       next(error);

@@ -63,6 +63,7 @@ export default function SecretView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [restricted, setRestricted] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
   const [metadata, setMetadata] = useState<SecretMetadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
@@ -84,6 +85,12 @@ export default function SecretView() {
         setVersion(result.version);
         const isRestricted = result.restricted === true;
         setRestricted(isRestricted);
+
+        // Check write capabilities for restricted mode partial update
+        if (isRestricted && result.capabilities) {
+          const caps = result.capabilities;
+          setCanWrite(caps.includes('create') || caps.includes('update'));
+        }
 
         // Eagerly load values when user has read permission
         if (!isRestricted) {
@@ -240,12 +247,14 @@ export default function SecretView() {
         </div>
         <div className="flex gap-2">
           {restricted ? (
-            <button
-              onClick={() => navigate(`/secrets/merge/${splat}`)}
-              className="rounded-md border border-blue-300 px-4 py-2 text-sm text-blue-700 hover:bg-blue-50"
-            >
-              Partial Update
-            </button>
+            canWrite && (
+              <button
+                onClick={() => navigate(`/secrets/merge/${splat}`)}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Partial Update
+              </button>
+            )
           ) : (
             <>
               <button
@@ -274,8 +283,7 @@ export default function SecretView() {
           <div>
             <p className="text-sm font-medium text-amber-800">Restricted access</p>
             <p className="mt-0.5 text-sm text-amber-700">
-              You do not have read permission on this secret. Field names are shown but values cannot be revealed.
-              You can use <strong>Partial Update</strong> to modify individual fields without seeing existing values.
+              You do not have <strong>read</strong> permission on this secret. Your <strong>list</strong> permission allows you to see the field names (keys) but values cannot be revealed.
             </p>
           </div>
         </div>

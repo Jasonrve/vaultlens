@@ -47,7 +47,7 @@ export default function VaultLensAuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-gray-900">Sharing Audit Log</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Lens Audits</h1>
         <p className="mt-1 text-sm text-gray-500">
           View audit trail for all secret sharing activity (creates and views).
         </p>

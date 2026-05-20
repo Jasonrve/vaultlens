@@ -248,7 +248,7 @@ export default function Sidebar() {
           <NavSection title="Admin" defaultOpen={isAdmin}>
             <NavItem to="/admin/permission-tester" icon={<IconShieldCheck />} label="Permission Tester" />
             <NavItem to="/admin/audit-log" icon={<IconDocument />} label="Audit Log" />
-            <NavItem to="/admin/sharing-audit" icon={<IconDocument />} label="Sharing Audit" />
+            <NavItem to="/admin/sharing-audit" icon={<IconDocument />} label="Lens Audits" />
             <NavItem to="/admin/analytics" icon={<IconChart />} label="Analytics" />
             <NavItem to="/admin/rotation" icon={<IconRefresh />} label="Secret Rotation" />
             <NavItem to="/admin/backup" icon={<IconArchive />} label="Backup & Restore" />

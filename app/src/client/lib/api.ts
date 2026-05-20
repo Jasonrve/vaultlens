@@ -93,7 +93,7 @@ export async function listSecrets(path: string) {
 }
 
 export async function readSecret(path: string) {
-  const { data } = await api.get<{ keys: string[]; mount: string; version: number; restricted?: boolean }>(
+  const { data } = await api.get<{ keys: string[]; mount: string; version: number; restricted?: boolean; capabilities?: string[] }>(
     `/secrets/read/${path}`,
   );
   return data;
