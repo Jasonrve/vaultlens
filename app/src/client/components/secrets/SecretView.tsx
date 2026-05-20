@@ -69,6 +69,9 @@ export default function SecretView() {
   const [metadataRows, setMetadataRows] = useState<{ key: string; value: string }[]>([]);
   const [savingMetadata, setSavingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [secretValues, setSecretValues] = useState<Record<string, string> | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [loadingValues, setLoadingValues] = useState(false);
 
   useEffect(() => {
     api
@@ -106,6 +109,45 @@ export default function SecretView() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An error occurred');
     }
+  }
+
+  async function ensureValuesLoaded() {
+    if (secretValues !== null) return secretValues;
+    setLoadingValues(true);
+    try {
+      const result = await api.readSecretValues(splat);
+      const vals: Record<string, string> = {};
+      for (const [k, v] of Object.entries(result.data)) {
+        vals[k] = typeof v === 'string' ? v : JSON.stringify(v);
+      }
+      setSecretValues(vals);
+      return vals;
+    } catch {
+      return null;
+    } finally {
+      setLoadingValues(false);
+    }
+  }
+
+  async function toggleReveal(key: string) {
+    const vals = await ensureValuesLoaded();
+    if (!vals) return;
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function revealAll() {
+    const vals = await ensureValuesLoaded();
+    if (!vals) return;
+    setRevealedKeys(new Set(fieldKeys));
+  }
+
+  function hideAll() {
+    setRevealedKeys(new Set());
   }
 
   function startEditMetadata() {
@@ -234,16 +276,71 @@ export default function SecretView() {
 
       {/* Secret Fields */}
       <div className="rounded-md border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600">
-          Secret Fields
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
+          <span className="text-sm font-semibold text-gray-600">Secret Fields</span>
+          <div className="flex items-center gap-2">
+            {loadingValues && (
+              <span className="text-xs text-gray-400">Loading…</span>
+            )}
+            {revealedKeys.size < fieldKeys.length ? (
+              <button
+                onClick={() => { void revealAll(); }}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                title="Reveal all values"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Show all
+              </button>
+            ) : (
+              <button
+                onClick={hideAll}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                title="Hide all values"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                </svg>
+                Hide all
+              </button>
+            )}
+          </div>
         </div>
         <div className="divide-y divide-gray-100">
-          {fieldKeys.map((key) => (
-            <div key={key} className="flex items-center px-4 py-3">
-              <span className="font-mono text-sm font-medium text-gray-700">{key}</span>
-              <span className="ml-4 font-mono text-sm text-gray-400 select-none">••••••••</span>
-            </div>
-          ))}
+          {fieldKeys.map((key) => {
+            const isRevealed = revealedKeys.has(key);
+            const displayValue = isRevealed && secretValues ? secretValues[key] ?? '' : null;
+            return (
+              <div key={key} className="flex items-center px-4 py-3 gap-3">
+                <span className="font-mono text-sm font-medium text-gray-700 min-w-0 shrink-0">{key}</span>
+                <span className="flex-1 font-mono text-sm text-gray-500 break-all min-w-0">
+                  {isRevealed ? (
+                    displayValue !== null ? displayValue : <span className="text-gray-400 italic">—</span>
+                  ) : (
+                    <span className="text-gray-400 select-none tracking-widest">••••••••</span>
+                  )}
+                </span>
+                <button
+                  onClick={() => { void toggleReveal(key); }}
+                  className="shrink-0 rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                  title={isRevealed ? 'Hide value' : 'Show value'}
+                >
+                  {isRevealed ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
       </div>
 

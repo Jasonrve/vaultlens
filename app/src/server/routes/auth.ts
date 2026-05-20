@@ -130,6 +130,8 @@ router.post(
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
+          accessor: tokenInfo.accessor,
+          id: token,
         },
       });
       authLoginsTotal.inc({ method: 'token', result: 'success' });
@@ -289,6 +291,8 @@ router.post(
           expire_time: tokenInfo.expire_time,
           entity_id: tokenInfo.entity_id,
           type: tokenInfo.type,
+          accessor: tokenInfo.accessor,
+          id: clientToken,
         },
       });
       authLoginsTotal.inc({ method: 'oidc', result: 'success' });
@@ -330,6 +334,7 @@ router.get(
         entity_id: req.tokenInfo.entity_id,
         type: req.tokenInfo.type,
         accessor: req.tokenInfo.accessor,
+        id: req.vaultToken,
       },
     });
   }

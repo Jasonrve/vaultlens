@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import JsonEditor from '../common/JsonEditor';
 import ErrorMessage from '../common/ErrorMessage';
+import Breadcrumb from '../common/Breadcrumb';
 
 interface KvRow {
   key: string;
@@ -99,6 +100,22 @@ export default function SecretEditor() {
 
   return (
     <div className="mx-auto max-w-3xl">
+      {!isNew && (
+        <div className="mb-4">
+          <Breadcrumb
+            items={[
+              { label: 'Secrets Engines', path: '/secrets' },
+              ...splat.split('/').filter(Boolean).map((seg, i, arr) => ({
+                label: seg,
+                path:
+                  i < arr.length - 1
+                    ? `/secrets/${arr.slice(0, i + 1).join('/')}/`
+                    : undefined,
+              })),
+            ]}
+          />
+        </div>
+      )}
       <h1 className="mb-6 text-2xl font-bold text-gray-800">
         {isNew ? 'Create Secret' : 'Edit Secret'}
       </h1>
