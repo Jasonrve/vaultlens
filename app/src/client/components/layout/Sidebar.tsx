@@ -265,8 +265,9 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-white/[0.07] px-4 py-3">
+      <div className="border-t border-white/[0.07] px-4 py-3 flex items-center justify-between">
         <span className="text-[11px] text-[#3d4554]">VaultLens</span>
+        <span className="text-[11px] text-[#3d4554] font-mono">v{__APP_VERSION__}</span>
       </div>
     </aside>
   );
