@@ -55,12 +55,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   checkAuth: async () => {
-    // Skip the round-trip if there's no session cookie — avoids a noisy 401 in the console
-    const hasCookie = document.cookie.includes('vault_token=');
-    if (!hasCookie) {
-      set({ tokenInfo: null, isAuthenticated: false });
-      return;
-    }
+    // vault_token is an httpOnly cookie — not visible to document.cookie.
+    // We always call getMe() so a page reload after login (e.g. returning from
+    // the shared-secret auth-login flow) correctly restores the session.
     try {
       const result = await api.getMe();
       set({

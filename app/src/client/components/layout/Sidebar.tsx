@@ -189,6 +189,7 @@ export default function Sidebar() {
   const isPolicies = location.pathname.startsWith('/policies');
   const isTools = location.pathname.startsWith('/tools');
   const isAdmin = location.pathname.startsWith('/admin');
+  const isSettings = location.pathname.startsWith('/admin/branding') || location.pathname.startsWith('/admin/sharing-settings');
   const { branding } = useBrandingStore();
   const { tokenInfo, refreshTokenInfo } = useAuthStore();
 
@@ -245,13 +246,20 @@ export default function Sidebar() {
 
         {isAdminUser && (
           <NavSection title="Admin" defaultOpen={isAdmin}>
-            <NavItem to="/admin/branding" icon={<IconSettings />} label="Branding" />
             <NavItem to="/admin/permission-tester" icon={<IconShieldCheck />} label="Permission Tester" />
             <NavItem to="/admin/audit-log" icon={<IconDocument />} label="Audit Log" />
+            <NavItem to="/admin/sharing-audit" icon={<IconDocument />} label="Sharing Audit" />
             <NavItem to="/admin/analytics" icon={<IconChart />} label="Analytics" />
             <NavItem to="/admin/rotation" icon={<IconRefresh />} label="Secret Rotation" />
             <NavItem to="/admin/backup" icon={<IconArchive />} label="Backup & Restore" />
             <NavItem to="/admin/hooks" icon={<IconBolt />} label="Webhooks" />
+          </NavSection>
+        )}
+
+        {isAdminUser && (
+          <NavSection title="Settings" defaultOpen={isSettings}>
+            <NavItem to="/admin/branding" icon={<IconSettings />} label="Branding" />
+            <NavItem to="/admin/sharing-settings" icon={<IconShare />} label="Sharing" />
           </NavSection>
         )}
       </nav>

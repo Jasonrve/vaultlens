@@ -42,7 +42,41 @@ export default function Header() {
     });
   }
 
-  const segments = location.pathname.split('/').filter(Boolean);
+  const rawSegments = location.pathname.split('/').filter(Boolean);
+
+  // For secret edit/create/merge/view routes, strip the mode segment and
+  // rewrite the links so breadcrumb segments navigate to the view (not edit).
+  const SECRET_MODES = new Set(['edit', 'create', 'view', 'merge']);
+  const isSecretMode =
+    rawSegments[0] === 'secrets' &&
+    rawSegments.length > 1 &&
+    SECRET_MODES.has(rawSegments[1]);
+
+  // segments used for display — strip the mode word (edit/create/merge/view)
+  const segments = isSecretMode
+    ? [rawSegments[0], ...rawSegments.slice(2)]
+    : rawSegments;
+
+  // Build the path for each breadcrumb item.
+  // - "Secrets" (index 0) → /secrets
+  // - Intermediate path segments (directories) → /secrets/<path>/ (SecretsList)
+  // - Last segment in edit/create/merge → /secrets/view/<full-path> (exit edit mode)
+  // - Last segment in view → non-clickable (handled by isLastButClickable below)
+  function segmentPath(index: number): string {
+    if (isSecretMode) {
+      if (index === 0) return '/secrets';
+      // Reconstruct using the original secret path segments (rawSegments[2..])
+      const secretParts = rawSegments.slice(2, index + 2);
+      const isLastSegment = index === segments.length - 1;
+      if (isLastSegment) {
+        // Last segment: link to view (only relevant for edit/create/merge — view keeps it non-clickable)
+        return `/secrets/view/${secretParts.join('/')}`;
+      }
+      // Intermediate directory segments always go to the secrets list (no "view")
+      return `/secrets/${secretParts.join('/')}/`;
+    }
+    return '/' + rawSegments.slice(0, index + 1).join('/');
+  }
 
   const toLabel = (seg: string) =>
     LABELS[seg] ?? seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, ' ');
@@ -53,17 +87,20 @@ export default function Header() {
       <nav className="flex items-center gap-1 text-sm">
         <Link to="/" className="font-medium text-gray-500 hover:text-[#1563ff]">Home</Link>
         {segments.map((seg, i) => {
-          const path = '/' + segments.slice(0, i + 1).join('/');
+          const path = segmentPath(i);
           const isLast = i === segments.length - 1;
+          // In edit/create/merge mode, the last segment (secret name) should also
+          // be a clickable link so clicking it exits edit mode and goes to view.
+          const isLastButClickable = isLast && isSecretMode && rawSegments[1] !== 'view';
           return (
             <span key={i} className="flex items-center gap-1">
               <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
               </svg>
-              {isLast ? (
+              {isLast && !isLastButClickable ? (
                 <span className="font-medium text-gray-800">{toLabel(seg)}</span>
               ) : (
-                <Link to={path} className="text-gray-500 hover:text-[#1563ff]">{toLabel(seg)}</Link>
+                <Link to={path} className={isLastButClickable ? 'font-medium text-gray-800 hover:text-[#1563ff]' : 'text-gray-500 hover:text-[#1563ff]'}>{toLabel(seg)}</Link>
               )}
             </span>
           );

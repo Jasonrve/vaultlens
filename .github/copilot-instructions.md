@@ -102,7 +102,7 @@ docs/                        # Architecture, API reference, security, audit repo
 | `auth.ts` | `/api/auth` | — | — | Login, logout, session check, OIDC flow |
 | `branding.ts` | `/api/branding` | Mixed | PUT/POST/DELETE | App name, logo, primary colour (via config storage) |
 | `sharing.ts` | `/api/sharing` | Mixed | — | Create/retrieve/delete encrypted shared secrets |
-| `secrets.ts` | `/api/secrets` | Yes | — | CRUD on KV secrets; secure merge; path validation |
+| `secrets.ts` | `/api/secrets` | Yes | — | CRUD on KV secrets; secure merge; restricted-access key resolution; path validation |
 | `policies.ts` | `/api/policies` | Yes | — | List/read/parse ACL policies |
 | `authMethods.ts` | `/api/auth-methods` | Yes | — | List/configure auth methods, roles, tune |
 | `identity.ts` | `/api/identity` | Yes | — | Entities, groups, entity suggestions |
@@ -164,6 +164,7 @@ VaultLens auto-creates two policies at startup (`ensureVaultLensAdminPolicy()` i
 
 ### System Token
 - `getSystemToken()` (from `lib/systemToken.ts`) is a **server-only** Vault token used exclusively for:
+  - **Restricted-access key resolution** — when a user can navigate to a secret path (has `list` permission) but lacks `read` permission, the system token reads the secret to extract field names (keys only). Values are never exposed to the user.
   - **Secure merge** — reading the existing secret so the server can merge user-supplied keys without exposing values the user cannot already read
   - Background services that run without an active user session: rotation scheduler, audit log watcher, backup scheduler
   - Shared secrets cubbyhole context (all users share one cubbyhole via the system token)
@@ -230,6 +231,31 @@ Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `Vau
 - The decryption key is in the URL fragment (`#key`) and is never transmitted to the server.
 - Use `encryptSecret(plaintext)` -> `{ encrypted, key }` and `decryptSecret(encrypted, key)`.
 - **Protections**: 100KB payload limit, max 1000 stored secrets, batched cleanup (50/run), 20/min rate limit on public GET.
+
+### Secret View Modes
+`SecretView` supports two display modes (like the Vault UI):
+
+| Mode | Behaviour |
+|------|-----------|
+| **Key / Value** | Table rows with key names and masked values. Per-key eye icon to reveal/hide. Show all / Hide all buttons. |
+| **JSON** | Full secret as a formatted JSON object. Reveal/mask toggle + copy-to-clipboard. |
+
+- Values are loaded eagerly on mount via `GET /secrets/values/*` when the user has `read` permission.
+- **Restricted mode** (no `read` permission): only Key/Value mode is available. Values are permanently masked with `••••••••`. No eye icons or JSON toggle.
+
+### Restricted-Access Secret Keys & Partial Updates
+When a user can navigate to a secret (has `list` permission on the parent path) but lacks `read` permission on the secret itself:
+
+1. **Backend** (`GET /secrets/read/*`): The user's token gets a 403. The server falls back to the **system token** to read the secret and extract **field names (keys) only** — values are never exposed. The response includes `restricted: true`.
+2. **Frontend** (`SecretView`): Detects `restricted` and shows:
+   - Field names with permanently masked values (`••••••••`)
+   - No reveal/show-all buttons (values cannot be fetched)
+   - An amber "Restricted access" banner explaining the situation
+   - A "Partial Update" button (instead of Edit/Delete) linking to the merge editor
+3. **Merge Editor** (`SecretMergeEditor` at `/secrets/merge/*`): Loads field keys (which now work via the system-token fallback), shows `********` placeholders. User edits individual fields → only modified fields are sent to `POST /secrets/merge/*`.
+4. **Merge Backend**: Reads existing secret with **system token**, merges user changes, writes with **user token**. Vault ACLs control write access. Response returns only `updatedKeys` — never existing values.
+
+**Security invariant**: The user **never** sees existing secret values when they lack `read` permission. Only key names are revealed.
 
 ### Graph Data
 - Graph routes return `{ nodes: GraphNode[], edges: GraphEdge[] }` for `@xyflow/react`.

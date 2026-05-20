@@ -26,6 +26,7 @@ import rotationRoutes from './routes/rotation.js';
 import backupRoutes from './routes/backup.js';
 import hooksRoutes from './routes/hooks.js';
 import sysTokenSetupRoutes from './routes/sys-token-setup.js';
+import vaultlensAuditRoutes from './routes/vaultlens-audit.js';
 
 const app = express();
 
@@ -176,6 +177,7 @@ app.use('/api', csrfProtection);
 // Routes with mixed public/protected endpoints (CSRF applies to POST/PUT/DELETE)
 app.use('/api/branding', brandingRoutes);
 app.use('/api/sharing', sharingRoutes);
+app.use('/api/vaultlens-audit', vaultlensAuditRoutes);
 
 // Protected routes
 app.use('/api/secrets', secretsRoutes);

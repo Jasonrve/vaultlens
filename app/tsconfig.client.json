@@ -20,5 +20,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["src/client", "vite-env.d.ts"]
+  "include": ["src/client", "src/shared", "vite-env.d.ts"]
 }

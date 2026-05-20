@@ -93,7 +93,7 @@ export async function listSecrets(path: string) {
 }
 
 export async function readSecret(path: string) {
-  const { data } = await api.get<{ keys: string[]; mount: string; version: number }>(
+  const { data } = await api.get<{ keys: string[]; mount: string; version: number; restricted?: boolean }>(
     `/secrets/read/${path}`,
   );
   return data;
@@ -384,27 +384,91 @@ export async function getSecretPathRelationships(path: string) {
 }
 
 // ── Sharing ───────────────────────────────────────────────
-export async function createSharedSecret(encrypted: string, expiration: number, oneTime: boolean) {
-  const { data } = await api.post<{ id: string; expiresAt: string }>(
+export type ShareMode = 'one-time' | 'otp' | 'auth-login';
+
+export async function createSharedSecret(
+  encrypted: string,
+  expiration: number,
+  oneTime: boolean,
+  shareMode: ShareMode = 'one-time',
+  otpCode?: string,
+) {
+  const { data } = await api.post<{ id: string; expiresAt: string; shareMode: ShareMode }>(
     '/sharing',
-    { encrypted, expiration, oneTime },
+    { encrypted, expiration, oneTime, shareMode, otpCode },
   );
   return data;
 }
 
 export async function getSharedSecret(id: string) {
   const { data } = await api.get<{
+    encrypted?: string;
+    createdAt: string;
+    expiresAt: string;
+    oneTime?: boolean;
+    shareMode: ShareMode;
+    requiresAuth?: boolean;
+    requiresOtp?: boolean;
+  }>(`/sharing/${id}`);
+  return data;
+}
+
+export async function unlockSharedSecret(id: string, payload: { otpCode?: string; authToken?: string }) {
+  const { data } = await api.post<{
     encrypted: string;
     createdAt: string;
     expiresAt: string;
     oneTime: boolean;
-  }>(`/sharing/${id}`);
+    shareMode: ShareMode;
+  }>(`/sharing/${id}/unlock`, payload);
   return data;
 }
 
 export async function deleteSharedSecret(id: string) {
   const { data } = await api.delete<{ success: boolean }>(`/sharing/${id}`);
   return data;
+}
+
+// ── Sharing Config ────────────────────────────────────────
+export interface SharingConfig {
+  enableOneTime: boolean;
+  enableOtp: boolean;
+  enableAuthLogin: boolean;
+}
+
+export async function getSharingConfig() {
+  const { data } = await api.get<SharingConfig>('/vaultlens-audit/sharing-config');
+  return data;
+}
+
+export async function updateSharingConfig(config: SharingConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/sharing-config', config);
+  return data;
+}
+
+// ── VaultLens Audit ───────────────────────────────────────
+export interface VaultLensAuditEntry {
+  timestamp: string;
+  action: 'share_created' | 'share_viewed';
+  shareId: string;
+  shareMode: ShareMode;
+  url: string;
+  creator?: string;
+  viewer?: string;
+  clientIp?: string;
+}
+
+export async function getVaultLensAuditLogs(params?: { from?: string; to?: string; limit?: number; offset?: number }) {
+  const { data } = await api.get<{ entries: VaultLensAuditEntry[]; total: number }>(
+    '/vaultlens-audit/logs',
+    { params },
+  );
+  return data;
+}
+
+export async function getVaultLensAuditDates() {
+  const { data } = await api.get<{ dates: string[] }>('/vaultlens-audit/dates');
+  return data.dates;
 }
 
 // ── Permissions ───────────────────────────────────────────
