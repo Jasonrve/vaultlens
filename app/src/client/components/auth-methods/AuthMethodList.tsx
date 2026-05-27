@@ -5,6 +5,7 @@ import type { AuthMethod } from '../../types';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import AuthMethodIcon from './AuthMethodIcon';
+import { AuthMethodMeta } from './AuthMethodMeta';
 
 export default function AuthMethodList() {
   const [methods, setMethods] = useState<AuthMethod[]>([]);
@@ -36,7 +37,7 @@ export default function AuthMethodList() {
                 Type
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                Description
+                Description / Labels
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
                 Accessor
@@ -58,7 +59,11 @@ export default function AuthMethodList() {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-sm text-gray-600">{m.type}</td>
-                <td className="px-4 py-3 text-sm text-gray-500">{m.description || '—'}</td>
+                <td className="px-4 py-3 text-sm text-gray-500">
+                  {m.description
+                    ? <AuthMethodMeta description={m.description} />
+                    : '—'}
+                </td>
                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{m.accessor}</td>
               </tr>
             ))}

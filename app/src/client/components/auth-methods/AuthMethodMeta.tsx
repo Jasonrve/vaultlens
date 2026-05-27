@@ -68,6 +68,7 @@ function detectService(url: string): ServiceConfig | null {
 }
 
 interface ParsedMeta {
+  plainText: string;
   links: Array<{ url: string; service: ServiceConfig | null }>;
   badges: Array<{ key: string; value: string }>;
 }
@@ -76,7 +77,7 @@ export function parseAuthMethodDescription(description: string): ParsedMeta {
   const links: ParsedMeta['links'] = [];
   const badges: ParsedMeta['badges'] = [];
 
-  if (!description) return { links, badges };
+  if (!description) return { plainText: '', links, badges };
 
   // Extract URLs
   const urlRegex = /https?:\/\/[^\s,;'"]+/gi;
@@ -88,15 +89,18 @@ export function parseAuthMethodDescription(description: string): ParsedMeta {
   }
 
   // Extract key=value or key:value tokens from remaining text
+  const plainParts: string[] = [];
   const tokens = remaining.split(/[\s,;]+/).filter(Boolean);
   for (const token of tokens) {
     const match = token.match(/^([\w][\w.-]*)[:=](.+)$/);
     if (match) {
       badges.push({ key: match[1]!, value: match[2]! });
+    } else {
+      plainParts.push(token);
     }
   }
 
-  return { links, badges };
+  return { plainText: plainParts.join(' '), links, badges };
 }
 
 // ── Badge colours ─────────────────────────────────────────────────────────────
@@ -120,11 +124,16 @@ interface AuthMethodMetaProps {
 }
 
 export function AuthMethodMeta({ description }: AuthMethodMetaProps) {
-  const { links, badges } = parseAuthMethodDescription(description);
-  if (links.length === 0 && badges.length === 0) return null;
+  const { plainText, links, badges } = parseAuthMethodDescription(description);
+  if (!plainText && links.length === 0 && badges.length === 0) return null;
 
   return (
     <div className="mt-2 space-y-2">
+      {/* Plain text description */}
+      {plainText && (
+        <p className="text-sm text-gray-600">{plainText}</p>
+      )}
+
       {/* Service link pills */}
       {links.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

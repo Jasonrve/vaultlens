@@ -308,7 +308,7 @@ export default function LoginPage() {
 
           {/* ── OIDC form ── */}
           {method === 'oidc' && oidcAvailable && (
-            <div>
+            <form onSubmit={(e) => { e.preventDefault(); void handleOidcLogin(); }}>
               {/* Mount Path is kept as a hidden value — not displayed to user */}
               <input
                 type="hidden"
@@ -346,8 +346,7 @@ export default function LoginPage() {
               )}
 
               <button
-                type="button"
-                onClick={() => { void handleOidcLogin(); }}
+                type="submit"
                 disabled={oidcLoading}
                 className="w-full rounded-md bg-[#1563ff] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0f4fcc] disabled:opacity-40"
               >
@@ -378,7 +377,7 @@ export default function LoginPage() {
                   Complete sign-in in the popup window.
                 </p>
               )}
-            </div>
+            </form>
           )}
         </div>
       </div>
