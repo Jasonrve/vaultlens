@@ -392,10 +392,11 @@ export async function createSharedSecret(
   oneTime: boolean,
   shareMode: ShareMode = 'one-time',
   otpCode?: string,
+  maxViews?: number,
 ) {
   const { data } = await api.post<{ id: string; expiresAt: string; shareMode: ShareMode }>(
     '/sharing',
-    { encrypted, expiration, oneTime, shareMode, otpCode },
+    { encrypted, expiration, oneTime, shareMode, otpCode, maxViews },
   );
   return data;
 }
@@ -409,6 +410,8 @@ export async function getSharedSecret(id: string) {
     shareMode: ShareMode;
     requiresAuth?: boolean;
     requiresOtp?: boolean;
+    maxViews?: number;
+    viewCount?: number;
   }>(`/sharing/${id}`);
   return data;
 }
@@ -420,6 +423,8 @@ export async function unlockSharedSecret(id: string, payload: { otpCode?: string
     expiresAt: string;
     oneTime: boolean;
     shareMode: ShareMode;
+    maxViews?: number;
+    viewCount?: number;
   }>(`/sharing/${id}/unlock`, payload);
   return data;
 }
@@ -434,6 +439,7 @@ export interface SharingConfig {
   enableOneTime: boolean;
   enableOtp: boolean;
   enableAuthLogin: boolean;
+  allowCustomViewCount: boolean;
 }
 
 export async function getSharingConfig() {

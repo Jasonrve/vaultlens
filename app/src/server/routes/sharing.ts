@@ -39,6 +39,10 @@ interface StoredSecret {
   otpHash?: string;
   /** Display name of the creator */
   creatorName: string;
+  /** Maximum number of views (0 = unlimited). Default: 1 */
+  maxViews?: number;
+  /** Current view count */
+  viewCount?: number;
 }
 
 /** Hash an OTP code for storage (SHA-256, not reversible) */
@@ -83,7 +87,9 @@ async function cleanupExpiredSecrets(sysToken: string): Promise<void> {
         );
         const expired = new Date(resp.data.expiresAt) < now;
         const consumed = resp.data.oneTime && resp.data.retrieved;
-        if (expired || consumed) {
+        const viewsExhausted = (resp.data.maxViews ?? 1) > 0 &&
+          (resp.data.viewCount ?? 0) >= (resp.data.maxViews ?? 1);
+        if (expired || consumed || viewsExhausted) {
           await vaultClient.delete(`/cubbyhole/shared-secrets/${key}`, sysToken);
           remaining--;
         }
@@ -113,18 +119,29 @@ router.post(
         return;
       }
 
-      const { encrypted, expiration, oneTime, shareMode, otpCode } = req.body as {
+      const { encrypted, expiration, oneTime, shareMode, otpCode, maxViews: rawMaxViews } = req.body as {
         encrypted?: string;
         expiration?: number;  // seconds
         oneTime?: boolean;
         shareMode?: ShareMode;
         otpCode?: string;
+        maxViews?: number;
       };
 
       const mode: ShareMode = shareMode || 'one-time';
 
       // Validate share mode is enabled
       const sharingConfig = await readSharingConfig();
+
+      // Resolve max views: use provided value only if admin allows custom view counts
+      let maxViews = 1; // default: single view
+      if (sharingConfig.allowCustomViewCount && rawMaxViews !== undefined) {
+        const parsed = Math.floor(Number(rawMaxViews));
+        if (!isNaN(parsed) && parsed >= 0) {
+          maxViews = parsed;
+        }
+      }
+
       if (mode === 'one-time' && !sharingConfig.enableOneTime) {
         res.status(400).json({ error: 'One-time sharing is disabled by administrator' });
         return;
@@ -187,6 +204,8 @@ router.post(
         retrieved: false,
         shareMode: mode,
         creatorName,
+        maxViews,
+        viewCount: 0,
         ...(mode === 'otp' && otpCode ? { otpHash: hashOtp(otpCode) } : {}),
       };
 
@@ -262,12 +281,16 @@ router.get(
         return;
       }
 
-      // Check if already retrieved (one-time secrets)
-      if (stored.oneTime && stored.retrieved) {
+      // Check if view limit reached
+      const maxViews = stored.maxViews ?? 1;
+      const viewCount = stored.viewCount ?? 0;
+      const isConsumed = maxViews > 0 && viewCount >= maxViews;
+      // Backwards compatibility: also check legacy retrieved flag
+      if ((stored.oneTime && stored.retrieved) || isConsumed) {
         try {
           await vaultClient.delete(`/cubbyhole/shared-secrets/${secretId}`, sysToken);
         } catch { /* best effort */ }
-        res.status(404).json({ error: 'Secret has already been retrieved' });
+        res.status(404).json({ error: 'Secret has reached its maximum view count' });
         return;
       }
 
@@ -275,12 +298,16 @@ router.get(
 
       // For one-time mode: return encrypted payload immediately
       if (shareMode === 'one-time') {
-        if (stored.oneTime) {
+        // Increment view count
+        stored.viewCount = viewCount + 1;
+        const newViewCount = stored.viewCount;
+        // Mark retrieved for backwards compat when maxViews is 1
+        if (maxViews > 0 && newViewCount >= maxViews) {
           stored.retrieved = true;
-          try {
-            await vaultClient.post(`/cubbyhole/shared-secrets/${secretId}`, sysToken, stored);
-          } catch { /* non-fatal */ }
         }
+        try {
+          await vaultClient.post(`/cubbyhole/shared-secrets/${secretId}`, sysToken, stored);
+        } catch { /* non-fatal */ }
 
         // Audit: share viewed
         writeAuditEntry({
@@ -300,6 +327,8 @@ router.get(
           expiresAt: stored.expiresAt,
           oneTime: stored.oneTime,
           shareMode,
+          maxViews,
+          viewCount: newViewCount,
         });
         sharedSecretsRetrievedTotal.inc();
         return;
@@ -312,6 +341,8 @@ router.get(
         shareMode,
         requiresAuth: shareMode === 'auth-login',
         requiresOtp: shareMode === 'otp',
+        maxViews,
+        viewCount,
       });
     } catch (error) {
       next(error);
@@ -357,6 +388,28 @@ router.post(
 
       const shareMode: ShareMode = stored.shareMode || 'one-time';
 
+      // Check view limit
+      const maxViews = stored.maxViews ?? 1;
+      const viewCount = stored.viewCount ?? 0;
+      if (maxViews > 0 && viewCount >= maxViews) {
+        try {
+          await vaultClient.delete(`/cubbyhole/shared-secrets/${secretId}`, sysToken);
+        } catch { /* best effort */ }
+        res.status(404).json({ error: 'Secret has reached its maximum view count' });
+        return;
+      }
+
+      // Helper to increment view count after successful unlock
+      const incrementViewCount = async () => {
+        stored.viewCount = (stored.viewCount ?? 0) + 1;
+        if (maxViews > 0 && stored.viewCount >= maxViews) {
+          stored.retrieved = true;
+        }
+        try {
+          await vaultClient.post(`/cubbyhole/shared-secrets/${secretId}`, sysToken, stored);
+        } catch { /* non-fatal */ }
+      };
+
       // Handle OTP unlock
       if (shareMode === 'otp') {
         const { otpCode } = req.body as { otpCode?: string };
@@ -381,12 +434,15 @@ router.post(
           clientIp: getClientIp(req),
         });
 
+        await incrementViewCount();
         res.json({
           encrypted: stored.encrypted,
           createdAt: stored.createdAt,
           expiresAt: stored.expiresAt,
           oneTime: false,
           shareMode,
+          maxViews,
+          viewCount: stored.viewCount,
         });
         sharedSecretsRetrievedTotal.inc();
         return;
@@ -432,12 +488,15 @@ router.post(
           clientIp: getClientIp(req),
         });
 
+        await incrementViewCount();
         res.json({
           encrypted: stored.encrypted,
           createdAt: stored.createdAt,
           expiresAt: stored.expiresAt,
           oneTime: false,
           shareMode,
+          maxViews,
+          viewCount: stored.viewCount,
         });
         sharedSecretsRetrievedTotal.inc();
         return;

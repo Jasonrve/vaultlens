@@ -29,6 +29,7 @@ export default function ShareSecretPage() {
   const [copiedOtp, setCopiedOtp] = useState(false);
   const [sharingConfig, setSharingConfig] = useState<SharingConfig | null>(null);
   const [createdOtp, setCreatedOtp] = useState<string | null>(null);
+  const [maxViews, setMaxViews] = useState(1);
 
   useEffect(() => {
     api.getSharingConfig().then(setSharingConfig).catch(() => {
@@ -76,6 +77,7 @@ export default function ShareSecretPage() {
         shareMode === 'one-time',
         shareMode,
         shareMode === 'otp' ? otpCode : undefined,
+        sharingConfig?.allowCustomViewCount ? maxViews : undefined,
       );
 
       const url = `${window.location.origin}/shared/${result.id}#${key}`;
@@ -313,6 +315,27 @@ export default function ShareSecretPage() {
               ))}
             </select>
           </div>
+
+          {/* View count */}
+          {sharingConfig?.allowCustomViewCount && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Max views
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={maxViews}
+                onChange={(e) => setMaxViews(Math.max(0, parseInt(e.target.value) || 0))}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                {maxViews === 0
+                  ? 'Unlimited views (secret can be viewed any number of times until expiry).'
+                  : `Secret can be viewed ${maxViews} time${maxViews !== 1 ? 's' : ''} before being deleted.`}
+              </p>
+            </div>
+          )}
 
           {/* Submit */}
           <button

@@ -13,12 +13,14 @@ export interface SharingConfig {
   enableOneTime: boolean;
   enableOtp: boolean;
   enableAuthLogin: boolean;
+  allowCustomViewCount: boolean;
 }
 
 const DEFAULT_SHARING_CONFIG: SharingConfig = {
   enableOneTime: true,
   enableOtp: true,
   enableAuthLogin: true,
+  allowCustomViewCount: false,
 };
 
 export async function readSharingConfig(): Promise<SharingConfig> {
@@ -30,6 +32,7 @@ export async function readSharingConfig(): Promise<SharingConfig> {
         enableOneTime: data['enableOneTime'] !== 'false',
         enableOtp: data['enableOtp'] !== 'false',
         enableAuthLogin: data['enableAuthLogin'] !== 'false',
+        allowCustomViewCount: data['allowCustomViewCount'] === 'true',
       };
     }
   } catch {
@@ -60,13 +63,14 @@ router.put(
   requireAdmin,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const { enableOneTime, enableOtp, enableAuthLogin } = req.body as Partial<SharingConfig>;
+      const { enableOneTime, enableOtp, enableAuthLogin, allowCustomViewCount } = req.body as Partial<SharingConfig>;
 
       const storage = getConfigStorage();
       await storage.set(SHARING_CONFIG_SECTION, {
         enableOneTime: String(enableOneTime !== false),
         enableOtp: String(enableOtp !== false),
         enableAuthLogin: String(enableAuthLogin !== false),
+        allowCustomViewCount: String(allowCustomViewCount === true),
       });
 
       res.json({ success: true });

@@ -18,6 +18,8 @@ export default function ViewSharedSecretPage() {
     expiresAt: string;
     oneTime?: boolean;
     shareMode: ShareMode;
+    maxViews?: number;
+    viewCount?: number;
   } | null>(null);
   const { branding, loadBranding } = useBrandingStore();
   const { isAuthenticated } = useAuthStore();
@@ -63,6 +65,8 @@ export default function ViewSharedSecretPage() {
           expiresAt: result.expiresAt,
           oneTime: result.oneTime,
           shareMode,
+          maxViews: result.maxViews,
+          viewCount: result.viewCount,
         });
 
         if (shareMode === 'one-time' && result.encrypted) {
@@ -106,7 +110,7 @@ export default function ViewSharedSecretPage() {
         const plaintext = await decryptSecret(result.encrypted, key);
         setDecryptedSecret(plaintext);
         setNeedsAuth(false);
-        setMetadata(prev => prev ? { ...prev, oneTime: result.oneTime } : prev);
+        setMetadata(prev => prev ? { ...prev, oneTime: result.oneTime, maxViews: result.maxViews, viewCount: result.viewCount } : prev);
       })
       .catch((err: unknown) => {
         hasAutoUnlocked.current = false; // allow retry
@@ -137,7 +141,7 @@ export default function ViewSharedSecretPage() {
       const plaintext = await decryptSecret(result.encrypted, key);
       setDecryptedSecret(plaintext);
       setNeedsOtp(false);
-      setMetadata(prev => prev ? { ...prev, oneTime: result.oneTime } : prev);
+      setMetadata(prev => prev ? { ...prev, oneTime: result.oneTime, maxViews: result.maxViews, viewCount: result.viewCount } : prev);
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'response' in err) {
         const response = (err as { response?: { status?: number; data?: { error?: string } } }).response;
@@ -311,7 +315,25 @@ export default function ViewSharedSecretPage() {
                   {metadata.oneTime && (
                     <div className="col-span-2">
                       <span className="inline-flex items-center rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                        One-time view — this secret cannot be retrieved again
+                        {metadata.maxViews === 1
+                          ? 'One-time view — this secret cannot be retrieved again'
+                          : metadata.maxViews && metadata.maxViews > 0
+                            ? `View ${metadata.viewCount ?? 0} of ${metadata.maxViews} — ${metadata.maxViews - (metadata.viewCount ?? 0)} remaining`
+                            : 'One-time view — this secret cannot be retrieved again'}
+                      </span>
+                    </div>
+                  )}
+                  {!metadata.oneTime && metadata.maxViews !== undefined && metadata.maxViews > 0 && (
+                    <div className="col-span-2">
+                      <span className="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+                        View {metadata.viewCount ?? 0} of {metadata.maxViews} — {metadata.maxViews - (metadata.viewCount ?? 0)} remaining
+                      </span>
+                    </div>
+                  )}
+                  {metadata.maxViews === 0 && (
+                    <div className="col-span-2">
+                      <span className="inline-flex items-center rounded bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
+                        Unlimited views until expiry
                       </span>
                     </div>
                   )}

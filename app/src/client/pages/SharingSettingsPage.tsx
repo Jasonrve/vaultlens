@@ -7,6 +7,7 @@ export default function SharingSettingsPage() {
     enableOneTime: true,
     enableOtp: true,
     enableAuthLogin: true,
+    allowCustomViewCount: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -126,6 +127,42 @@ export default function SharingSettingsPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* View count setting */}
+      <div className="rounded-lg border border-gray-200 bg-white p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-gray-800">View Count</h2>
+        <p className="text-xs text-gray-500">
+          Control whether users can customise how many times a shared secret can be viewed.
+        </p>
+
+        <label
+          className={`flex items-start gap-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+            config.allowCustomViewCount
+              ? 'border-green-200 bg-green-50'
+              : 'border-gray-200 bg-gray-50'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={config.allowCustomViewCount}
+            onChange={(e) => setConfig(prev => ({ ...prev, allowCustomViewCount: e.target.checked }))}
+            className="mt-0.5 rounded border-gray-300"
+          />
+          <div>
+            <div className="text-sm font-medium text-gray-800">Allow custom view count</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              When enabled, users can set a custom max view count (including unlimited) when creating a shared secret. When disabled, all shares default to 1 view.
+            </div>
+          </div>
+          <span className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+            config.allowCustomViewCount
+              ? 'bg-green-100 text-green-700'
+              : 'bg-gray-200 text-gray-500'
+          }`}>
+            {config.allowCustomViewCount ? 'Enabled' : 'Disabled'}
+          </span>
+        </label>
       </div>
 
       <div className="flex justify-end">
