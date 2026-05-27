@@ -147,6 +147,7 @@ export default function SecretEditor() {
                     : undefined,
               })),
             ]}
+            copyPath={splat || undefined}
           />
         </div>
       )}

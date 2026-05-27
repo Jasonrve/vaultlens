@@ -48,7 +48,7 @@ export default function SecretsList() {
         />
       )}
       <div className="mb-4">
-        <Breadcrumb items={breadcrumbItems} />
+        <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-800">

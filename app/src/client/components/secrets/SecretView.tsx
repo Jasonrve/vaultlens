@@ -237,7 +237,7 @@ export default function SecretView() {
   return (
     <div>
       <div className="mb-4">
-        <Breadcrumb items={breadcrumbItems} />
+        <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
 
       <div className="mb-6 flex items-center justify-between">
