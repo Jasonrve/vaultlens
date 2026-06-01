@@ -35,7 +35,10 @@ async function authenticateAppRole(): Promise<string | null> {
     const storage = getConfigStorage();
     const creds = await storage.get(CREDS_SECTION);
     if (!creds || !creds['role_id'] || !creds['secret_id']) {
+      // Apply backoff so this only logs once per backoff window, not on every scheduler tick.
       console.debug('[AppRole Auth] No AppRole credentials found in config storage');
+      appRoleLastFailTime = Date.now();
+      appRoleBackoffMs = APPROLE_BACKOFF_MAX_MS; // Stay silent for 1 hour — not configured is not transient.
       return null;
     }
 
