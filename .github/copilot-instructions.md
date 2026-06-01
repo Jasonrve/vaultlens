@@ -481,6 +481,20 @@ docker-compose* text eol=lf
 -  **DO:** Check lint after all multifile changes
 -  **DO:** Make sure that docker build still works for all large changes
 
+## ⚠️ IMPORTANT: Documentation Requirements
+Every piece of client-side functionality that is user-visible **must be documented** in the VitePress docs under `docs/features/` or `docs/guide/`.
+
+This includes (but is not limited to):
+- New UI components or pages
+- Rendering behaviours (e.g. label/badge parsing, link pills, icon detection)
+- Interactive controls (toggles, editors, filters, search)
+- Format conventions the user needs to know about (e.g. description syntax, metadata keys)
+- Any feature that changes how existing content is displayed
+
+**Rule:** When implementing or modifying client-side functionality, always identify the appropriate docs page and update it in the same change. If no suitable page exists, create one under `docs/features/`.
+
+The docs site is built with VitePress and lives in `docs/`. Feature docs are in `docs/features/`. Images go in `docs/public/screenshots/` and are referenced as `/screenshots/filename.png` in markdown.
+
 ## UI Convention: Always Show Friendly Names
 - **Never display raw UUIDs/IDs** as the primary label in any UI component.
 - In any list, badge, or detail view, **always resolve and display the human-readable name** (entity name, group name, policy name, role name, etc.).

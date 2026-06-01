@@ -75,7 +75,7 @@ echo "  ✓ Rotation metadata set on kv/product/service/nprd/secret (24h interva
 
 # ── Enable Kubernetes Auth ────────────────────────────────────────────────────
 echo ""
-echo "→ Enabling Kubernetes auth method..."
+echo "→ Enabling Kubernetes auth method (prod-east cluster)..."
 vault auth enable \
   -description="cluster=prod-east kubernetes_version=1.30 https://kubernetes.rancher.example.com" \
   kubernetes 2>/dev/null || echo "  (already enabled)"
@@ -116,11 +116,40 @@ vault write auth/kubernetes/role/argo-deployer \
   max_ttl="8h"
 echo "  ✓ Kubernetes role 'argo-deployer' created"
 
+# ── Enable second Kubernetes Auth (nprd cluster) — demonstrates newline label format ──
+echo ""
+echo "→ Enabling Kubernetes auth method (nprd cluster — newline label format)..."
+vault auth enable \
+  -path=kubernetes-npr \
+  -description="Cluster Name: example-npr
+Region: af-south-1
+VPC ID: vpc-054614f1876c12345
+Account Name: example-npr
+EKS Module Version: 0.25.1
+https://kubernetes.rancher.example.com/nprd" \
+  kubernetes 2>/dev/null || echo "  (already enabled)"
+
+vault write auth/kubernetes-nprd/config \
+  kubernetes_host="https://kubernetes.nprd.internal:443" \
+  kubernetes_ca_cert="placeholder-ca-cert" \
+  token_reviewer_jwt="placeholder-reviewer-jwt" \
+  disable_iss_validation=true \
+  disable_local_ca_jwt=true 2>/dev/null || true
+echo "  ✓ kubernetes-nprd auth configured (placeholder values)"
+
+vault write auth/kubernetes-nprd/role/app-role \
+  bound_service_account_names="app-service-account" \
+  bound_service_account_namespaces="product-nprd" \
+  policies="app-specific" \
+  ttl="1h" \
+  max_ttl="4h" 2>/dev/null || true
+echo "  ✓ kubernetes-nprd role 'app-role' created"
+
 # ── Enable GitHub Auth ────────────────────────────────────────────────────────
 echo ""
 echo "→ Enabling GitHub auth method..."
 vault auth enable \
-  -description="org=example-org env=prod https://github.com/example-org" \
+  -description="org:example-org env:prod https://github.com/example-org" \
   github 2>/dev/null || echo "  (already enabled)"
 
 # Configure with organization
@@ -423,8 +452,9 @@ echo "  ── Auth Methods ──"
 echo "    token                (built-in)"
 echo "    approle/             (roles: app-backend, deploy-pipeline, readonly-service)"
 echo "    userpass/            (users: alice/admin, bob/app-specific, charlie/readonly)"
-echo "    kubernetes/          (roles: app-role, readonly-role, argo-deployer)"
-echo "    github/              (teams: engineering, devops, readonly-users)"
+  echo "    kubernetes/          (roles: app-role, readonly-role, argo-deployer — inline tag format)"
+  echo "    kubernetes-nprd/     (role: app-role — newline label format)"
+  echo "    github/              (teams: engineering, devops, readonly-users — colon tag format)"
 echo "    ldap/                (demo server: ldap.forumsys.com)"
 echo "    jwt/                 (demo JWKS endpoint)"
 echo "    oidc/                (demo IdP: auth.example.com)"
