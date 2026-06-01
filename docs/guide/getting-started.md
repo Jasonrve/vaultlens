@@ -1,20 +1,20 @@
 # Getting Started
 
-VaultLens is a standalone web UI for HashiCorp Vault. It runs as a lightweight Node.js/Express server that proxies requests to your Vault instance using the logged-in user's token.
+VaultLens is a web UI for HashiCorp Vault. It connects to your existing Vault instance and lets you browse secrets, manage policies and auth methods, visualise relationships, and share secrets securely — all through a browser.
 
-::: tip Beta Notice
+::: tip
 VaultLens is currently in **beta** and under active development. It has no affiliation with HashiCorp.
 :::
 
-## Prerequisites
+## What You Need
 
-- A running HashiCorp Vault instance (v1.12+)
-- A Vault token with permissions to browse the resources you want to manage
-- Docker (recommended) or Node.js 22+
+- A running **HashiCorp Vault** instance (v1.12+)
+- A **Vault token** with the permissions you want to use in VaultLens
+- **Docker** (or Docker Compose) to run VaultLens — no local Node.js install required
 
-## Quick Start with Docker
+## Running VaultLens
 
-The fastest way to get VaultLens running:
+### Option 1 — Docker (quickest)
 
 ```bash
 docker volume create vaultlens_config
@@ -33,9 +33,9 @@ docker run -d \
   ghcr.io/Jasonrve/vaultlens:latest
 ```
 
-Open **http://localhost:3001** and log in with your Vault token.
+Open **http://localhost:3001** in your browser.
 
-## Quick Start with Docker Compose
+### Option 2 — Docker Compose
 
 ```bash
 export VAULT_ADDR=http://your-vault-server:8200
@@ -44,42 +44,55 @@ export VAULT_SYSTEM_TOKEN=your-system-token
 docker compose up -d
 ```
 
-The included `docker-compose.yml` creates two named volumes automatically:
-- **`vaultlens_config`** — persists branding, webhooks, and rotation config
-- **`vaultlens_backups`** — persists backup JSON files
+The compose file creates two named volumes automatically:
+- **`vaultlens_config`** — persists branding, webhooks, and rotation settings
+- **`vaultlens_backups`** — persists backup files
+
+For Kubernetes, see [Deployment](/guide/deployment).
 
 ## Logging In
 
 ![Login Page](/screenshots/login.png)
 
-VaultLens supports two authentication methods:
+VaultLens supports two ways to log in:
 
-- **Vault Token** — Paste any valid Vault token directly. The token is stored in an httpOnly cookie and never exposed to JavaScript.
-- **OIDC** — If your Vault has an OIDC auth method configured, you can log in via a popup flow.
+- **Vault Token** — paste any valid Vault token. It is stored in an httpOnly cookie and never accessible to JavaScript.
+- **OIDC** — if your Vault has an OIDC auth method configured, use the **Sign in with OIDC** button to authenticate via a popup.
+
+VaultLens is a **thin proxy** — it never grants you more access than your Vault token allows. Everything you see and do goes through Vault's own ACL engine.
 
 ## The Dashboard
 
-After logging in you'll land on the Dashboard:
+After logging in you'll see the Dashboard:
 
 ![Dashboard](/screenshots/dashboard.png)
 
-The Dashboard shows at a glance:
 - **Secret Engines** — number of mounted KV engines
 - **ACL Policies** — total policy count
 - **Auth Methods** — number of enabled auth methods
-- **Quick Navigation** — links to the most commonly used sections
+- **Quick Navigation** — shortcuts to the most-used sections
 
-## First-Time Setup Wizard
+## First-Time Setup
 
-After logging in for the first time, VaultLens may show a **Configuration Issues** wizard. This detects missing policies or audit configuration and offers to fix them automatically.
+When VaultLens starts for the first time it may show a **Configuration Issues** banner. This checks for required policies and audit configuration.
 
-- Click **Approve & Fix** to let VaultLens create the required policies (`vaultlens-admin`, `vaultlens-system`) and register the socket audit device
-- Click **Skip for now** to proceed without background services
+- Click **Approve & Fix** — VaultLens will create the `vaultlens-admin` and `vaultlens-system` policies and register the audit device automatically
+- Click **Skip for now** — proceed without background services (rotation, webhooks, and backup scheduling will be unavailable)
 
-Once complete, the wizard prompts you to configure the **System Token** using AppRole auth — used by background services (rotation, backup, webhooks).
+After policies are in place, you'll be prompted to configure the **System Token** using AppRole. This is a one-time setup that enables background services. The wizard uses your own logged-in token to perform the setup and checks that you have the required Vault permissions before proceeding.
 
-## Next Steps
+## What's Next
 
-- [Configuration Reference](/guide/configuration) — all environment variables
-- [Deployment Options](/guide/deployment) — Docker, Compose, Helm
-- [Secret Management](/features/secrets) — browsing and editing secrets
+| I want to… | Go to… |
+|-----------|--------|
+| Browse and edit secrets | [Secret Management](/features/secrets) |
+| Explore policies and access | [ACL Policies](/features/policies) |
+| Visualise Vault relationships | [Visualizations](/features/visualizations) |
+| Share a secret with a colleague | [Secret Sharing](/features/sharing) |
+| Set up automatic secret rotation | [Secret Rotation](/features/rotation) |
+| Configure alerts on secret changes | [Webhooks](/features/webhooks) |
+| Schedule backups | [Backup & Restore](/features/backup-restore) |
+| Check Vault health | [Analytics](/features/analytics) |
+| Customise the app name and logo | [Branding](/features/branding) |
+| Configure all environment variables | [Configuration](/guide/configuration) |
+| Deploy to Kubernetes | [Deployment](/guide/deployment) |

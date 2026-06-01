@@ -15,9 +15,25 @@ export default defineConfig({
     siteTitle: 'VaultLens',
 
     nav: [
-      { text: 'Guide', link: '/guide/getting-started' },
+      {
+        text: 'User Guide',
+        items: [
+          { text: 'Getting Started', link: '/guide/getting-started' },
+          { text: 'Configuration', link: '/guide/configuration' },
+          { text: 'Deployment', link: '/guide/deployment' },
+        ]
+      },
       { text: 'Features', link: '/features/secrets' },
-      { text: 'Architecture', link: '/architecture/overview' },
+      {
+        text: 'Contributing',
+        items: [
+          { text: 'Overview', link: '/contributing/' },
+          { text: 'Local Development', link: '/contributing/local-development' },
+          { text: 'Architecture', link: '/architecture/overview' },
+          { text: 'System Token', link: '/architecture/system-token' },
+          { text: 'Security', link: '/architecture/security' },
+        ]
+      },
       {
         text: 'Links',
         items: [
@@ -28,42 +44,104 @@ export default defineConfig({
       }
     ],
 
-    sidebar: [
-      {
-        text: 'Guide',
-        items: [
-          { text: 'Getting Started', link: '/guide/getting-started' },
-          { text: 'Local Development', link: '/guide/local-development' },
-          { text: 'Configuration', link: '/guide/configuration' },
-          { text: 'Deployment', link: '/guide/deployment' },
-        ]
-      },
-      {
-        text: 'Features',
-        items: [
-          { text: 'Secret Management', link: '/features/secrets' },
-          { text: 'Auth Methods', link: '/features/auth-methods' },
-          { text: 'ACL Policies', link: '/features/policies' },
-          { text: 'Identity Management', link: '/features/identity' },
-          { text: 'Visualizations', link: '/features/visualizations' },
-          { text: 'Permission Tester', link: '/features/permission-tester' },
-          { text: 'Secret Sharing', link: '/features/sharing' },
-          { text: 'Secret Rotation', link: '/features/rotation' },
-          { text: 'Backup & Restore', link: '/features/backup-restore' },
-          { text: 'Webhooks', link: '/features/webhooks' },
-          { text: 'Analytics', link: '/features/analytics' },
-          { text: 'Branding', link: '/features/branding' },
-        ]
-      },
-      {
-        text: 'Architecture',
-        items: [
-          { text: 'Overview', link: '/architecture/overview' },
-          { text: 'System Token', link: '/architecture/system-token' },
-          { text: 'Security', link: '/architecture/security' },
-        ]
-      }
-    ],
+    sidebar: {
+      // User-facing sidebar — shown for /guide/ and /features/ paths
+      '/guide/': [
+        {
+          text: 'User Guide',
+          items: [
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Configuration', link: '/guide/configuration' },
+            { text: 'Deployment', link: '/guide/deployment' },
+          ]
+        },
+        {
+          text: 'Features',
+          collapsed: false,
+          items: [
+            { text: 'Secret Management', link: '/features/secrets' },
+            { text: 'Auth Methods', link: '/features/auth-methods' },
+            { text: 'ACL Policies', link: '/features/policies' },
+            { text: 'Identity Management', link: '/features/identity' },
+            { text: 'Visualizations', link: '/features/visualizations' },
+            { text: 'Permission Tester', link: '/features/permission-tester' },
+            { text: 'Secret Sharing', link: '/features/sharing' },
+            { text: 'Secret Rotation', link: '/features/rotation' },
+            { text: 'Backup & Restore', link: '/features/backup-restore' },
+            { text: 'Webhooks', link: '/features/webhooks' },
+            { text: 'Analytics', link: '/features/analytics' },
+            { text: 'Branding', link: '/features/branding' },
+          ]
+        }
+      ],
+
+      '/features/': [
+        {
+          text: 'User Guide',
+          collapsed: true,
+          items: [
+            { text: 'Getting Started', link: '/guide/getting-started' },
+            { text: 'Configuration', link: '/guide/configuration' },
+            { text: 'Deployment', link: '/guide/deployment' },
+          ]
+        },
+        {
+          text: 'Features',
+          collapsed: false,
+          items: [
+            { text: 'Secret Management', link: '/features/secrets' },
+            { text: 'Auth Methods', link: '/features/auth-methods' },
+            { text: 'ACL Policies', link: '/features/policies' },
+            { text: 'Identity Management', link: '/features/identity' },
+            { text: 'Visualizations', link: '/features/visualizations' },
+            { text: 'Permission Tester', link: '/features/permission-tester' },
+            { text: 'Secret Sharing', link: '/features/sharing' },
+            { text: 'Secret Rotation', link: '/features/rotation' },
+            { text: 'Backup & Restore', link: '/features/backup-restore' },
+            { text: 'Webhooks', link: '/features/webhooks' },
+            { text: 'Analytics', link: '/features/analytics' },
+            { text: 'Branding', link: '/features/branding' },
+          ]
+        }
+      ],
+
+      // Developer/contributor sidebar — shown for /contributing/ and /architecture/ paths
+      '/contributing/': [
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'Overview', link: '/contributing/' },
+            { text: 'Local Development', link: '/contributing/local-development' },
+          ]
+        },
+        {
+          text: 'Architecture',
+          items: [
+            { text: 'Overview', link: '/architecture/overview' },
+            { text: 'System Token', link: '/architecture/system-token' },
+            { text: 'Security', link: '/architecture/security' },
+          ]
+        }
+      ],
+
+      '/architecture/': [
+        {
+          text: 'Contributing',
+          items: [
+            { text: 'Overview', link: '/contributing/' },
+            { text: 'Local Development', link: '/contributing/local-development' },
+          ]
+        },
+        {
+          text: 'Architecture',
+          items: [
+            { text: 'Overview', link: '/architecture/overview' },
+            { text: 'System Token', link: '/architecture/system-token' },
+            { text: 'Security', link: '/architecture/security' },
+          ]
+        }
+      ]
+    },
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/Jasonrve/vaultlens' }
