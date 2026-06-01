@@ -4,6 +4,8 @@ VaultLens provides a full view of Vault's identity system — entities, groups, 
 
 ## Entities
 
+![Entities](/screenshots/entities.png)
+
 The **Access → Entities** page lists all identity entities. Each entity represents a logical identity that can have multiple aliases (one per auth method).
 
 Click an entity to see:
@@ -14,6 +16,8 @@ Click an entity to see:
 
 ## Groups
 
+![Groups](/screenshots/groups.png)
+
 The **Access → Groups** page lists all identity groups. Groups can be **internal** (members are explicit entity IDs) or **external** (members are managed by auth method aliases).
 
 Click a group to see:
@@ -23,6 +27,8 @@ Click a group to see:
 - Attached policies
 
 ## My Identity
+
+![My Identity](/screenshots/my-identity.png)
 
 The **My Identity** page shows a visual graph of the currently logged-in user's identity chain:
 

@@ -1,5 +1,7 @@
 # Permission Tester
 
+![Permission Tester](/screenshots/permission-tester.png)
+
 The Permission Tester lets you simulate what a specific Vault entity can do on any path — without actually performing the operation.
 
 ## How It Works

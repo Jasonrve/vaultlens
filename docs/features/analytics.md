@@ -1,5 +1,7 @@
 # Analytics Dashboard
 
+![Analytics](/screenshots/analytics.png)
+
 The Analytics dashboard provides a real-time overview of your Vault cluster's health and resource counts.
 
 ## Accessing Analytics

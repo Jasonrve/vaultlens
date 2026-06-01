@@ -50,21 +50,33 @@ The included `docker-compose.yml` creates two named volumes automatically:
 
 ## Logging In
 
+![Login Page](/screenshots/login.png)
+
 VaultLens supports two authentication methods:
 
 - **Vault Token** — Paste any valid Vault token directly. The token is stored in an httpOnly cookie and never exposed to JavaScript.
 - **OIDC** — If your Vault has an OIDC auth method configured, you can log in via a popup flow.
 
+## The Dashboard
+
+After logging in you'll land on the Dashboard:
+
+![Dashboard](/screenshots/dashboard.png)
+
+The Dashboard shows at a glance:
+- **Secret Engines** — number of mounted KV engines
+- **ACL Policies** — total policy count
+- **Auth Methods** — number of enabled auth methods
+- **Quick Navigation** — links to the most commonly used sections
+
 ## First-Time Setup Wizard
 
-After logging in for the first time, VaultLens will prompt you to complete the **System Token Setup**. This wizard creates an AppRole in Vault that VaultLens uses for background services (rotation, audit watching, backup scheduling, shared secrets).
+After logging in for the first time, VaultLens may show a **Configuration Issues** wizard. This detects missing policies or audit configuration and offers to fix them automatically.
 
-The wizard uses your logged-in token to perform setup and requires the following Vault permissions:
-- `sys/policies/acl/*` — create policies
-- `auth/approle/role/*` — create roles
-- `sys/auth/*` — enable auth methods
+- Click **Approve & Fix** to let VaultLens create the required policies (`vaultlens-admin`, `vaultlens-system`) and register the socket audit device
+- Click **Skip for now** to proceed without background services
 
-Once completed, the AppRole credentials are stored encrypted in VaultLens's config storage.
+Once complete, the wizard prompts you to configure the **System Token** using AppRole auth — used by background services (rotation, backup, webhooks).
 
 ## Next Steps
 

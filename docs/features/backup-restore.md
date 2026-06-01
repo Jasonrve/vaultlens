@@ -1,5 +1,7 @@
 # Backup & Restore
 
+![Backup & Restore](/screenshots/backup-restore.png)
+
 VaultLens can create and restore full backups of all KV secrets across all mounted engines.
 
 ## Creating a Backup

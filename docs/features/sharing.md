@@ -1,5 +1,7 @@
 # Secure Secret Sharing
 
+![Share a Secret](/screenshots/share-secret.png)
+
 VaultLens lets you share secrets securely with anyone — even people without Vault access.
 
 ## How It Works

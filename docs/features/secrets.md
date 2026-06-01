@@ -2,11 +2,21 @@
 
 VaultLens provides a full-featured interface for browsing and editing secrets across all mounted KV engines.
 
-## Browsing Secrets
+## Secrets Engines
 
-The **Secrets** page lists all KV v1 and v2 engines (excluding internal engines like `identity/` and `sys/`). Navigate into any engine to browse its path hierarchy and individual secrets.
+![Secrets Engines](/screenshots/secrets-engines.png)
+
+The **Secrets** page lists all KV v1 and v2 engines with their type, accessor ID, and description. Internal engines (`identity/`, `sys/`) are hidden.
+
+## Browsing Secrets Within an Engine
+
+![Secrets List](/screenshots/secrets-list.png)
+
+Click any engine to navigate its path hierarchy. Folders and secrets are listed together with breadcrumb navigation.
 
 ## Viewing a Secret
+
+![Secret Detail](/screenshots/secret-detail.png)
 
 Click any secret to open the detail view. Two display modes are available:
 

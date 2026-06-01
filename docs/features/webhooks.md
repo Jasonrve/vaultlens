@@ -1,5 +1,7 @@
 # Webhook Notifications
 
+![Webhooks](/screenshots/webhooks.png)
+
 VaultLens monitors the Vault audit log and fires HTTP POST webhooks when secrets at matching paths are modified.
 
 ## How It Works

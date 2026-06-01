@@ -2,6 +2,8 @@
 
 VaultLens lets you browse and manage all authentication methods configured in your Vault instance.
 
+![Auth Methods](/screenshots/auth-methods.png)
+
 ## Auth Methods List
 
 The **Access → Auth Methods** page shows all enabled auth methods with:

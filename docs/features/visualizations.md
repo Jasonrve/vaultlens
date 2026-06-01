@@ -1,5 +1,7 @@
 # Visualizations
 
+![Visualizations](/screenshots/visualizations.png)
+
 VaultLens provides interactive relationship graphs powered by [React Flow](https://reactflow.dev/). These graphs let you visually explore how your Vault's auth methods, policies, identities, and secret paths relate to each other.
 
 ## Available Graphs

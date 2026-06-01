@@ -5,6 +5,12 @@
 - Node.js 22+
 - Docker & Docker Compose
 
+## Dashboard Preview
+
+After completing setup you'll see the VaultLens dashboard:
+
+![Dashboard](/screenshots/dashboard.png)
+
 ## 1. Start Vault
 
 The repository includes a Docker Compose file that starts Vault in dev mode and runs a bootstrap script to seed it with test data:

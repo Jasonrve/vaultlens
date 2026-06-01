@@ -1,5 +1,7 @@
 # Secret Auto-Rotation
 
+![Secret Rotation](/screenshots/rotation.png)
+
 VaultLens can automatically rotate KV v2 secret values on a schedule, using Vault's native custom metadata to store rotation configuration alongside the secret itself.
 
 ## Enabling Rotation

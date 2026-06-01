@@ -2,6 +2,8 @@
 
 VaultLens provides a readable breakdown of all Vault ACL policies.
 
+![ACL Policies](/screenshots/policies.png)
+
 ## Policy List
 
 The **Policies** page lists all ACL policies in your Vault instance, including the built-in `default` and `root` policies, and VaultLens's own `vaultlens-admin` and `vaultlens-system` policies.

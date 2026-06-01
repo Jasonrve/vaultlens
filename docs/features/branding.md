@@ -1,5 +1,7 @@
 # Custom Branding
 
+![Branding](/screenshots/branding.png)
+
 VaultLens supports full white-labeling with your organization's branding.
 
 ## Accessing Branding Settings
