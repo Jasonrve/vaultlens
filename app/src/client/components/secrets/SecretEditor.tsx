@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import JsonEditor from '../common/JsonEditor';
 import ErrorMessage from '../common/ErrorMessage';
+import Breadcrumb from '../common/Breadcrumb';
 
 interface KvRow {
   key: string;
@@ -23,12 +24,16 @@ export default function SecretEditor() {
   const [accessiblePaths, setAccessiblePaths] = useState<string[]>([]);
   const [loadingPaths, setLoadingPaths] = useState(false);
   const [pathSearch, setPathSearch] = useState('');
+  const [metaRows, setMetaRows] = useState<KvRow[]>([]);
+  const [showMeta, setShowMeta] = useState(false);
+  const [isKvV2, setIsKvV2] = useState<boolean | null>(null);
 
   // Load existing secret values when editing
   useEffect(() => {
     if (!isNew && splat) {
       api.readSecretValues(splat)
         .then((secret) => {
+          if (secret.version === 2) setIsKvV2(true);
           const data = secret.data;
           if (data && typeof data === 'object' && Object.keys(data).length > 0) {
             const kvRows = Object.entries(data).map(([k, v]) => ({
@@ -41,6 +46,22 @@ export default function SecretEditor() {
         })
         .catch((err: unknown) => {
           setError(err instanceof Error ? err.message : 'Failed to load secret values');
+        });
+
+      // Load existing metadata if available (KV v2 only)
+      api.getSecretMetadata(splat)
+        .then((result) => {
+          setIsKvV2(true);
+          const customMeta = (result.data as { custom_metadata?: Record<string, string> })
+            ?.custom_metadata ?? {};
+          const rows = Object.entries(customMeta).map(([key, value]) => ({ key, value }));
+          if (rows.length > 0) {
+            setMetaRows(rows);
+            setShowMeta(true);
+          }
+        })
+        .catch(() => {
+          // Not KV v2 or no permission — metadata section stays hidden
         });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,6 +110,20 @@ export default function SecretEditor() {
 
       const writePath = isNew ? `${splat}${path}` : splat;
       await api.writeSecret(writePath, data);
+
+      // Write custom metadata if any rows provided (KV v2 only; silently skip for v1)
+      if (showMeta && metaRows.some((r) => r.key.trim())) {
+        const customMeta: Record<string, string> = {};
+        for (const row of metaRows) {
+          if (row.key.trim()) customMeta[row.key.trim()] = row.value;
+        }
+        try {
+          await api.updateSecretMetadata(writePath, customMeta);
+        } catch {
+          // KV v1 or insufficient permissions — metadata write is best-effort
+        }
+      }
+
       navigate(`/secrets/view/${writePath}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An error occurred');
@@ -99,6 +134,23 @@ export default function SecretEditor() {
 
   return (
     <div className="mx-auto max-w-3xl">
+      {!isNew && (
+        <div className="mb-4">
+          <Breadcrumb
+            items={[
+              { label: 'Secrets Engines', path: '/secrets' },
+              ...splat.split('/').filter(Boolean).map((seg, i, arr) => ({
+                label: seg,
+                path:
+                  i < arr.length - 1
+                    ? `/secrets/${arr.slice(0, i + 1).join('/')}/`
+                    : undefined,
+              })),
+            ]}
+            copyPath={splat || undefined}
+          />
+        </div>
+      )}
       <h1 className="mb-6 text-2xl font-bold text-gray-800">
         {isNew ? 'Create Secret' : 'Edit Secret'}
       </h1>
@@ -235,6 +287,78 @@ export default function SecretEditor() {
         )}
 
         {error && <ErrorMessage message={error} />}
+
+        {/* ── Custom Metadata (KV v2 only) ── */}
+        {(isKvV2 !== false) && (
+          <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
+            <button
+              type="button"
+              onClick={() => {
+                if (!showMeta) {
+                  setShowMeta(true);
+                  if (metaRows.length === 0) setMetaRows([{ key: '', value: '' }]);
+                } else {
+                  setShowMeta(false);
+                }
+              }}
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-[#1563ff]"
+            >
+              <svg
+                className={`h-3.5 w-3.5 transition-transform ${showMeta ? 'rotate-90' : ''}`}
+                fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+              Custom Metadata
+              <span className="ml-1 text-xs font-normal text-gray-400">(KV v2 only)</span>
+            </button>
+
+            {showMeta && (
+              <div className="mt-3 space-y-2">
+                {metaRows.map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="key"
+                      value={row.key}
+                      onChange={(e) => {
+                        const updated = [...metaRows];
+                        updated[i] = { ...updated[i]!, key: e.target.value };
+                        setMetaRows(updated);
+                      }}
+                      className="w-1/3 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="value"
+                      value={row.value}
+                      onChange={(e) => {
+                        const updated = [...metaRows];
+                        updated[i] = { ...updated[i]!, value: e.target.value };
+                        setMetaRows(updated);
+                      }}
+                      className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMetaRows(metaRows.filter((_, j) => j !== i))}
+                      className="text-red-400 hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setMetaRows([...metaRows, { key: '', value: '' }])}
+                  className="text-sm text-[#1563ff] hover:text-[#1250d4]"
+                >
+                  + Add metadata row
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex gap-3">
           <button

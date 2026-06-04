@@ -56,6 +56,8 @@ I created VaultLens because my organization needed a modern, user-friendly inter
 ### Secret Management
 Browse and manage secrets across all KV v1 and v2 engines. Create, edit, merge, and delete secrets with a clean interface. View and edit version info and custom metadata.
 
+**Restricted-access partial updates:** When a user can navigate to a secret path (via `list` permission) but lacks `read` permission on the secret itself, VaultLens still displays the secret's field names (keys) without exposing values. The user can then perform a **Partial Update** — modifying individual fields without ever seeing the existing values. The backend reads the current secret with the system token, merges the user's changes, and writes back using the user's own token, so Vault's ACL policies still control write access.
+
 
 ### Interactive Visualizations
 Explore your Vault's structure through interactive node graphs powered by React Flow:

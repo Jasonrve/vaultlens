@@ -62,6 +62,8 @@ export default function SecretView() {
   const [version, setVersion] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [restricted, setRestricted] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
   const [metadata, setMetadata] = useState<SecretMetadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
@@ -69,16 +71,47 @@ export default function SecretView() {
   const [metadataRows, setMetadataRows] = useState<{ key: string; value: string }[]>([]);
   const [savingMetadata, setSavingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [secretValues, setSecretValues] = useState<Record<string, string> | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'kv' | 'json'>('kv');
+  const [jsonRevealed, setJsonRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api
-      .readSecret(splat)
-      .then((result) => {
+    async function loadSecret() {
+      try {
+        const result = await api.readSecret(splat);
         setFieldKeys(result.keys ?? []);
         setVersion(result.version);
-      })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
-      .finally(() => setLoading(false));
+        const isRestricted = result.restricted === true;
+        setRestricted(isRestricted);
+
+        // Check write capabilities for restricted mode partial update
+        if (isRestricted && result.capabilities) {
+          const caps = result.capabilities;
+          setCanWrite(caps.includes('create') || caps.includes('update'));
+        }
+
+        // Eagerly load values when user has read permission
+        if (!isRestricted) {
+          try {
+            const valResult = await api.readSecretValues(splat);
+            const vals: Record<string, string> = {};
+            for (const [k, v] of Object.entries(valResult.data)) {
+              vals[k] = typeof v === 'string' ? v : JSON.stringify(v);
+            }
+            setSecretValues(vals);
+          } catch {
+            // Values couldn't be loaded — degrade to keys-only view
+          }
+        }
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : 'An error occurred');
+      } finally {
+        setLoading(false);
+      }
+    }
+    void loadSecret();
   }, [splat]);
 
   useEffect(() => {
@@ -105,6 +138,34 @@ export default function SecretView() {
       navigate(`/secrets/${parentPath ? parentPath + '/' : ''}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'An error occurred');
+    }
+  }
+
+  function toggleReveal(key: string) {
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function revealAll() {
+    setRevealedKeys(new Set(fieldKeys));
+  }
+
+  function hideAll() {
+    setRevealedKeys(new Set());
+  }
+
+  async function handleCopyJson() {
+    if (!secretValues) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(secretValues, null, 2));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard not available
     }
   }
 
@@ -176,7 +237,7 @@ export default function SecretView() {
   return (
     <div>
       <div className="mb-4">
-        <Breadcrumb items={breadcrumbItems} />
+        <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
 
       <div className="mb-6 flex items-center justify-between">
@@ -185,20 +246,48 @@ export default function SecretView() {
           {version != null && <Badge text={`v${version}`} variant="kv" />}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => navigate(`/secrets/edit/${splat}`)}
-            className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => { void handleDelete(); }}
-            className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-          >
-            Delete
-          </button>
+          {restricted ? (
+            canWrite && (
+              <button
+                onClick={() => navigate(`/secrets/merge/${splat}`)}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Partial Update
+              </button>
+            )
+          ) : (
+            <>
+              <button
+                onClick={() => navigate(`/secrets/edit/${splat}`)}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => { void handleDelete(); }}
+                className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Restricted access banner */}
+      {restricted && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <svg className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-amber-800">Restricted access</p>
+            <p className="mt-0.5 text-sm text-amber-700">
+              You do not have <strong>read</strong> permission on this secret. Your <strong>list</strong> permission allows you to see the field names (keys) but values cannot be revealed.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Links from metadata - shown prominently at top */}
       {metadataLinks.length > 0 && (
@@ -234,17 +323,151 @@ export default function SecretView() {
 
       {/* Secret Fields */}
       <div className="rounded-md border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600">
-          Secret Fields
-        </div>
-        <div className="divide-y divide-gray-100">
-          {fieldKeys.map((key) => (
-            <div key={key} className="flex items-center px-4 py-3">
-              <span className="font-mono text-sm font-medium text-gray-700">{key}</span>
-              <span className="ml-4 font-mono text-sm text-gray-400 select-none">••••••••</span>
+        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
+          {/* View mode toggle */}
+          <div className="flex items-center gap-1 rounded-md bg-gray-200 p-0.5">
+            <button
+              onClick={() => setViewMode('kv')}
+              className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                viewMode === 'kv'
+                  ? 'bg-white text-gray-800 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Key / Value
+            </button>
+            {!restricted && (
+              <button
+                onClick={() => setViewMode('json')}
+                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
+                  viewMode === 'json'
+                    ? 'bg-white text-gray-800 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                JSON
+              </button>
+            )}
+          </div>
+          {!restricted && viewMode === 'kv' && (
+          <div className="flex items-center gap-2">
+            {revealedKeys.size < fieldKeys.length ? (
+              <button
+                onClick={revealAll}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                title="Reveal all values"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Show all
+              </button>
+            ) : (
+              <button
+                onClick={hideAll}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                title="Hide all values"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                </svg>
+                Hide all
+              </button>
+            )}
+          </div>
+          )}
+          {!restricted && viewMode === 'json' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setJsonRevealed(!jsonRevealed)}
+                className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  {jsonRevealed ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                  ) : (
+                    <>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </>
+                  )}
+                </svg>
+                {jsonRevealed ? 'Mask values' : 'Reveal values'}
+              </button>
+              {jsonRevealed && (
+                <button
+                  onClick={() => { void handleCopyJson(); }}
+                  className="flex items-center gap-1 rounded px-2 py-0.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  title="Copy JSON"
+                >
+                  {copied ? (
+                    <svg className="h-3.5 w-3.5 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  ) : (
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+                    </svg>
+                  )}
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              )}
             </div>
-          ))}
+          )}
         </div>
+
+        {viewMode === 'kv' ? (
+        <div className="divide-y divide-gray-100">
+          {fieldKeys.map((key) => {
+            const isRevealed = !restricted && revealedKeys.has(key);
+            const displayValue = isRevealed && secretValues ? secretValues[key] ?? '' : null;
+            return (
+              <div key={key} className="flex items-center px-4 py-3 gap-3">
+                <span className="font-mono text-sm font-medium text-gray-700 min-w-0 shrink-0">{key}</span>
+                <span className="flex-1 font-mono text-sm text-gray-500 break-all min-w-0">
+                  {isRevealed ? (
+                    displayValue !== null ? displayValue : <span className="text-gray-400 italic">—</span>
+                  ) : (
+                    <span className="text-gray-400 select-none tracking-widest">••••••••</span>
+                  )}
+                </span>
+                {!restricted && (
+                <button
+                  onClick={() => toggleReveal(key)}
+                  className="shrink-0 rounded p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100"
+                  title={isRevealed ? 'Hide value' : 'Show value'}
+                >
+                  {isRevealed ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        ) : (
+          /* JSON View */
+          <div className="p-4">
+            <pre className="overflow-x-auto rounded-md bg-gray-900 p-4 text-sm leading-relaxed text-gray-100 font-mono">
+              {jsonRevealed && secretValues
+                ? JSON.stringify(secretValues, null, 2)
+                : JSON.stringify(
+                    Object.fromEntries(fieldKeys.map((k) => [k, '••••••••'])),
+                    null,
+                    2,
+                  )}
+            </pre>
+          </div>
+        )}
       </div>
 
       {/* Metadata Section */}

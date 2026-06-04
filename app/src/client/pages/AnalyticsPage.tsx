@@ -23,6 +23,14 @@ interface SealData {
   [key: string]: unknown;
 }
 
+interface LeaderData {
+  ha_enabled?: boolean;
+  is_self?: boolean;
+  leader_address?: string;
+  leader_cluster_address?: string;
+  [key: string]: unknown;
+}
+
 interface CountersData {
   tokens: { counters?: { service_tokens?: { total?: number }; batch_tokens?: { total?: number } } } & Record<string, unknown>;
   entities: { counters?: { entities?: { total?: number } } } & Record<string, unknown>;
@@ -55,6 +63,7 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
 export default function AnalyticsPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [seal, setSeal] = useState<SealData | null>(null);
+  const [leader, setLeader] = useState<LeaderData | null>(null);
   const [counters, setCounters] = useState<CountersData | null>(null);
   const [engines, setEngines] = useState<Awaited<ReturnType<typeof api.getEngines>> | null>(null);
   const [authMethods, setAuthMethods] = useState<Awaited<ReturnType<typeof api.getAuthMethods>> | null>(null);
@@ -80,6 +89,7 @@ export default function AnalyticsPage() {
     Promise.allSettled([
       api.getVaultHealth(),
       api.getVaultSealStatus(),
+      api.getVaultLeader(),
       api.getVaultInternalCounters(),
       api.getEngines(),
       api.getAuthMethods(),
@@ -88,9 +98,10 @@ export default function AnalyticsPage() {
       api.getGroups(),
       api.getAuditSource(),
       api.getAuditDevices(),
-    ]).then(([h, s, c, e, a, p, ent, grp, src, dev]) => {
+    ]).then(([h, s, l, c, e, a, p, ent, grp, src, dev]) => {
       if (h.status === 'fulfilled') setHealth(h.value as HealthData);
       if (s.status === 'fulfilled') setSeal(s.value as SealData);
+      if (l.status === 'fulfilled') setLeader(l.value as LeaderData);
       if (c.status === 'fulfilled') setCounters(c.value as CountersData);
       if (e.status === 'fulfilled') setEngines(e.value);
       if (a.status === 'fulfilled') setAuthMethods(a.value);
@@ -189,6 +200,27 @@ export default function AnalyticsPage() {
               value={`${seal.t} / ${seal.n}`}
               sub="Threshold / Total"
             />
+          )}
+          {leader && (
+            <div className="rounded-lg border border-gray-200 bg-white p-5">
+              <p className="text-xs font-medium tracking-wide text-gray-500 uppercase">HA Leader</p>
+              {leader.ha_enabled ? (
+                <>
+                  <p className="mt-1 text-sm font-semibold text-gray-800 break-all">
+                    {leader.leader_address ? (
+                      <span title={leader.leader_address}>{leader.leader_address}</span>
+                    ) : (
+                      '—'
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    {leader.is_self ? 'This node is the leader' : 'Standby node'}
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 text-sm text-gray-500">HA not enabled</p>
+              )}
+            </div>
           )}
         </div>
       </section>

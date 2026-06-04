@@ -24,6 +24,8 @@ import SecretRotationPage from './pages/SecretRotationPage';
 import BackupRestorePage from './pages/BackupRestorePage';
 import HooksPage from './pages/HooksPage';
 import SystemTokenSetupPage from './pages/SystemTokenSetupPage';
+import VaultLensAuditPage from './pages/VaultLensAuditPage';
+import SharingSettingsPage from './pages/SharingSettingsPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
 const queryClient = new QueryClient({
@@ -212,6 +214,8 @@ function AppRoutes() {
         <Route path="/admin/rotation" element={<SecretRotationPage />} />
         <Route path="/admin/backup" element={<BackupRestorePage />} />
         <Route path="/admin/hooks" element={<HooksPage />} />
+        <Route path="/admin/sharing-settings" element={<SharingSettingsPage />} />
+        <Route path="/admin/sharing-audit" element={<VaultLensAuditPage />} />
         <Route path="/tools/share" element={<ShareSecretPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

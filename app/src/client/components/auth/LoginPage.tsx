@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type FormEvent } from 'react';
 import { useAuthStore } from '../../stores/authStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as api from '../../lib/api';
 
 type AuthMethod = 'token' | 'oidc';
@@ -26,6 +26,8 @@ export default function LoginPage() {
 
   const { login, loginWithToken, error, loading } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
   const popupRef = useRef<Window | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
@@ -54,11 +56,20 @@ export default function LoginPage() {
     void initializeAuth();
   }, []);
 
+  function navigateAfterLogin() {
+    if (returnTo) {
+      // Use window.location.href to preserve the URL hash (decryption key)
+      window.location.href = returnTo;
+    } else {
+      navigate('/');
+    }
+  }
+
   async function handleTokenSubmit(e: FormEvent) {
     e.preventDefault();
     try {
       await login(token);
-      navigate('/');
+      navigateAfterLogin();
     } catch {
       // error shown from store
     }
@@ -146,7 +157,7 @@ export default function LoginPage() {
         try {
           const result = await api.oidcCallback(path, code, state);
           loginWithToken('', result.tokenInfo);
-          navigate('/');
+          navigateAfterLogin();
         } catch (err) {
           setOidcError(
             err instanceof Error
@@ -297,7 +308,7 @@ export default function LoginPage() {
 
           {/* ── OIDC form ── */}
           {method === 'oidc' && oidcAvailable && (
-            <div>
+            <form onSubmit={(e) => { e.preventDefault(); void handleOidcLogin(); }}>
               {/* Mount Path is kept as a hidden value — not displayed to user */}
               <input
                 type="hidden"
@@ -335,8 +346,7 @@ export default function LoginPage() {
               )}
 
               <button
-                type="button"
-                onClick={() => { void handleOidcLogin(); }}
+                type="submit"
                 disabled={oidcLoading}
                 className="w-full rounded-md bg-[#1563ff] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0f4fcc] disabled:opacity-40"
               >
@@ -367,7 +377,7 @@ export default function LoginPage() {
                   Complete sign-in in the popup window.
                 </p>
               )}
-            </div>
+            </form>
           )}
         </div>
       </div>

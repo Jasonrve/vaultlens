@@ -1,0 +1,15 @@
+{
+  "name": "vaultlens-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0",
+    "vitepress": "^1.6.3"
+  }
+}

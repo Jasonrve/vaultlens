@@ -68,6 +68,7 @@ function detectService(url: string): ServiceConfig | null {
 }
 
 interface ParsedMeta {
+  plainText: string;
   links: Array<{ url: string; service: ServiceConfig | null }>;
   badges: Array<{ key: string; value: string }>;
 }
@@ -75,28 +76,61 @@ interface ParsedMeta {
 export function parseAuthMethodDescription(description: string): ParsedMeta {
   const links: ParsedMeta['links'] = [];
   const badges: ParsedMeta['badges'] = [];
+  const plainParts: string[] = [];
 
-  if (!description) return { links, badges };
+  if (!description) return { plainText: '', links, badges };
 
-  // Extract URLs
   const urlRegex = /https?:\/\/[^\s,;'"]+/gi;
-  let remaining = description;
-  const foundUrls = description.match(urlRegex) ?? [];
-  for (const url of foundUrls) {
-    remaining = remaining.replace(url, ' ').trim();
-    links.push({ url, service: detectService(url) });
-  }
 
-  // Extract key=value or key:value tokens from remaining text
-  const tokens = remaining.split(/[\s,;]+/).filter(Boolean);
-  for (const token of tokens) {
-    const match = token.match(/^([\w][\w.-]*)[:=](.+)$/);
-    if (match) {
-      badges.push({ key: match[1]!, value: match[2]! });
+  // Process line-by-line so multi-word keys (e.g. "Cluster Name: glc-nprd") are
+  // preserved when items are newline-separated, while still supporting inline
+  // space-separated pairs (org=example env=prod) on a single line.
+  for (const rawLine of description.split('\n')) {
+    let line = rawLine;
+
+    // Extract URLs from this line first
+    const lineUrls = line.match(urlRegex) ?? [];
+    for (const url of lineUrls) {
+      line = line.replace(url, ' ');
+      links.push({ url, service: detectService(url) });
     }
+
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Count separators (= or :) to choose a parsing strategy
+    const sepCount = (trimmed.match(/[:=]/g) ?? []).length;
+
+    if (sepCount === 1) {
+      // Single separator on the line → treat the whole line as one badge.
+      // Supports multi-word keys:  "Cluster Name: glc-nprd"
+      // Supports key with space after colon: "Region: af-south-1"
+      // Supports simple form: "env=prod"
+      const m = trimmed.match(/^(.+?)[:=]\s*(.+)$/);
+      if (m) {
+        badges.push({ key: m[1]!.trim(), value: m[2]!.trim() });
+        continue;
+      }
+    } else if (sepCount > 1) {
+      // Multiple separators → inline space-separated pairs: org=x env=y
+      // Falls back to token-level matching (single-word keys only)
+      const tokens = trimmed.split(/[\s,;]+/).filter(Boolean);
+      for (const token of tokens) {
+        const m = token.match(/^([\w][\w.-]*)[:=](.+)$/);
+        if (m) {
+          badges.push({ key: m[1]!, value: m[2]! });
+        } else if (token) {
+          plainParts.push(token);
+        }
+      }
+      continue;
+    }
+
+    // No separators (or sep=1 but no match) → plain text
+    plainParts.push(...trimmed.split(/[\s,;]+/).filter(Boolean));
   }
 
-  return { links, badges };
+  return { plainText: plainParts.join(' '), links, badges };
 }
 
 // ── Badge colours ─────────────────────────────────────────────────────────────
@@ -120,11 +154,16 @@ interface AuthMethodMetaProps {
 }
 
 export function AuthMethodMeta({ description }: AuthMethodMetaProps) {
-  const { links, badges } = parseAuthMethodDescription(description);
-  if (links.length === 0 && badges.length === 0) return null;
+  const { plainText, links, badges } = parseAuthMethodDescription(description);
+  if (!plainText && links.length === 0 && badges.length === 0) return null;
 
   return (
     <div className="mt-2 space-y-2">
+      {/* Plain text description */}
+      {plainText && (
+        <p className="text-sm text-gray-600">{plainText}</p>
+      )}
+
       {/* Service link pills */}
       {links.length > 0 && (
         <div className="flex flex-wrap gap-1.5">

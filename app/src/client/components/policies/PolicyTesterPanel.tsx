@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { evaluateSinglePolicy } from '../../../shared/policyEvaluator';
 
 const ALL_CAPABILITIES = ['create', 'read', 'update', 'delete', 'list', 'sudo', 'deny'] as const;
 type Capability = (typeof ALL_CAPABILITIES)[number];
@@ -34,145 +35,6 @@ export interface PolicyTesterPanelProps {
   onMatchedRuleChange?: (matchedRulePath: string | null) => void;
 }
 
-/**
- * Returns true if `testPath` matches the Vault glob pattern.
- *
- * Vault path matching:
- *   +  — matches exactly one path segment (no slashes)
- *   *  — matches anything, including slashes (path remainder)
- *   ** — treated as * (matches anything including slashes)
- * Exact paths (no wildcards) only match exactly.
- */
-function matchesPattern(pattern: string, testPath: string): boolean {
-  if (!pattern.includes('*') && !pattern.includes('+')) {
-    return pattern === testPath;
-  }
-  // Split on ** first so we can handle it before single *
-  // Each segment is then escaped and single-wildcard converted
-  const escapeSegment = (seg: string) =>
-    seg
-      .replace(/[.^${}()|[\]\\]/g, '\\$&')
-      .replace(/\*/g, '[\\s\\S]*')
-      .replace(/\+/g, '[^/]+');
-
-  const regexStr = pattern.split('**').map(escapeSegment).join('[\\s\\S]*');
-  try {
-    return new RegExp(`^${regexStr}$`).test(testPath);
-  } catch {
-    return false;
-  }
-}
-
-/** Find the position of the first wildcard character (+  or *) in a pattern. */
-function firstWildcardPos(pattern: string): number {
-  const plusPos = pattern.indexOf('+');
-  const starPos = pattern.indexOf('*');
-  if (plusPos === -1) return starPos;
-  if (starPos === -1) return plusPos;
-  return Math.min(plusPos, starPos);
-}
-
-/** Count the number of + (single-segment wildcard) characters in a pattern. */
-function countPlusSections(pattern: string): number {
-  let count = 0;
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern[i] === '+') count++;
-  }
-  return count;
-}
-
-/**
- * Vault's priority matching rules (from docs).
- * Given two matching patterns P1 and P2, determine if P1 should have lower priority.
- * Returns true if P1 < P2 in priority (P1 is lower priority, P2 wins).
- */
-function shouldP1LoseToP2(p1: string, p2: string): boolean {
-  // Rule 1: If the first wildcard (+/*) occurs earlier in P1, P1 is lower priority
-  const p1FirstWildcard = firstWildcardPos(p1);
-  const p2FirstWildcard = firstWildcardPos(p2);
-  if (p1FirstWildcard !== -1 && p2FirstWildcard !== -1) {
-    if (p1FirstWildcard < p2FirstWildcard) return true;
-    if (p1FirstWildcard > p2FirstWildcard) return false;
-  } else if (p1FirstWildcard !== -1 && p2FirstWildcard === -1) {
-    // P1 has wildcard, P2 doesn't → P1 is lower priority
-    return true;
-  } else if (p1FirstWildcard === -1 && p2FirstWildcard !== -1) {
-    // P1 exact, P2 has wildcard → P1 is higher priority (P1 wins)
-    return false;
-  }
-
-  // Rule 2: If P1 ends in * and P2 doesn't, P1 is lower priority
-  const p1EndsInStar = p1.endsWith('*');
-  const p2EndsInStar = p2.endsWith('*');
-  if (p1EndsInStar && !p2EndsInStar) return true;
-  if (!p1EndsInStar && p2EndsInStar) return false;
-
-  // Rule 3: If P1 has more + segments, P1 is lower priority
-  const p1Plus = countPlusSections(p1);
-  const p2Plus = countPlusSections(p2);
-  if (p1Plus > p2Plus) return true;
-  if (p1Plus < p2Plus) return false;
-
-  // Rule 4: If P1 is shorter, it is lower priority
-  if (p1.length < p2.length) return true;
-  if (p1.length > p2.length) return false;
-
-  // Rule 5: If P1 is smaller lexicographically, it is lower priority
-  return p1 < p2;
-}
-
-/**
- * Evaluate whether `operation` is allowed on `testPath` given the policy rules.
- *
- * Selection logic (mirrors Vault's ACL evaluation):
- *   1. Collect all rules whose path pattern matches testPath.
- *   2. Among matches, apply Vault's priority matching rules to pick the winner.
- *   3. If winner has `deny` → denied; if winner has the operation → allowed; else denied.
- *   4. No match → denied by default.
- */
-function evaluatePolicy(
-  rules: PolicyRule[],
-  testPath: string,
-  operation: string,
-): TestResult {
-  const matching = rules.filter((r) => r.path.trim() && matchesPattern(r.path.trim(), testPath));
-
-  if (matching.length === 0) {
-    return {
-      allowed: false,
-      matchedRule: null,
-      matchedCapabilities: [],
-      reason: 'No matching rule — access is denied by default',
-    };
-  }
-
-  // Apply Vault's priority matching rules to pick the winner
-  const winner = matching.reduce((best, cur) => {
-    return shouldP1LoseToP2(best.path, cur.path) ? cur : best;
-  });
-
-  const matchedCapabilities = winner.capabilities;
-
-  if (matchedCapabilities.includes('deny')) {
-    return {
-      allowed: false,
-      matchedRule: winner.path,
-      matchedCapabilities,
-      reason: 'Rule explicitly denies access',
-    };
-  }
-
-  const allowed = matchedCapabilities.includes(operation);
-  return {
-    allowed,
-    matchedRule: winner.path,
-    matchedCapabilities,
-    reason: allowed
-      ? `Capability "${operation}" is granted by the matched rule`
-      : `Capability "${operation}" is not in the matched rule's capabilities`,
-  };
-}
-
 export default function PolicyTesterPanel({
   rules,
   isUnsaved = false,
@@ -185,7 +47,13 @@ export default function PolicyTesterPanel({
 
   const handleTest = () => {
     if (!testPath.trim()) return;
-    const testResult = evaluatePolicy(rules, testPath.trim(), operation);
+    const evalResult = evaluateSinglePolicy(rules, testPath.trim(), operation);
+    const testResult: TestResult = {
+      allowed: evalResult.allowed,
+      matchedRule: evalResult.matchedPath,
+      matchedCapabilities: evalResult.effectiveCapabilities,
+      reason: evalResult.reason,
+    };
     setResult(testResult);
     onMatchedRuleChange?.(testResult.matchedRule);
   };

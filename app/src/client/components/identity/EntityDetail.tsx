@@ -35,13 +35,15 @@ export default function EntityDetail() {
   if (error) return <ErrorMessage message={error} />;
   if (!entity) return <ErrorMessage message="Entity not found" />;
 
+  const friendlyName = entity.aliases?.[0]?.name || entity.name;
+
   return (
     <div>
       {showGraph && entity && (
         <RelationshipGraphModal
           entityType="entity"
           entityId={entity.id}
-          entityLabel={entity.name}
+          entityLabel={friendlyName}
           onClose={() => setShowGraph(false)}
         />
       )}
@@ -50,7 +52,10 @@ export default function EntityDetail() {
           <Link to="/access/entities" className="text-sm text-[#1563ff] hover:text-[#1250d4]">
             ← Entities
           </Link>
-          <h1 className="text-2xl font-bold text-gray-800">{entity.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-800">
+            {friendlyName}
+            <span className="ml-2 font-mono text-sm font-normal text-gray-400">({entity.id})</span>
+          </h1>
         </div>
         <button
           onClick={() => setShowGraph(true)}
@@ -86,7 +91,7 @@ export default function EntityDetail() {
                 className="text-sm text-[#1563ff] hover:text-[#1250d4] hover:underline"
                 title="View identity chain graph"
               >
-                {entity.name}
+                {friendlyName}
               </Link>
             </div>
           </div>

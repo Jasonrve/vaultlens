@@ -2,8 +2,16 @@ import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { parsePolicyHCL } from './policies.js';
 import { permissionTestsTotal } from '../lib/metrics.js';
+import {
+  parsePolicyHCL,
+  classifyRule,
+  buildACL,
+  evaluateAccess,
+  pathMatchesPolicyPath,
+  operationHasCapability,
+  type ParsedPolicy,
+} from '../../shared/policyEvaluator.js';
 import type {
   AuthenticatedRequest,
   GraphNode,
@@ -153,12 +161,7 @@ router.post(
 
       // operationAllowed will be finalised after policy traversal for entity tests.
       // For current-user tests (no entityId) we use capabilities-self from above.
-      const capabilityAllowed = capabilities.includes('root') ||
-        (operation === 'read' && capabilities.includes('read')) ||
-        (operation === 'create' && (capabilities.includes('create') || capabilities.includes('update'))) ||
-        (operation === 'update' && capabilities.includes('update')) ||
-        (operation === 'delete' && capabilities.includes('delete')) ||
-        (operation === 'list' && capabilities.includes('list'));
+      const capabilityAllowed = capabilities.includes('root') || capabilities.includes(operation);
 
       // ── Build graph nodes ───────────────────────────────────────────────
       const NODE_X_ENTITY = 0;
@@ -210,6 +213,7 @@ router.post(
       let policyY = 0;
       let pathY = 0;
       const matchingPolicies = new Set<string>();
+      const allParsedPolicies: ParsedPolicy[] = [];
 
       for (const policyName of allPolicies) {
         const policyId = `policy-${policyName}`;
@@ -223,15 +227,13 @@ router.post(
           const rules = policyResp.data.rules ?? policyResp.data.policy ?? '';
           policyPaths = parsePolicyHCL(rules);
 
+          // Collect parsed policy for merged ACL evaluation
+          const parsedRules = policyPaths.map(classifyRule);
+          allParsedPolicies.push({ name: policyName, rules: parsedRules });
+
           for (const pp of policyPaths) {
-            if (pathMatchesPolicy(testPath, pp.path)) {
-              const hasCap = pp.capabilities.includes('root') ||
-                (operation === 'read' && pp.capabilities.includes('read')) ||
-                (operation === 'create' && (pp.capabilities.includes('create') || pp.capabilities.includes('update'))) ||
-                (operation === 'update' && pp.capabilities.includes('update')) ||
-                (operation === 'delete' && pp.capabilities.includes('delete')) ||
-                (operation === 'list' && pp.capabilities.includes('list'));
-              if (hasCap) {
+            if (pathMatchesPolicyPath(testPath, pp.path)) {
+              if (operationHasCapability(pp.capabilities, operation)) {
                 policyGrantsAccess = true;
                 matchingPolicies.add(policyName);
               }
@@ -264,14 +266,10 @@ router.post(
 
         // Add relevant secret path nodes from this policy
         for (const pp of policyPaths) {
-          if (pathMatchesPolicy(testPath, pp.path)) {
+          if (pathMatchesPolicyPath(testPath, pp.path)) {
             const pathId = `path-${policyName}-${pp.path}`;
-            const pathGrantsAccess = pp.capabilities.includes('root') ||
-              (operation === 'read' && pp.capabilities.includes('read')) ||
-              (operation === 'create' && (pp.capabilities.includes('create') || pp.capabilities.includes('update'))) ||
-              (operation === 'update' && pp.capabilities.includes('update')) ||
-              (operation === 'delete' && pp.capabilities.includes('delete')) ||
-              (operation === 'list' && pp.capabilities.includes('list'));
+            const isDeny = pp.capabilities.includes('deny');
+            const pathGrantsAccess = !isDeny && operationHasCapability(pp.capabilities, operation);
 
             nodes.push({
               id: pathId,
@@ -302,12 +300,18 @@ router.post(
       }
 
       // ── Resolve final allowed status ────────────────────────────────────
-      // When testing a specific entity, derive the result from its actual policies
+      // When testing a specific entity, derive the result from its actual
+      // policies using a merged ACL that faithfully mirrors Vault's evaluation
       // (capabilities-self reflects the LOGGED-IN token, not the entity under test).
       // When testing the current user (no entityId), trust capabilities-self.
-      const operationAllowed = entityId
-        ? matchingPolicies.size > 0
-        : capabilityAllowed;
+      let operationAllowed: boolean;
+      if (entityId) {
+        const mergedACL = buildACL(allParsedPolicies);
+        const evalResult = evaluateAccess(mergedACL, testPath, operation);
+        operationAllowed = evalResult.allowed;
+      } else {
+        operationAllowed = capabilityAllowed;
+      }
 
       // ── Entity node (inserted now so status is accurate) ────────────────
       nodes.unshift({
@@ -351,37 +355,5 @@ router.post(
     }
   }
 );
-
-/**
- * Check if a given path matches a Vault policy path pattern.
- * Supports `*` (glob) and `+` (single-segment wildcard).
- */
-function pathMatchesPolicy(testPath: string, policyPath: string): boolean {
-  // Normalize
-  const tp = testPath.replace(/^\//, '').replace(/\/$/, '');
-  const pp = policyPath.replace(/^\//, '').replace(/\/$/, '');
-
-  // Exact match
-  if (tp === pp) return true;
-
-  // Glob suffix: "secret/data/*" matches "secret/data/foo/bar"
-  if (pp.endsWith('*')) {
-    const prefix = pp.slice(0, -1);
-    if (tp.startsWith(prefix)) return true;
-  }
-
-  // Single-segment wildcard: + matches exactly one segment
-  const tpParts = tp.split('/');
-  const ppParts = pp.split('/');
-
-  if (tpParts.length !== ppParts.length) return false;
-
-  for (let i = 0; i < ppParts.length; i++) {
-    if (ppParts[i] === '+') continue;
-    if (ppParts[i] !== tpParts[i]) return false;
-  }
-
-  return true;
-}
 
 export default router;

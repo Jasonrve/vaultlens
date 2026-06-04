@@ -293,27 +293,77 @@ router.get(
         'data'
       );
 
-      const response = await vaultClient.get<{ data: unknown }>(
-        vaultPath,
-        req.vaultToken!
-      );
-
-      // Extract field names only — values are never sent to the client
-      const rawData = response.data as Record<string, unknown> | { data: Record<string, unknown> } | null;
       let fieldKeys: string[] = [];
-      if (rawData && typeof rawData === 'object') {
-        // KV v2 wraps actual data under a nested .data property
-        const inner =
-          engineInfo.version === 2 && 'data' in rawData && rawData.data && typeof rawData.data === 'object'
-            ? (rawData.data as Record<string, unknown>)
-            : (rawData as Record<string, unknown>);
-        fieldKeys = Object.keys(inner);
+      let restricted = false;
+
+      try {
+        const response = await vaultClient.get<{ data: unknown }>(
+          vaultPath,
+          req.vaultToken!
+        );
+
+        // Extract field names only — values are never sent to the client
+        const rawData = response.data as Record<string, unknown> | { data: Record<string, unknown> } | null;
+        if (rawData && typeof rawData === 'object') {
+          // KV v2 wraps actual data under a nested .data property
+          const inner =
+            engineInfo.version === 2 && 'data' in rawData && rawData.data && typeof rawData.data === 'object'
+              ? (rawData.data as Record<string, unknown>)
+              : (rawData as Record<string, unknown>);
+          fieldKeys = Object.keys(inner);
+        }
+      } catch (readErr) {
+        const status = (readErr as { statusCode?: number }).statusCode;
+        if (status === 403) {
+          // User lacks read permission — fall back to system token for key names only
+          try {
+            const sysToken = await getSystemToken();
+            const sysResponse = await vaultClient.get<{ data: unknown }>(
+              vaultPath,
+              sysToken
+            );
+
+            const rawData = sysResponse.data as Record<string, unknown> | { data: Record<string, unknown> } | null;
+            if (rawData && typeof rawData === 'object') {
+              const inner =
+                engineInfo.version === 2 && 'data' in rawData && rawData.data && typeof rawData.data === 'object'
+                  ? (rawData.data as Record<string, unknown>)
+                  : (rawData as Record<string, unknown>);
+              fieldKeys = Object.keys(inner);
+            }
+            restricted = true;
+          } catch {
+            // System token also failed — propagate the original 403
+            throw readErr;
+          }
+        } else {
+          throw readErr;
+        }
+      }
+
+      // When restricted, check what capabilities the user actually has on this path
+      let capabilities: string[] | undefined;
+      if (restricted) {
+        try {
+          const capsResponse = await vaultClient.post<Record<string, unknown>>(
+            '/sys/capabilities-self',
+            req.vaultToken!,
+            { paths: [vaultPath] }
+          );
+          const caps = (capsResponse as Record<string, unknown>)[vaultPath] ??
+            (capsResponse as { capabilities?: string[] }).capabilities ?? [];
+          capabilities = Array.isArray(caps) ? caps : [];
+        } catch {
+          capabilities = [];
+        }
       }
 
       res.json({
         keys: fieldKeys,
         mount: engineInfo.mount,
         version: engineInfo.version,
+        restricted,
+        ...(capabilities ? { capabilities } : {}),
       });
     } catch (error) {
       next(error);

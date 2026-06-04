@@ -32,9 +32,6 @@ export default function EntityList() {
               <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
                 Name / Alias
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
-                Entity ID
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
@@ -49,6 +46,7 @@ export default function EntityList() {
                       >
                         {aliasName || name || <span className="italic text-gray-400">unnamed</span>}
                       </Link>
+                      <span className="font-mono text-xs text-gray-400">({id})</span>
                       {groupCount > 0 && (
                         <span
                           title={`${groupCount} group${groupCount !== 1 ? 's' : ''}`}
@@ -71,14 +69,11 @@ export default function EntityList() {
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-gray-400">{id}</span>
-                </td>
               </tr>
             ))}
             {entities.length === 0 && (
               <tr>
-                <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={1} className="px-4 py-8 text-center text-sm text-gray-400">
                   No entities found
                 </td>
               </tr>

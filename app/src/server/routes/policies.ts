@@ -3,6 +3,7 @@ import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { policyOperationsTotal } from '../lib/metrics.js';
+import { parsePolicyHCL as sharedParsePolicyHCL } from '../../shared/policyEvaluator.js';
 import type { AuthenticatedRequest, PolicyPath } from '../types/index.js';
 
 const router = Router();
@@ -12,50 +13,10 @@ router.use(authMiddleware);
 
 /**
  * Parse Vault HCL policy format to extract paths and capabilities.
- * Handles common patterns including nested braces and multi-line blocks:
- *   path "secret/data/*" { capabilities = ["read", "list"] }
- *   path "secret/+/config" {
- *     capabilities = ["read"]
- *     allowed_parameters { "key" = [] }
- *   }
+ * Delegates to the shared policy evaluator module.
  */
 export function parsePolicyHCL(hcl: string): PolicyPath[] {
-  const paths: PolicyPath[] = [];
-
-  // Use a stateful approach to correctly match path blocks with nested braces
-  const pathStartRegex = /path\s+"([^"\\]*(?:\\.[^"\\]*)*)"\s*\{/g;
-  let startMatch: RegExpExecArray | null;
-
-  while ((startMatch = pathStartRegex.exec(hcl)) !== null) {
-    const pathValue = startMatch[1];
-    if (!pathValue) continue;
-
-    // Find the matching closing brace, accounting for nested braces
-    let braceDepth = 1;
-    let pos = pathStartRegex.lastIndex;
-    while (pos < hcl.length && braceDepth > 0) {
-      if (hcl[pos] === '{') braceDepth++;
-      else if (hcl[pos] === '}') braceDepth--;
-      pos++;
-    }
-
-    const blockContent = hcl.slice(pathStartRegex.lastIndex, pos - 1);
-
-    // Extract capabilities array from the block
-    const capRegex = /capabilities\s*=\s*\[([^\]]*)\]/;
-    const capMatch = capRegex.exec(blockContent);
-
-    if (capMatch?.[1]) {
-      const capabilities = capMatch[1]
-        .split(',')
-        .map((c) => c.trim().replace(/"/g, ''))
-        .filter((c) => c.length > 0);
-
-      paths.push({ path: pathValue, capabilities });
-    }
-  }
-
-  return paths;
+  return sharedParsePolicyHCL(hcl);
 }
 
 // List all ACL policies
