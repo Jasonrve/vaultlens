@@ -189,7 +189,7 @@ export default function Sidebar() {
   const isPolicies = location.pathname.startsWith('/policies');
   const isTools = location.pathname.startsWith('/tools');
   const isAdmin = location.pathname.startsWith('/admin');
-  const isSettings = location.pathname.startsWith('/admin/branding') || location.pathname.startsWith('/admin/sharing-settings');
+  const isSettings = location.pathname.startsWith('/admin/branding') || location.pathname.startsWith('/admin/sharing-settings') || location.pathname.startsWith('/admin/policies-settings');
   const { branding } = useBrandingStore();
   const { tokenInfo, refreshTokenInfo } = useAuthStore();
 
@@ -260,6 +260,7 @@ export default function Sidebar() {
           <NavSection title="Settings" defaultOpen={isSettings}>
             <NavItem to="/admin/branding" icon={<IconSettings />} label="Branding" />
             <NavItem to="/admin/sharing-settings" icon={<IconShare />} label="Sharing" />
+            <NavItem to="/admin/policies-settings" icon={<IconDocument />} label="Policies" />
           </NavSection>
         )}
       </nav>

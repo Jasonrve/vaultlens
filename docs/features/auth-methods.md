@@ -19,6 +19,8 @@ VaultLens parses the **description** field of each auth method and renders it as
 
 Any `key=value` or `key:value` pair in the description is rendered as a colour-coded badge chip.
 
+![KV Label Badges](/screenshots/auth-methods-kv-labels.png)
+
 **Inline format** — multiple pairs on one line, separated by spaces:
 ```
 org=example-org env=prod
@@ -39,6 +41,8 @@ Both `=` and `:` are supported as separators. Spaces after the separator are opt
 ### Service Link Pills
 
 Any HTTP(S) URL in the description is rendered as a clickable pill with a service icon when the URL matches a known service:
+
+![Service Link Pills](/screenshots/auth-methods-link-pills.png)
 
 | Service | Detected by |
 |---------|------------|

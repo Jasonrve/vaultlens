@@ -140,9 +140,15 @@ export async function updateSecretMetadata(path: string, custom_metadata: Record
 }
 
 // ── Policies ──────────────────────────────────────────────
-export async function getPolicies() {
-  const { data } = await api.get<{ policies: string[] }>('/policies');
-  return data.policies;
+export interface PoliciesListResult {
+  policies: string[];
+  /** True when the user lacked list-all permission and only their own policies are shown */
+  restricted?: boolean;
+}
+
+export async function getPolicies(): Promise<PoliciesListResult> {
+  const { data } = await api.get<PoliciesListResult>('/policies');
+  return data;
 }
 
 export async function getPolicy(name: string) {
@@ -449,6 +455,21 @@ export async function getSharingConfig() {
 
 export async function updateSharingConfig(config: SharingConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/sharing-config', config);
+  return data;
+}
+
+// ── Policies Config ───────────────────────────────────────
+export interface PoliciesConfig {
+  allowIdentityPolicyFallback: boolean;
+}
+
+export async function getPoliciesConfig() {
+  const { data } = await api.get<PoliciesConfig>('/vaultlens-audit/policies-config');
+  return data;
+}
+
+export async function updatePoliciesConfig(config: PoliciesConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/policies-config', config);
   return data;
 }
 

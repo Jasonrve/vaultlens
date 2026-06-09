@@ -1,9 +1,10 @@
 import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
-import { VaultClient } from '../lib/vaultClient.js';
+import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { policyOperationsTotal } from '../lib/metrics.js';
 import { parsePolicyHCL as sharedParsePolicyHCL } from '../../shared/policyEvaluator.js';
+import { readPoliciesConfig } from './vaultlens-audit.js';
 import type { AuthenticatedRequest, PolicyPath } from '../types/index.js';
 
 const router = Router();
@@ -31,6 +32,25 @@ router.get(
       policyOperationsTotal.inc({ operation: 'list' });
       res.json({ policies: response.data.keys });
     } catch (error) {
+      // When the user lacks permission to list all policies, fall back to the
+      // policies attached to their own token — but only if the admin has
+      // explicitly enabled this feature, to prevent unexpected information
+      // disclosure in environments where it is not desired.
+      if (error instanceof VaultError && error.statusCode === 403) {
+        try {
+          const policiesCfg = await readPoliciesConfig();
+          if (policiesCfg.allowIdentityPolicyFallback) {
+            const tokenPolicies = req.tokenInfo?.policies ?? [];
+            const identityPolicies = req.tokenInfo?.identity_policies ?? [];
+            const unique = [...new Set([...tokenPolicies, ...identityPolicies])];
+            policyOperationsTotal.inc({ operation: 'list_identity_fallback' });
+            res.json({ policies: unique, restricted: true });
+            return;
+          }
+        } catch {
+          // Config read failed — fall through to original error
+        }
+      }
       next(error);
     }
   }

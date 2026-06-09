@@ -210,13 +210,12 @@ Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `Vau
 ### Config Storage & Encryption
 - Pluggable backend for VaultLens's own configuration (branding, webhooks, rotation, backup schedules).
 - **Interface**: `ConfigStorageProvider` with `get/set/delete/list` + `getBlob/setBlob/deleteBlob`.
-- **Two backends**: `file` (INI on disk, default) and `vault` (Vault KV v2 engine `vaultlens-conf`).
+- **Current backend**: `file` only (INI on disk). The `VaultConfigStorage` class exists but is not wired — kept for future extension.
 - **Encryption**: Sensitive values like AppRole credentials are encrypted before storage via `app/src/server/lib/configEncryption.ts`
   - `encryptConfigValue(plaintext: string)` — encrypts and returns versioned format
   - `tryDecryptConfigValue(value: string)` — safely decrypts, handles plaintext for backward compatibility
   - Key derivation: `SHA256(VAULT_ADDR + 'vaultlens-config-encryption-key-v1')` — consistent across instances
-- **Singleton**: `getConfigStorage()` returns the configured backend instance.
-- Use `VAULTLENS_CONFIG_STORAGE=vault` for Kubernetes/production deployments.
+- **Singleton**: `getConfigStorage()` always returns the file backend instance.
 
 ### Frontend API Client
 ```typescript

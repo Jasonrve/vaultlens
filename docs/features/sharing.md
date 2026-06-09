@@ -1,7 +1,5 @@
 # Secure Secret Sharing
 
-![Share a Secret](/screenshots/share-secret.png)
-
 VaultLens lets you share secrets securely with anyone — even people without Vault access.
 
 ## How It Works
@@ -16,6 +14,8 @@ URL: https://vaultlens.example.com/shared/<id>#<decryption-key>
 
 ## Creating a Shared Secret
 
+![Creating a Shared Secret](/screenshots/share-secret-create.png)
+
 1. Navigate to **Tools → Share a Secret**
 2. Enter the secret value
 3. Set an **expiration** (1 hour to 7 days)
@@ -23,6 +23,8 @@ URL: https://vaultlens.example.com/shared/<id>#<decryption-key>
 5. Click **Create Share** — copy the generated URL
 
 ## Viewing a Shared Secret
+
+![Viewing a Shared Secret](/screenshots/share-secret.png)
 
 Open the share URL in any browser — no Vault account required. The page decrypts the secret entirely in the browser using the key from the URL fragment.
 

@@ -9,6 +9,7 @@ const BUILT_IN = new Set(['root', 'default']);
 export default function PolicyList() {
   const navigate = useNavigate();
   const [policies, setPolicies] = useState<string[]>([]);
+  const [restricted, setRestricted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -17,7 +18,10 @@ export default function PolicyList() {
   const loadPolicies = () => {
     api
       .getPolicies()
-      .then(setPolicies)
+      .then((result) => {
+        setPolicies(result.policies);
+        setRestricted(result.restricted === true);
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
   };
@@ -56,6 +60,17 @@ export default function PolicyList() {
           className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:ring-1 focus:ring-[#1563ff] focus:outline-none"
         />
       </div>
+      {restricted && (
+        <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+          </svg>
+          <span>
+            <strong>Restricted view</strong> — you do not have permission to list all policies.
+            Showing only the policies attached to your identity.
+          </span>
+        </div>
+      )}
       <div className="overflow-hidden rounded-md border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -70,7 +85,11 @@ export default function PolicyList() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
-                  No policies match &ldquo;{search}&rdquo;
+                  {search
+                    ? <>No policies match &ldquo;{search}&rdquo;</>
+                    : restricted
+                      ? 'No policies are attached to your identity.'
+                      : 'No policies found.'}
                 </td>
               </tr>
             )}
@@ -88,7 +107,7 @@ export default function PolicyList() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {!BUILT_IN.has(name) && (
+                  {!BUILT_IN.has(name) && !restricted && (
                     <button
                       onClick={() => { void handleDelete(name); }}
                       disabled={deleting === name}

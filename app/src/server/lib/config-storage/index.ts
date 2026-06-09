@@ -1,7 +1,8 @@
 import { config } from '../../config/index.js';
 import type { ConfigStorageProvider } from './types.js';
 import { FileConfigStorage } from './fileStorage.js';
-import { VaultConfigStorage } from './vaultStorage.js';
+// VaultConfigStorage kept for future extension — not used in current builds
+// import { VaultConfigStorage } from './vaultStorage.js';
 import { configStorageOpsTotal, configStorageDurationSeconds } from '../metrics.js';
 
 export type { ConfigStorageProvider } from './types.js';
@@ -41,20 +42,13 @@ function instrumentStorage(
 
 /**
  * Get the singleton configuration storage provider.
- * Uses VAULTLENS_CONFIG_STORAGE env var to determine backend:
- * - 'vault': Stores config in Vault KV engine 'vaultlens-conf'
- * - 'file' (default): Stores config in a config.ini file on disk
+ * Always uses the file backend (config.ini on disk).
+ * The pluggable interface is retained so additional backends can be added in future.
  */
 export function getConfigStorage(): ConfigStorageProvider {
   if (!instance) {
-    const storageType = config.configStorage;
-    if (storageType === 'vault') {
-      instance = instrumentStorage(new VaultConfigStorage(), 'vault');
-      console.log('[Config] Using Vault KV storage backend (vaultlens-conf)');
-    } else {
-      instance = instrumentStorage(new FileConfigStorage(config.configStoragePath || undefined), 'file');
-      console.log(`[Config] Using file storage backend (${config.configStoragePath || 'data/config.ini'})`);
-    }
+    instance = instrumentStorage(new FileConfigStorage(config.configStoragePath || undefined), 'file');
+    console.log(`[Config] Using file storage backend (${config.configStoragePath || 'data/config.ini'})`);
   }
   return instance;
 }
