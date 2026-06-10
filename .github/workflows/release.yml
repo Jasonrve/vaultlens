@@ -39,7 +39,13 @@ jobs:
 
       - name: Bump app/package.json version
         working-directory: app
-        run: npm version "${{ inputs.version }}" --no-git-tag-version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" = "${{ inputs.version }}" ]; then
+            echo "app/package.json already at v${{ inputs.version }} — skipping"
+          else
+            npm version "${{ inputs.version }}" --no-git-tag-version
+          fi
 
       - name: Bump Chart.yaml version and appVersion
         run: |
