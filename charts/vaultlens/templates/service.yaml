@@ -11,5 +11,11 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if eq (.Values.config.audit.source | default "socket") "socket" }}
+    - port: {{ .Values.config.socketAudit.port | default 9090 | int }}
+      targetPort: audit-socket
+      protocol: TCP
+      name: audit-socket
+    {{- end }}
   selector:
     {{- include "vaultlens.selectorLabels" . | nindent 4 }}
