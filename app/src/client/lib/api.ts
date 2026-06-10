@@ -240,10 +240,10 @@ export async function updateAuthMethodConfig(method: string, config: Record<stri
 }
 
 export async function getAuthMethodTune(method: string) {
-  const { data } = await api.get<{ tune: Record<string, unknown> }>(
+  const { data } = await api.get<{ tune: Record<string, unknown>; readonly?: boolean }>(
     `/auth-methods/${encodeURIComponent(method)}/tune`,
   );
-  return data.tune;
+  return { tune: data.tune, readonly: data.readonly ?? false };
 }
 
 export async function updateAuthMethodTune(method: string, tune: Record<string, unknown>) {

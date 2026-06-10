@@ -199,11 +199,34 @@ router.get(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       // /sys/auth/:mount/tune returns data at the root level (no .data wrapper)
-      const response = await vaultClient.get<Record<string, unknown>>(
-        `/sys/auth/${encodeURIComponent(mount)}/tune`,
-        req.vaultToken!
-      );
-      return res.json({ tune: response });
+      try {
+        const response = await vaultClient.get<Record<string, unknown>>(
+          `/sys/auth/${encodeURIComponent(mount)}/tune`,
+          req.vaultToken!
+        );
+        return res.json({ tune: response });
+      } catch (tuneError) {
+        // /sys/auth/:mount/tune is a sudo-protected path. Fall back to the
+        // /sys/auth listing which includes the same config fields and is
+        // accessible with a standard read permission.
+        if (tuneError instanceof VaultError && tuneError.statusCode === 403) {
+          const authResponse = await vaultClient.get<AuthMountsResponse>(
+            '/sys/auth',
+            req.vaultToken!
+          );
+          const mountKey = `${mount}/`;
+          const mountInfo = authResponse.data[mountKey];
+          if (mountInfo) {
+            const tune = {
+              description: mountInfo.description ?? '',
+              ...mountInfo.config,
+            };
+            return res.json({ tune, readonly: true });
+          }
+          return res.json({ tune: {}, readonly: true });
+        }
+        throw tuneError;
+      }
     } catch (error) {
       return next(error);
     }
