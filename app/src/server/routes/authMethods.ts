@@ -13,6 +13,7 @@ import {
   deleteTemplateOverride,
 } from '../lib/devIntegrationLoader.js';
 import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
+import { readAuthMethodsConfig } from './vaultlens-audit.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -385,7 +386,9 @@ router.get(
       const vars = buildTemplateVars(mount, role, authType, roleData);
       const content = substituteTemplate(rawTemplate, vars);
 
-      return res.json({ content, rawTemplate, authType, isCustomized, canCustomize, templateVars: vars });
+      const authMethodsCfg = await readAuthMethodsConfig();
+
+      return res.json({ content, rawTemplate, authType, isCustomized, canCustomize, templateVars: vars, enabled: authMethodsCfg.enableDevIntegrationGuides });
     } catch (error) {
       return next(error);
     }

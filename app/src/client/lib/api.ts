@@ -262,6 +262,7 @@ export async function getDevTemplate(method: string, role: string) {
     isCustomized: boolean;
     canCustomize: boolean;
     templateVars: Record<string, string>;
+    enabled: boolean;
   }>(`/auth-methods/${encodeURIComponent(method)}/developer-template`, {
     params: { role },
   });
@@ -470,6 +471,21 @@ export async function getPoliciesConfig() {
 
 export async function updatePoliciesConfig(config: PoliciesConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/policies-config', config);
+  return data;
+}
+
+// ── Auth Methods Config ─────────────────────────────────
+export interface AuthMethodsConfig {
+  enableDevIntegrationGuides: boolean;
+}
+
+export async function getAuthMethodsConfig() {
+  const { data } = await api.get<AuthMethodsConfig>('/vaultlens-audit/auth-methods-config');
+  return data;
+}
+
+export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/auth-methods-config', config);
   return data;
 }
 

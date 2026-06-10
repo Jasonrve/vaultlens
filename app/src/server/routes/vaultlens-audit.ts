@@ -80,6 +80,69 @@ router.put(
   }
 );
 
+// ── Auth Methods Config ───────────────────────────────────
+
+const AUTH_METHODS_CONFIG_SECTION = 'auth_methods';
+
+export interface AuthMethodsConfig {
+  enableDevIntegrationGuides: boolean;
+}
+
+const DEFAULT_AUTH_METHODS_CONFIG: AuthMethodsConfig = {
+  enableDevIntegrationGuides: true,
+};
+
+export async function readAuthMethodsConfig(): Promise<AuthMethodsConfig> {
+  try {
+    const storage = getConfigStorage();
+    const data = await storage.get(AUTH_METHODS_CONFIG_SECTION);
+    if (data) {
+      return {
+        enableDevIntegrationGuides: data['enableDevIntegrationGuides'] !== 'false',
+      };
+    }
+  } catch {
+    // Fall back to defaults
+  }
+  return { ...DEFAULT_AUTH_METHODS_CONFIG };
+}
+
+// GET /api/vaultlens-audit/auth-methods-config — read current auth methods config (admin only)
+router.get(
+  '/auth-methods-config',
+  authMiddleware,
+  requireAdmin,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const cfg = await readAuthMethodsConfig();
+      res.json(cfg);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/vaultlens-audit/auth-methods-config — update auth methods config (admin only)
+router.put(
+  '/auth-methods-config',
+  authMiddleware,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { enableDevIntegrationGuides } = req.body as Partial<AuthMethodsConfig>;
+
+      const storage = getConfigStorage();
+      await storage.set(AUTH_METHODS_CONFIG_SECTION, {
+        enableDevIntegrationGuides: String(enableDevIntegrationGuides !== false),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ── Policies Config ──────────────────────────────────────
 
 const POLICIES_CONFIG_SECTION = 'policies';

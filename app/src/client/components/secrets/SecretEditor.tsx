@@ -206,6 +206,7 @@ export default function SecretEditor() {
                     <div className="px-3 py-4 text-center text-xs text-gray-400">No accessible paths found</div>
                   ) : (
                     accessiblePaths
+                      .filter((p) => !splat || p.startsWith(splat))
                       .filter((p) => !pathSearch || p.toLowerCase().includes(pathSearch.toLowerCase()))
                       .map((p) => (
                         <button

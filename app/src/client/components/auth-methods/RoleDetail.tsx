@@ -303,6 +303,7 @@ export default function RoleDetail() {
   const [activeTab, setActiveTab] = useState<'details' | 'developer' | 'audits'>('details');
   const [templateContent, setTemplateContent] = useState('');
   const [canCustomize, setCanCustomize] = useState(false);
+  const [devGuidesEnabled, setDevGuidesEnabled] = useState(true);
 
   useEffect(() => {
     api
@@ -318,6 +319,7 @@ export default function RoleDetail() {
       .then((data) => {
         setTemplateContent(data.content);
         setCanCustomize(data.canCustomize);
+        setDevGuidesEnabled(data.enabled);
       })
       .catch(() => {
         // Silent fail — template loading errors don't block the page
@@ -372,7 +374,7 @@ export default function RoleDetail() {
       <div className="mb-5 flex gap-1 border-b border-gray-200">
         {(() => {
           const hasContent = templateContent.trim().length > 0;
-          const showDevGuide = hasContent || canCustomize;
+          const showDevGuide = devGuidesEnabled && (hasContent || canCustomize);
           const tabs = ['details' as const, ...(showDevGuide ? ['developer' as const] : []), 'audits' as const];
           return tabs.map((tab) => (
             <button
