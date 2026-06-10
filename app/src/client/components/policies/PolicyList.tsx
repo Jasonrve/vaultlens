@@ -97,7 +97,7 @@ export default function PolicyList() {
               <tr key={name} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <Link
-                    to={`/policies/${name}`}
+                    to={restricted ? `/policies/${name}?readonly=1` : `/policies/${name}`}
                     className="text-sm font-medium text-[#1563ff] hover:text-[#1250d4]"
                   >
                     {name}
