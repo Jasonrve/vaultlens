@@ -10,7 +10,7 @@ import { AuthMethodMeta } from './AuthMethodMeta';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
 
 type Tab = 'Configuration' | 'Method Options' | 'Roles';
-const TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
+const ALL_TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
 
 export default function AuthMethodDetail() {
   const { method = '' } = useParams<{ method: string }>();
@@ -18,6 +18,7 @@ export default function AuthMethodDetail() {
   const [methodInfo, setMethodInfo] = useState<AuthMethod | null>(null);
   const [loading, setLoading] = useState(true);
   const [showGraph, setShowGraph] = useState(false);
+  const [tuneAccessible, setTuneAccessible] = useState(true);
 
   // Resolve the method type from the auth methods list
   useEffect(() => {
@@ -31,6 +32,17 @@ export default function AuthMethodDetail() {
       .finally(() => setLoading(false));
   }, [method]);
 
+  // Probe tune access — hide Method Options tab if user lacks sudo permission
+  useEffect(() => {
+    api.getAuthMethodTune(method)
+      .then(() => setTuneAccessible(true))
+      .catch((err: unknown) => {
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status === 403) setTuneAccessible(false);
+      });
+  }, [method]);
+
+  const tabs: Tab[] = ALL_TABS.filter((t) => t !== 'Method Options' || tuneAccessible);
   const authType = methodInfo?.type ?? method;
 
   return (
@@ -85,7 +97,7 @@ export default function AuthMethodDetail() {
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex gap-6">
-          {TABS.map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab}
               type="button"

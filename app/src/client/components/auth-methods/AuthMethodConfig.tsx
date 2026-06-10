@@ -947,6 +947,10 @@ export default function AuthMethodConfig({ method, authType }: Props) {
           <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-500">
             No configuration endpoint is available for this auth method type.
           </div>
+        ) : fetchError.toLowerCase().includes('permission denied') ? (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            You do not have permission to view the configuration for this auth method.
+          </div>
         ) : (
           <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {fetchError}
