@@ -26,17 +26,12 @@ At least one of the following is required for background services:
 
 ## Config Storage
 
-VaultLens stores its own configuration (branding, webhooks, rotation schedules, AppRole credentials) in a pluggable backend.
+VaultLens stores its own configuration (branding, webhooks, rotation schedules, AppRole credentials) in a local file backend (`config.ini`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULTLENS_CONFIG_STORAGE` | `file` | Storage backend: `file` or `vault` |
-| `VAULTLENS_CONFIG_PATH` | `/config` | Directory for `config.ini` and logo blobs (file mode) |
+| `VAULTLENS_CONFIG_PATH` | `/config` | Directory for `config.ini` and logo blobs |
 | `VAULTLENS_BACKUP_PATH` | `/backups` | Directory for backup JSON files |
-
-::: tip Production Recommendation
-Use `VAULTLENS_CONFIG_STORAGE=vault` for Kubernetes/multi-replica deployments. This stores all configuration in a dedicated Vault KV v2 engine (`vaultlens-conf`) and eliminates the need for a persistent volume for config.
-:::
 
 ## Kubernetes Auth
 
@@ -80,5 +75,5 @@ VAULT_SYSTEM_TOKEN=hvs.your-token-here
 ```bash
 VAULT_ADDR=http://vault.vault.svc.cluster.local:8200
 VAULT_K8S_AUTH_ROLE=vaultlens
-VAULTLENS_CONFIG_STORAGE=vault
+
 ```

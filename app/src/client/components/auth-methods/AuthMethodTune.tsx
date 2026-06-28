@@ -198,14 +198,16 @@ export default function AuthMethodTune({ method }: { method: string }) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isReadonly, setIsReadonly] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setFetchError(null);
     api.getAuthMethodTune(method)
-      .then((data) => {
+      .then(({ tune: data, readonly }) => {
         setTune(data);
         setFields(toTuneFields(data));
+        setIsReadonly(readonly);
       })
       .catch((err: unknown) => {
         const vaultMsg = (err as { response?: { data?: { error?: string } } })?.response?.data;
@@ -251,7 +253,7 @@ export default function AuthMethodTune({ method }: { method: string }) {
       {/* Toolbar */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {!editing && (
+          {!editing && !isReadonly && (
             <button
               type="button"
               onClick={() => { setSaveError(null); setSaveSuccess(false); setEditing(true); }}
@@ -259,6 +261,11 @@ export default function AuthMethodTune({ method }: { method: string }) {
             >
               Edit
             </button>
+          )}
+          {isReadonly && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5">
+              Read-only — requires sudo permission on sys/auth/+/tune to edit
+            </span>
           )}
           {editing && (
             <>

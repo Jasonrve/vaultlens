@@ -29,7 +29,14 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
         setRoles(data.roles);
         setMethodType(data.type);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
+      .catch((e: unknown) => {
+        const status = (e as { response?: { status?: number } })?.response?.status;
+        if (status === 403) {
+          setError('permission denied');
+        } else {
+          setError(e instanceof Error ? e.message : 'An error occurred');
+        }
+      })
       .finally(() => setLoading(false));
   }
 
@@ -77,7 +84,13 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
   }
 
   if (loading) return <LoadingSpinner className="mt-12" />;
-  if (error) return <ErrorMessage message={error} />;
+  if (error) return error === 'permission denied'
+    ? (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+        You do not have permission to list roles for this auth method.
+      </div>
+    )
+    : <ErrorMessage message={error} />;
 
   return (
     <div>

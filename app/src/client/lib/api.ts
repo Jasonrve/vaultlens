@@ -140,9 +140,15 @@ export async function updateSecretMetadata(path: string, custom_metadata: Record
 }
 
 // ── Policies ──────────────────────────────────────────────
-export async function getPolicies() {
-  const { data } = await api.get<{ policies: string[] }>('/policies');
-  return data.policies;
+export interface PoliciesListResult {
+  policies: string[];
+  /** True when the user lacked list-all permission and only their own policies are shown */
+  restricted?: boolean;
+}
+
+export async function getPolicies(): Promise<PoliciesListResult> {
+  const { data } = await api.get<PoliciesListResult>('/policies');
+  return data;
 }
 
 export async function getPolicy(name: string) {
@@ -234,10 +240,10 @@ export async function updateAuthMethodConfig(method: string, config: Record<stri
 }
 
 export async function getAuthMethodTune(method: string) {
-  const { data } = await api.get<{ tune: Record<string, unknown> }>(
+  const { data } = await api.get<{ tune: Record<string, unknown>; readonly?: boolean }>(
     `/auth-methods/${encodeURIComponent(method)}/tune`,
   );
-  return data.tune;
+  return { tune: data.tune, readonly: data.readonly ?? false };
 }
 
 export async function updateAuthMethodTune(method: string, tune: Record<string, unknown>) {
@@ -256,6 +262,7 @@ export async function getDevTemplate(method: string, role: string) {
     isCustomized: boolean;
     canCustomize: boolean;
     templateVars: Record<string, string>;
+    enabled: boolean;
   }>(`/auth-methods/${encodeURIComponent(method)}/developer-template`, {
     params: { role },
   });
@@ -449,6 +456,36 @@ export async function getSharingConfig() {
 
 export async function updateSharingConfig(config: SharingConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/sharing-config', config);
+  return data;
+}
+
+// ── Policies Config ───────────────────────────────────────
+export interface PoliciesConfig {
+  allowIdentityPolicyFallback: boolean;
+}
+
+export async function getPoliciesConfig() {
+  const { data } = await api.get<PoliciesConfig>('/vaultlens-audit/policies-config');
+  return data;
+}
+
+export async function updatePoliciesConfig(config: PoliciesConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/policies-config', config);
+  return data;
+}
+
+// ── Auth Methods Config ─────────────────────────────────
+export interface AuthMethodsConfig {
+  enableDevIntegrationGuides: boolean;
+}
+
+export async function getAuthMethodsConfig() {
+  const { data } = await api.get<AuthMethodsConfig>('/vaultlens-audit/auth-methods-config');
+  return data;
+}
+
+export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/auth-methods-config', config);
   return data;
 }
 

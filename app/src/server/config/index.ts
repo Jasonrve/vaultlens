@@ -29,8 +29,8 @@ export const config = {
   // On Docker Desktop (Windows/macOS): host.docker.internal:9090
   // On Linux Docker: 172.17.0.1:9090  (or set VAULT_AUDIT_SOCKET_VAULT_ADDRESS explicitly)
   auditSocketVaultAddress: process.env['VAULT_AUDIT_SOCKET_VAULT_ADDRESS'] || 'host.docker.internal:9090',
-  // Configuration storage: 'file' (default) or 'vault'
-  configStorage: (process.env['VAULTLENS_CONFIG_STORAGE'] || 'file') as 'file' | 'vault',
+  // Configuration storage: always 'file' — pluggable backend retained for future extension
+  configStorage: 'file' as const,
   configStoragePath: process.env['VAULTLENS_CONFIG_PATH'] || '',
   // Backup storage directory
   backupStoragePath: process.env['VAULTLENS_BACKUP_PATH'] || '',

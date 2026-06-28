@@ -7,7 +7,7 @@ export default defineConfig({
   ignoreDeadLinks: [/^http:\/\/localhost/],
 
   head: [
-    ['link', { rel: 'icon', href: '/vaultlens/favicon.ico' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/vaultlens/logo.png' }],
   ],
 
   themeConfig: {

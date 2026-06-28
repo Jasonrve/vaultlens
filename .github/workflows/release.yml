@@ -39,7 +39,13 @@ jobs:
 
       - name: Bump app/package.json version
         working-directory: app
-        run: npm version "${{ inputs.version }}" --no-git-tag-version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          if [ "$CURRENT" = "${{ inputs.version }}" ]; then
+            echo "app/package.json already at v${{ inputs.version }} — skipping"
+          else
+            npm version "${{ inputs.version }}" --no-git-tag-version
+          fi
 
       - name: Bump Chart.yaml version and appVersion
         run: |
@@ -51,31 +57,53 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add app/package.json app/package-lock.json charts/vaultlens/Chart.yaml
-          git commit -m "chore: release v${{ inputs.version }}"
-          git push
+          if git diff --cached --quiet; then
+            echo "No version changes to commit — already at v${{ inputs.version }}"
+          else
+            git commit -m "chore: release v${{ inputs.version }}"
+            git push
+          fi
 
       - name: Create and push tag
         run: |
-          git tag "v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
+          if git ls-remote --tags origin "refs/tags/v${{ inputs.version }}" | grep -q .; then
+            echo "Tag v${{ inputs.version }} already exists — skipping"
+          else
+            git tag "v${{ inputs.version }}"
+            git push origin "v${{ inputs.version }}"
+          fi
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PRERELEASE_FLAG=""
-          if [ "${{ inputs.prerelease }}" = "true" ]; then
-            PRERELEASE_FLAG="--prerelease"
+          if gh release view "v${{ inputs.version }}" &>/dev/null; then
+            echo "Release v${{ inputs.version }} already exists — skipping"
+          else
+            PRERELEASE_FLAG=""
+            if [ "${{ inputs.prerelease }}" = "true" ]; then
+              PRERELEASE_FLAG="--prerelease"
+            fi
+            gh release create "v${{ inputs.version }}" \
+              --title "v${{ inputs.version }}" \
+              --generate-notes \
+              $PRERELEASE_FLAG
           fi
-          gh release create "v${{ inputs.version }}" \
-            --title "v${{ inputs.version }}" \
-            --generate-notes \
-            $PRERELEASE_FLAG
 
   docker:
-    name: Build & Push Release Image
-    runs-on: ubuntu-latest
+    name: Build & Push Release Image (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: prepare
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
 
     permissions:
       contents: read
@@ -84,15 +112,13 @@ jobs:
       id-token: write
 
     steps:
+      - name: Lowercase image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           ref: v${{ inputs.version }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -113,22 +139,128 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}},value=v${{ inputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=v${{ inputs.version }}
             type=semver,pattern={{major}},value=v${{ inputs.version }}
             type=raw,value=latest,enable=${{ !inputs.prerelease }}
 
-      - name: Build and push
+      - name: Build and push by digest
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platform }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: true
-          sbom: true
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-merge:
+    name: Merge & Push Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: docker
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Lowercase image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ inputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ inputs.version }}
+            type=semver,pattern={{major}},value=v${{ inputs.version }}
+            type=raw,value=latest,enable=${{ !inputs.prerelease }}
+
+      - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+
+  helm:
+    name: Package & Push Helm Chart
+    runs-on: ubuntu-latest
+    needs: [prepare, docker-merge]
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package chart
+        run: helm package charts/vaultlens --version ${{ inputs.version }} --app-version ${{ inputs.version }}
+
+      - name: Upload chart tarball to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload v${{ inputs.version }} vaultlens-${{ inputs.version }}.tgz
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Push chart to GHCR OCI
+        run: helm push vaultlens-${{ inputs.version }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts

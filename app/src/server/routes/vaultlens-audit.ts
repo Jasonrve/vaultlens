@@ -80,6 +80,132 @@ router.put(
   }
 );
 
+// ── Auth Methods Config ───────────────────────────────────
+
+const AUTH_METHODS_CONFIG_SECTION = 'auth_methods';
+
+export interface AuthMethodsConfig {
+  enableDevIntegrationGuides: boolean;
+}
+
+const DEFAULT_AUTH_METHODS_CONFIG: AuthMethodsConfig = {
+  enableDevIntegrationGuides: true,
+};
+
+export async function readAuthMethodsConfig(): Promise<AuthMethodsConfig> {
+  try {
+    const storage = getConfigStorage();
+    const data = await storage.get(AUTH_METHODS_CONFIG_SECTION);
+    if (data) {
+      return {
+        enableDevIntegrationGuides: data['enableDevIntegrationGuides'] !== 'false',
+      };
+    }
+  } catch {
+    // Fall back to defaults
+  }
+  return { ...DEFAULT_AUTH_METHODS_CONFIG };
+}
+
+// GET /api/vaultlens-audit/auth-methods-config — read current auth methods config (admin only)
+router.get(
+  '/auth-methods-config',
+  authMiddleware,
+  requireAdmin,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const cfg = await readAuthMethodsConfig();
+      res.json(cfg);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/vaultlens-audit/auth-methods-config — update auth methods config (admin only)
+router.put(
+  '/auth-methods-config',
+  authMiddleware,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { enableDevIntegrationGuides } = req.body as Partial<AuthMethodsConfig>;
+
+      const storage = getConfigStorage();
+      await storage.set(AUTH_METHODS_CONFIG_SECTION, {
+        enableDevIntegrationGuides: String(enableDevIntegrationGuides !== false),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── Policies Config ──────────────────────────────────────
+
+const POLICIES_CONFIG_SECTION = 'policies';
+
+export interface PoliciesConfig {
+  allowIdentityPolicyFallback: boolean;
+}
+
+const DEFAULT_POLICIES_CONFIG: PoliciesConfig = {
+  allowIdentityPolicyFallback: false,
+};
+
+export async function readPoliciesConfig(): Promise<PoliciesConfig> {
+  try {
+    const storage = getConfigStorage();
+    const data = await storage.get(POLICIES_CONFIG_SECTION);
+    if (data) {
+      return {
+        allowIdentityPolicyFallback: data['allowIdentityPolicyFallback'] === 'true',
+      };
+    }
+  } catch {
+    // Fall back to defaults
+  }
+  return { ...DEFAULT_POLICIES_CONFIG };
+}
+
+// GET /api/vaultlens-audit/policies-config — read current policies config (admin only)
+router.get(
+  '/policies-config',
+  authMiddleware,
+  requireAdmin,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const cfg = await readPoliciesConfig();
+      res.json(cfg);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/vaultlens-audit/policies-config — update policies config (admin only)
+router.put(
+  '/policies-config',
+  authMiddleware,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { allowIdentityPolicyFallback } = req.body as Partial<PoliciesConfig>;
+
+      const storage = getConfigStorage();
+      await storage.set(POLICIES_CONFIG_SECTION, {
+        allowIdentityPolicyFallback: String(allowIdentityPolicyFallback === true),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ── VaultLens Audit Logs ──────────────────────────────────
 
 // GET /api/vaultlens-audit/logs — retrieve audit entries (admin only)

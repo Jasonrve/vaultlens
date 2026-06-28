@@ -10,11 +10,28 @@ VaultLens is currently in **beta** and under active development. It has no affil
 
 - A running **HashiCorp Vault** instance (v1.12+)
 - A **Vault token** with the permissions you want to use in VaultLens
-- **Docker** (or Docker Compose) to run VaultLens — no local Node.js install required
+- **Docker** to run VaultLens — no code download required
+
+::: tip No Clone Required
+VaultLens ships as a pre-built Docker image on GitHub Container Registry. You don't need to clone this repository to run it.
+:::
 
 ## Running VaultLens
 
 ### Option 1 — Docker (quickest)
+
+The minimal one-liner (stores config in the container — use for testing):
+
+```bash
+docker run -d \
+  --name vaultlens \
+  -p 3001:3001 \
+  -e VAULT_ADDR=http://your-vault-server:8200 \
+  -e VAULT_SYSTEM_TOKEN=your-system-token \
+  ghcr.io/jasonrve/vaultlens:latest
+```
+
+For persistent config and backups, add volumes:
 
 ```bash
 docker volume create vaultlens_config
@@ -25,22 +42,23 @@ docker run -d \
   -p 3001:3001 \
   -e VAULT_ADDR=http://your-vault-server:8200 \
   -e VAULT_SYSTEM_TOKEN=your-system-token \
-  -e VAULTLENS_CONFIG_STORAGE=file \
   -e VAULTLENS_CONFIG_PATH=/config \
   -e VAULTLENS_BACKUP_PATH=/backups \
   -v vaultlens_config:/config \
   -v vaultlens_backups:/backups \
-  ghcr.io/Jasonrve/vaultlens:latest
+  ghcr.io/jasonrve/vaultlens:latest
 ```
 
 Open **http://localhost:3001** in your browser.
 
 ### Option 2 — Docker Compose
 
+Download just the `docker-compose.yml` from the repository and run:
+
 ```bash
+curl -O https://raw.githubusercontent.com/Jasonrve/vaultlens/main/docker-compose.yml
 export VAULT_ADDR=http://your-vault-server:8200
 export VAULT_SYSTEM_TOKEN=your-system-token
-
 docker compose up -d
 ```
 
