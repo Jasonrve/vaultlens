@@ -34,7 +34,7 @@ api.interceptors.response.use(
       // Don't redirect when already on /login (avoids reload loop during checkAuth)
       // or on public pages (shared secret viewer)
       const path = window.location.pathname;
-      const isPublicPage = path === '/login' || path.startsWith('/shared/') || path.startsWith('/oidc-callback/');
+      const isPublicPage = path === '/' || path === '/login' || path.startsWith('/shared/') || path.startsWith('/oidc-callback/');
       if (!isPublicPage) {
         window.location.href = '/login';
       }

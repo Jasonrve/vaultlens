@@ -191,6 +191,11 @@ function AppRoutes() {
           <SystemTokenSetupPage />
         </SetupRouteGuard>
       } />
+
+      {/* Public product website */}
+      <Route path="/" element={<PublicLandingPage />} />
+
+      {/* Authenticated VaultLens app */}
       <Route
         element={
           <ProtectedRoute>
@@ -200,7 +205,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={isAuthenticated ? <DashboardPage /> : <PublicLandingPage />} />
+        <Route path="/app" element={<DashboardPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />

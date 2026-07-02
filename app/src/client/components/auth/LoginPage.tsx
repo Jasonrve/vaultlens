@@ -61,7 +61,7 @@ export default function LoginPage() {
       // Use window.location.href to preserve the URL hash (decryption key)
       window.location.href = returnTo;
     } else {
-      navigate('/');
+      navigate('/app');
     }
   }
 
