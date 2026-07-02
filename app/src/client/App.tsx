@@ -8,6 +8,7 @@ import Layout from './components/layout/Layout';
 import LoginPage from './components/auth/LoginPage';
 import OidcCallbackPage from './pages/OidcCallbackPage';
 import DashboardPage from './pages/DashboardPage';
+import PublicLandingPage from './pages/PublicLandingPage';
 import SecretsPage from './pages/SecretsPage';
 import PoliciesPage from './pages/PoliciesPage';
 import AuthMethodsPage from './pages/AuthMethodsPage';
@@ -199,7 +200,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/" element={isAuthenticated ? <DashboardPage /> : <PublicLandingPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />
