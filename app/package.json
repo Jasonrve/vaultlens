@@ -1,6 +1,6 @@
 {
   "name": "vaultlens",
-  "version": "0.8.0-pre",
+  "version": "0.8.0-prerelease",
   "description": "VaultLens - HashiCorp Vault UI",
   "type": "module",
   "scripts": {
