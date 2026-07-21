@@ -8,6 +8,7 @@ import Layout from './components/layout/Layout';
 import LoginPage from './components/auth/LoginPage';
 import OidcCallbackPage from './pages/OidcCallbackPage';
 import DashboardPage from './pages/DashboardPage';
+import PublicLandingPage from './pages/PublicLandingPage';
 import SecretsPage from './pages/SecretsPage';
 import PoliciesPage from './pages/PoliciesPage';
 import AuthMethodsPage from './pages/AuthMethodsPage';
@@ -190,6 +191,11 @@ function AppRoutes() {
           <SystemTokenSetupPage />
         </SetupRouteGuard>
       } />
+
+      {/* Public product website */}
+      <Route path="/" element={<PublicLandingPage />} />
+
+      {/* Authenticated VaultLens app */}
       <Route
         element={
           <ProtectedRoute>
@@ -199,7 +205,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/app" element={<DashboardPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />
