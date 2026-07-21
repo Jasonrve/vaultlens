@@ -31,10 +31,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Don't redirect when already on /login (avoids reload loop during checkAuth)
-      // or on public pages (shared secret viewer)
+      // Don't redirect when already on a public page — avoids reload loops
+      // during the initial checkAuth call and mid-wizard sessions.
       const path = window.location.pathname;
-      const isPublicPage = path === '/' || path === '/login' || path.startsWith('/shared/') || path.startsWith('/oidc-callback/');
+      const isPublicPage =
+        path === '/' ||
+        path === '/login' ||
+        path === '/about' ||
+        path === '/setup' ||
+        path.startsWith('/shared/') ||
+        path.startsWith('/oidc-callback/');
       if (!isPublicPage) {
         window.location.href = '/login';
       }

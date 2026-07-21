@@ -271,10 +271,35 @@ vault auth enable \
   -description="OpenID Connect (OIDC) authentication — configure with your IdP" \
   -path=oidc \
   oidc 2>/dev/null || echo "  (already enabled)"
+echo "  ✓ OIDC auth enabled"
 
-# Note: OIDC config requires a valid OIDC discovery URL. Skipping config for demo.
-# In production, configure with: vault write auth/oidc/config oidc_discovery_url=... oidc_client_id=...
-echo "  ✓ OIDC auth enabled (configure with valid IdP in production)"
+# Optional: configure OIDC with real IdP credentials supplied via env vars.
+# In docker-compose-development.yml set OIDC_DISCOVERY_URL, OIDC_CLIENT_ID,
+# and OIDC_CLIENT_SECRET (plus optionally OIDC_DEFAULT_ROLE, OIDC_REDIRECT_URI,
+# OIDC_TOKEN_POLICIES) in your root .env file.
+if [ -n "${OIDC_DISCOVERY_URL:-}" ] && [ -n "${OIDC_CLIENT_ID:-}" ] && [ -n "${OIDC_CLIENT_SECRET:-}" ]; then
+  _OIDC_ROLE="${OIDC_DEFAULT_ROLE:-vault-admin}"
+  _OIDC_REDIRECT="${OIDC_REDIRECT_URI:-http://localhost:3001/oidc-callback/oidc}"
+  _OIDC_POLICIES="${OIDC_TOKEN_POLICIES:-admin,vaultlens-admin}"
+
+  vault write auth/oidc/config \
+    oidc_discovery_url="$OIDC_DISCOVERY_URL" \
+    oidc_client_id="$OIDC_CLIENT_ID" \
+    oidc_client_secret="$OIDC_CLIENT_SECRET" \
+    default_role="$_OIDC_ROLE"
+  echo "  ✓ OIDC config written (discovery_url=$OIDC_DISCOVERY_URL)"
+
+  vault write auth/oidc/role/"$_OIDC_ROLE" \
+    role_type="oidc" \
+    user_claim="sub" \
+    allowed_redirect_uris="$_OIDC_REDIRECT" \
+    token_policies="$_OIDC_POLICIES" \
+    token_ttl="8h" \
+    token_max_ttl="24h"
+  echo "  ✓ OIDC role '$_OIDC_ROLE' created (redirect=$_OIDC_REDIRECT)"
+else
+  echo "  ℹ OIDC not configured — set OIDC_DISCOVERY_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET in .env to enable full OIDC login"
+fi
 
 # ── Enable TLS Certificate Auth ───────────────────────────────────────────────
 echo ""
