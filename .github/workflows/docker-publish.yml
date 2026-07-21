@@ -11,10 +11,6 @@ permissions:
   attestations: write
   id-token: write
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 jobs:
   build-and-push:
     name: Build & Push Multi-Arch Image
@@ -23,6 +19,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Lowercase image name
+        run: echo "IMAGE=ghcr.io/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -35,7 +34,7 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           # GHCR_TOKEN = classic PAT with write:packages scope (required for
           # private repos — GITHUB_TOKEN cannot create a new GHCR package).
@@ -48,10 +47,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=develop,enable=${{ github.ref_name == 'develop' }}
-            type=raw,value=main,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=edge,enable=${{ github.ref_name == 'main' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -61,7 +60,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=branch-${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=branch-${{ github.ref_name }}
           provenance: true
           sbom: true
