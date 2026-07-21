@@ -119,6 +119,42 @@ Supported auth method types with role browsing:
 If an auth method has no roles configured, the Roles tab shows an empty table — not an error.
 :::
 
+### Role Detail Tabs
+
+Each role opens a detail page with the following tabs (some are type-specific):
+
+| Tab | Visible when | Purpose |
+|-----|-------------|---------|
+| **Role Details** | Always | Displays all role configuration fields grouped into General and Token sections |
+| **Secret IDs** | AppRole only | Generate and revoke Secret IDs for the role (see below) |
+| **Developer Guide** | When a template exists or you are an admin | Integration guide with code snippets |
+| **Audits** | Always | Recent Vault audit log entries for this auth mount |
+
+## AppRole Secret ID Management
+
+When viewing a role on an **AppRole** auth method, the **Secret IDs** tab gives you full Secret ID lifecycle management:
+
+### Generating a Secret ID
+
+1. Open **Access → Auth Methods**, select your AppRole mount, then click the role.
+2. Click the **Secret IDs** tab.
+3. Click **+ Generate Secret ID**.
+4. A one-time display modal appears showing the **Secret ID** and its **Accessor**.
+   - Copy both values before closing — the Secret ID is **never shown again**.
+5. Click **I've saved the Secret ID** to dismiss.
+
+### Listing Active Secret IDs
+
+The Secret IDs tab lists all active accessor IDs. Secret ID values are never stored or retrievable; only the accessor (a reference ID) is listed. Accessors are displayed masked — only the first two and last two characters are shown (`ab••••••••••••••••12`).
+
+### Revoking a Secret ID
+
+Click **Revoke** next to any accessor to destroy that Secret ID. The action is permanent and cannot be undone.
+
+::: warning Security
+Secret IDs grant access to your Vault roles. Generate them only when needed, set short TTLs in the role configuration, and revoke any that are no longer in use.
+:::
+
 ### Configuration Tab
 
 Shows the current configuration for the auth method (e.g., Kubernetes host, CA cert, JWT validation settings). Fields are read-only in this view.

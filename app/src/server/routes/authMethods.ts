@@ -130,14 +130,18 @@ router.get(
       const role = String(req.params['role']);
       const normalizedMount = method.replace(/\/$/, '');
 
-      const response = await vaultClient.get<{ data: Record<string, unknown> }>(
-        `/auth/${normalizedMount}/role/${encodeURIComponent(role)}`,
-        req.vaultToken!
-      );
+      const [response, authType] = await Promise.all([
+        vaultClient.get<{ data: Record<string, unknown> }>(
+          `/auth/${normalizedMount}/role/${encodeURIComponent(role)}`,
+          req.vaultToken!
+        ),
+        getAuthTypeForMount(normalizedMount, req.vaultToken!),
+      ]);
 
       res.json({
         method,
         role,
+        authType,
         data: response.data,
       });
     } catch (error) {
@@ -301,6 +305,91 @@ router.delete(
       await vaultClient.delete(
         `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}`,
         req.vaultToken!
+      );
+      return res.json({ success: true });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// ── AppRole Secret ID Management ─────────────────────────────────────────────
+
+// Generate a new secret ID for an AppRole role (returned one time only)
+router.post(
+  '/:method/roles/:role/secret-id',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mount = String(req.params['method']).replace(/\/$/, '');
+      const role = String(req.params['role']);
+      if (!role || !/^[\w\-]+$/.test(role)) {
+        return res.status(400).json({ error: 'Invalid role name' });
+      }
+      const response = await vaultClient.post<{
+        data: { secret_id: string; secret_id_accessor: string; secret_id_ttl: number; secret_id_num_uses: number };
+      }>(
+        `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}/secret-id`,
+        req.vaultToken!,
+        {}
+      );
+      return res.json({
+        secretId: response.data.secret_id,
+        accessor: response.data.secret_id_accessor,
+        ttl: response.data.secret_id_ttl,
+        numUses: response.data.secret_id_num_uses,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// List secret ID accessors for an AppRole role (never exposes actual secret IDs)
+router.get(
+  '/:method/roles/:role/secret-ids',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mount = String(req.params['method']).replace(/\/$/, '');
+      const role = String(req.params['role']);
+      if (!role || !/^[\w\-]+$/.test(role)) {
+        return res.status(400).json({ error: 'Invalid role name' });
+      }
+      try {
+        const response = await vaultClient.list<{ data: { keys: string[] } }>(
+          `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}/secret-id`,
+          req.vaultToken!
+        );
+        return res.json({ accessors: response.data.keys ?? [] });
+      } catch (innerError) {
+        if (innerError instanceof VaultError && innerError.statusCode === 404) {
+          return res.json({ accessors: [] });
+        }
+        throw innerError;
+      }
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// Destroy a secret ID by accessor
+router.delete(
+  '/:method/roles/:role/secret-ids/:accessor',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mount = String(req.params['method']).replace(/\/$/, '');
+      const role = String(req.params['role']);
+      const accessor = String(req.params['accessor']);
+      if (!role || !/^[\w\-]+$/.test(role)) {
+        return res.status(400).json({ error: 'Invalid role name' });
+      }
+      if (!accessor || !/^[0-9a-fA-F\-]{5,100}$/.test(accessor)) {
+        return res.status(400).json({ error: 'Invalid accessor format' });
+      }
+      await vaultClient.post(
+        `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}/secret-id-accessor/destroy`,
+        req.vaultToken!,
+        { secret_id_accessor: accessor }
       );
       return res.json({ success: true });
     } catch (error) {

@@ -4,6 +4,47 @@ import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 
+interface AppRoleForm {
+  bindSecretId: boolean;
+  secretIdTtl: string;
+  secretIdNumUses: string;
+  localSecretIds: boolean;
+  tokenTtl: string;
+  tokenMaxTtl: string;
+  tokenPolicies: string;
+  tokenType: string;
+  tokenNumUses: string;
+}
+
+const defaultAppRoleForm: AppRoleForm = {
+  bindSecretId: true,
+  secretIdTtl: '',
+  secretIdNumUses: '0',
+  localSecretIds: false,
+  tokenTtl: '',
+  tokenMaxTtl: '',
+  tokenPolicies: '',
+  tokenType: 'default',
+  tokenNumUses: '0',
+};
+
+function appRoleFormToBody(form: AppRoleForm): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  body.bind_secret_id = form.bindSecretId;
+  if (form.localSecretIds) body.local_secret_ids = true;
+  if (form.secretIdTtl.trim()) body.secret_id_ttl = form.secretIdTtl.trim();
+  const secretUses = parseInt(form.secretIdNumUses, 10);
+  if (!isNaN(secretUses)) body.secret_id_num_uses = secretUses;
+  if (form.tokenTtl.trim()) body.token_ttl = form.tokenTtl.trim();
+  if (form.tokenMaxTtl.trim()) body.token_max_ttl = form.tokenMaxTtl.trim();
+  const policies = form.tokenPolicies.split(',').map((p) => p.trim()).filter(Boolean);
+  if (policies.length > 0) body.token_policies = policies;
+  if (form.tokenType && form.tokenType !== 'default') body.token_type = form.tokenType;
+  const tokenUses = parseInt(form.tokenNumUses, 10);
+  if (!isNaN(tokenUses) && tokenUses > 0) body.token_num_uses = tokenUses;
+  return body;
+}
+
 export default function RoleList({ embedded = false }: { embedded?: boolean }) {
   const { method = '' } = useParams();
   const [roles, setRoles] = useState<string[]>([]);
@@ -17,6 +58,8 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
   const [newRoleJson, setNewRoleJson] = useState('{}');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [appRoleForm, setAppRoleForm] = useState<AppRoleForm>(defaultAppRoleForm);
+  const [useJsonMode, setUseJsonMode] = useState(false);
 
   // Delete state
   const [deletingRole, setDeletingRole] = useState<string | null>(null);
@@ -49,11 +92,15 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
     const name = newRoleName.trim();
     if (!name) { setCreateError('Role name is required'); return; }
     let body: Record<string, unknown> = {};
-    try {
-      body = JSON.parse(newRoleJson) as Record<string, unknown>;
-    } catch {
-      setCreateError('Invalid JSON configuration');
-      return;
+    if (methodType === 'approle' && !useJsonMode) {
+      body = appRoleFormToBody(appRoleForm);
+    } else {
+      try {
+        body = JSON.parse(newRoleJson) as Record<string, unknown>;
+      } catch {
+        setCreateError('Invalid JSON configuration');
+        return;
+      }
     }
     setCreating(true);
     setCreateError(null);
@@ -62,6 +109,8 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
       setShowCreate(false);
       setNewRoleName('');
       setNewRoleJson('{}');
+      setAppRoleForm(defaultAppRoleForm);
+      setUseJsonMode(false);
       loadRoles();
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : 'Failed to create role');
@@ -116,7 +165,22 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
 
       {showCreate && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-white p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-800">New Role</h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-800">New Role</h3>
+            {methodType === 'approle' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!useJsonMode) setNewRoleJson(JSON.stringify(appRoleFormToBody(appRoleForm), null, 2));
+                  setUseJsonMode((v) => !v);
+                }}
+                className="text-xs text-[#1563ff] hover:text-[#1250d4]"
+              >
+                {useJsonMode ? '← Form mode' : 'JSON mode →'}
+              </button>
+            )}
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Role Name</label>
             <input
@@ -127,15 +191,134 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
               placeholder="my-role"
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Configuration (JSON)</label>
-            <textarea
-              value={newRoleJson}
-              onChange={(e) => setNewRoleJson(e.target.value)}
-              rows={4}
-              className="w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-            />
-          </div>
+
+          {methodType === 'approle' && !useJsonMode ? (
+            <>
+              {/* Secret ID settings */}
+              <div className="pt-2 border-t border-gray-100">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Secret ID</p>
+                <div className="space-y-2.5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={appRoleForm.bindSecretId}
+                      onChange={(e) => setAppRoleForm((f) => ({ ...f, bindSecretId: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Require Secret ID on login</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">TTL</label>
+                      <input
+                        type="text"
+                        value={appRoleForm.secretIdTtl}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, secretIdTtl: e.target.value }))}
+                        placeholder="e.g. 1h, 30m (blank = ∞)"
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max uses per Secret ID</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={appRoleForm.secretIdNumUses}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, secretIdNumUses: e.target.value }))}
+                        placeholder="0 = unlimited"
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={appRoleForm.localSecretIds}
+                      onChange={(e) => setAppRoleForm((f) => ({ ...f, localSecretIds: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm text-gray-700">Cluster-local Secret IDs</span>
+                    <span className="text-xs text-gray-400">(performance replication only)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Token settings */}
+              <div className="pt-2 border-t border-gray-100">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">Token</p>
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">TTL</label>
+                      <input
+                        type="text"
+                        value={appRoleForm.tokenTtl}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, tokenTtl: e.target.value }))}
+                        placeholder="e.g. 1h (blank = default)"
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max TTL</label>
+                      <input
+                        type="text"
+                        value={appRoleForm.tokenMaxTtl}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, tokenMaxTtl: e.target.value }))}
+                        placeholder="e.g. 24h (blank = default)"
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Policies</label>
+                    <input
+                      type="text"
+                      value={appRoleForm.tokenPolicies}
+                      onChange={(e) => setAppRoleForm((f) => ({ ...f, tokenPolicies: e.target.value }))}
+                      placeholder="default, my-policy (comma-separated)"
+                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Token Type</label>
+                      <select
+                        value={appRoleForm.tokenType}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, tokenType: e.target.value }))}
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      >
+                        <option value="default">default</option>
+                        <option value="service">service</option>
+                        <option value="batch">batch</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Max uses per token</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={appRoleForm.tokenNumUses}
+                        onChange={(e) => setAppRoleForm((f) => ({ ...f, tokenNumUses: e.target.value }))}
+                        placeholder="0 = unlimited"
+                        className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Configuration (JSON)</label>
+              <textarea
+                value={newRoleJson}
+                onChange={(e) => setNewRoleJson(e.target.value)}
+                rows={4}
+                className="w-full rounded border border-gray-300 px-2 py-1.5 font-mono text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            </div>
+          )}
+
           {createError && <p className="text-xs text-red-600">{createError}</p>}
           <div className="flex gap-2">
             <button
@@ -146,7 +329,7 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
               {creating ? 'Creating…' : 'Create'}
             </button>
             <button
-              onClick={() => { setShowCreate(false); setCreateError(null); }}
+              onClick={() => { setShowCreate(false); setCreateError(null); setAppRoleForm(defaultAppRoleForm); setUseJsonMode(false); }}
               className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
             >
               Cancel

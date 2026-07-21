@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import { useBrandingStore } from '../../stores/brandingStore';
 import { useAuthStore } from '../../stores/authStore';
 
@@ -189,7 +189,7 @@ export default function Sidebar() {
   const isPolicies = location.pathname.startsWith('/policies');
   const isTools = location.pathname.startsWith('/tools');
   const isAdmin = location.pathname.startsWith('/admin');
-  const isSettings = location.pathname.startsWith('/admin/branding') || location.pathname.startsWith('/admin/features');
+  const isSettings = location.pathname.startsWith('/admin/branding') || location.pathname.startsWith('/admin/features') || location.pathname.startsWith('/admin/changelog');
   const { branding } = useBrandingStore();
   const { tokenInfo, refreshTokenInfo } = useAuthStore();
 
@@ -260,6 +260,7 @@ export default function Sidebar() {
           <NavSection title="Settings" defaultOpen={isSettings}>
             <NavItem to="/admin/branding" icon={<IconSettings />} label="Branding" />
             <NavItem to="/admin/features" icon={<IconBolt />} label="Features" />
+            <NavItem to="/admin/changelog" icon={<IconDocument />} label="Release Notes" />
           </NavSection>
         )}
       </nav>
@@ -267,7 +268,13 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="border-t border-white/[0.07] px-4 py-3 flex items-center justify-between">
         <span className="text-[11px] text-[#3d4554]">VaultLens</span>
-        <span className="text-[11px] text-[#3d4554] font-mono">v{__APP_VERSION__}</span>
+        <Link
+          to="/admin/changelog"
+          className="text-[11px] text-[#3d4554] font-mono hover:text-[#9ca3af] transition-colors"
+          title="View release notes"
+        >
+          v{__APP_VERSION__}
+        </Link>
       </div>
     </aside>
   );

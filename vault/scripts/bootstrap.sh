@@ -69,6 +69,19 @@ vault kv put kv/shared/team-credentials \
   deploy_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample"
 echo "  ✓ kv/shared/team-credentials"
 
+# Seed a multi-version secret for testing the Version History UI (10 writes = 10 versions)
+vault kv put kv/shared/versioned-example app_version="1.0.0" db_host="db-v1.internal" api_endpoint="https://api-v1.example.com"
+vault kv put kv/shared/versioned-example app_version="1.1.0" db_host="db-v1.internal" api_endpoint="https://api-v1.example.com"
+vault kv put kv/shared/versioned-example app_version="1.2.0" db_host="db-v2.internal" api_endpoint="https://api-v1.example.com" feature_flag="false"
+vault kv put kv/shared/versioned-example app_version="1.3.0" db_host="db-v2.internal" api_endpoint="https://api-v2.example.com" feature_flag="false"
+vault kv put kv/shared/versioned-example app_version="2.0.0" db_host="db-v2.internal" api_endpoint="https://api-v2.example.com" feature_flag="true" cache_ttl="300"
+vault kv put kv/shared/versioned-example app_version="2.1.0" db_host="db-v3.internal" api_endpoint="https://api-v2.example.com" feature_flag="true" cache_ttl="300"
+vault kv put kv/shared/versioned-example app_version="2.1.1" db_host="db-v3.internal" api_endpoint="https://api-v2.example.com" feature_flag="true" cache_ttl="600"
+vault kv put kv/shared/versioned-example app_version="2.2.0" db_host="db-v3.internal" api_endpoint="https://api-v3.example.com" feature_flag="true" cache_ttl="600" log_level="info"
+vault kv put kv/shared/versioned-example app_version="2.3.0" db_host="db-v4.internal" api_endpoint="https://api-v3.example.com" feature_flag="true" cache_ttl="600" log_level="debug"
+vault kv put kv/shared/versioned-example app_version="3.0.0" db_host="db-v4.internal" api_endpoint="https://api-v4.example.com" feature_flag="true" cache_ttl="3600" log_level="info" max_retries="3"
+echo "  ✓ kv/shared/versioned-example (10 versions — for version history UI testing)"
+
 # Set rotation metadata on a secret for auto-rotation demo
 vault kv metadata put -custom-metadata=rotate-interval=24h -custom-metadata=rotate-format="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" kv/product/service/nprd/secret 2>/dev/null || true
 echo "  ✓ Rotation metadata set on kv/product/service/nprd/secret (24h interval)"

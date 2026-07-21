@@ -27,6 +27,7 @@ import HooksPage from './pages/HooksPage';
 import SystemTokenSetupPage from './pages/SystemTokenSetupPage';
 import VaultLensAuditPage from './pages/VaultLensAuditPage';
 import FeaturesSettingsPage from './pages/FeaturesSettingsPage';
+import ChangelogPage from './pages/ChangelogPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
 const queryClient = new QueryClient({
@@ -224,6 +225,7 @@ function AppRoutes() {
         <Route path="/admin/policies-settings" element={<Navigate to="/admin/features" replace />} />
         <Route path="/admin/auth-methods-settings" element={<Navigate to="/admin/features" replace />} />
         <Route path="/admin/features" element={<FeaturesSettingsPage />} />
+        <Route path="/admin/changelog" element={<ChangelogPage />} />
         <Route path="/admin/sharing-audit" element={<VaultLensAuditPage />} />
         <Route path="/tools/share" element={<ShareSecretPage />} />
       </Route>

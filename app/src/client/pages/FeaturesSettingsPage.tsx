@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as api from '../lib/api';
-import type { SharingConfig, PoliciesConfig, AuthMethodsConfig } from '../lib/api';
+import type { SharingConfig, PoliciesConfig, AuthMethodsConfig, SecretsAuditConfig } from '../lib/api';
 
 // ── Toggle row ────────────────────────────────────────────────────────────────
 
@@ -125,6 +125,13 @@ export default function FeaturesSettingsPage() {
   const [authMethodsError, setAuthMethodsError] = useState<string | null>(null);
   const [authMethodsSaved, setAuthMethodsSaved] = useState(false);
 
+  // Secrets
+  const [secrets, setSecrets] = useState<SecretsAuditConfig>({ auditMetadataOnWrite: false });
+  const [secretsOrig, setSecretsOrig] = useState<SecretsAuditConfig | null>(null);
+  const [secretsSaving, setSecretsSaving] = useState(false);
+  const [secretsError, setSecretsError] = useState<string | null>(null);
+  const [secretsSaved, setSecretsSaved] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -132,10 +139,12 @@ export default function FeaturesSettingsPage() {
       api.getSharingConfig(),
       api.getPoliciesConfig(),
       api.getAuthMethodsConfig(),
-    ]).then(([s, p, a]) => {
+      api.getSecretsAuditConfig(),
+    ]).then(([s, p, a, sc]) => {
       setSharing(s); setSharingOrig(s);
       setPolicies(p); setPoliciesOrig(p);
       setAuthMethods(a); setAuthMethodsOrig(a);
+      setSecrets(sc); setSecretsOrig(sc);
     }).catch(() => {
       setSharingError('Failed to load feature settings');
     }).finally(() => setLoading(false));
@@ -144,6 +153,7 @@ export default function FeaturesSettingsPage() {
   const isSharingDirty = sharingOrig !== null && JSON.stringify(sharing) !== JSON.stringify(sharingOrig);
   const isPoliciesDirty = policiesOrig !== null && JSON.stringify(policies) !== JSON.stringify(policiesOrig);
   const isAuthMethodsDirty = authMethodsOrig !== null && JSON.stringify(authMethods) !== JSON.stringify(authMethodsOrig);
+  const isSecretsDirty = secretsOrig !== null && JSON.stringify(secrets) !== JSON.stringify(secretsOrig);
 
   async function saveSharing() {
     setSharingSaving(true); setSharingError(null); setSharingSaved(false);
@@ -176,6 +186,17 @@ export default function FeaturesSettingsPage() {
       setTimeout(() => setAuthMethodsSaved(false), 3000);
     } catch { setAuthMethodsError('Failed to save auth methods settings'); }
     finally { setAuthMethodsSaving(false); }
+  }
+
+  async function saveSecrets() {
+    setSecretsSaving(true); setSecretsError(null); setSecretsSaved(false);
+    try {
+      await api.updateSecretsAuditConfig(secrets);
+      setSecretsOrig({ ...secrets });
+      setSecretsSaved(true);
+      setTimeout(() => setSecretsSaved(false), 3000);
+    } catch { setSecretsError('Failed to save secrets settings'); }
+    finally { setSecretsSaving(false); }
   }
 
   if (loading) {
@@ -284,6 +305,29 @@ export default function FeaturesSettingsPage() {
           description="Show a 'Developer Guide' tab on role detail pages with rendered markdown guides to help developers integrate. Admins can customise guides per auth type. Disabling hides the tab for all users."
           checked={authMethods.enableDevIntegrationGuides}
           onChange={(v) => setAuthMethods(prev => ({ ...prev, enableDevIntegrationGuides: v }))}
+        />
+      </Section>
+
+      {/* ── Secrets ──────────────────────────────────────────────────────── */}
+      <Section
+        icon={
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" />
+          </svg>
+        }
+        title="Secrets"
+        description="Controls behaviour when secrets are created or updated via VaultLens."
+        saving={secretsSaving}
+        dirty={isSecretsDirty}
+        error={secretsError}
+        saved={secretsSaved}
+        onSave={() => { void saveSecrets(); }}
+      >
+        <ToggleRow
+          label="Track creator and modifier in custom metadata"
+          description="When enabled, VaultLens automatically stamps KV v2 custom metadata with _created_by, _created_at, _updated_by, and _updated_at on every create or update. Uses the logged-in user's display name. Disabled by default. Only applies to KV v2 engines."
+          checked={secrets.auditMetadataOnWrite}
+          onChange={(v) => setSecrets(prev => ({ ...prev, auditMetadataOnWrite: v }))}
         />
       </Section>
     </div>

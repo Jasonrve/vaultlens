@@ -243,4 +243,58 @@ router.get(
   }
 );
 
+// ── Secrets Audit Config ──────────────────────────────────
+
+const SECRETS_AUDIT_CONFIG_SECTION = 'secrets-audit';
+
+export interface SecretsAuditConfig {
+  auditMetadataOnWrite: boolean;
+}
+
+const DEFAULT_SECRETS_AUDIT_CONFIG: SecretsAuditConfig = {
+  auditMetadataOnWrite: false,
+};
+
+export async function readSecretsAuditConfig(): Promise<SecretsAuditConfig> {
+  try {
+    const storage = getConfigStorage();
+    const data = await storage.get(SECRETS_AUDIT_CONFIG_SECTION);
+    if (data) {
+      return { auditMetadataOnWrite: data['auditMetadataOnWrite'] === 'true' };
+    }
+  } catch { /* fall back to defaults */ }
+  return { ...DEFAULT_SECRETS_AUDIT_CONFIG };
+}
+
+// GET /api/vaultlens-audit/secrets-audit-config
+router.get(
+  '/secrets-audit-config',
+  authMiddleware,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      res.json(await readSecretsAuditConfig());
+    } catch (error) { next(error); }
+  }
+);
+
+// PUT /api/vaultlens-audit/secrets-audit-config (admin only)
+router.put(
+  '/secrets-audit-config',
+  authMiddleware,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { auditMetadataOnWrite } = req.body as Partial<SecretsAuditConfig>;
+      if (typeof auditMetadataOnWrite !== 'boolean') {
+        res.status(400).json({ error: 'auditMetadataOnWrite must be a boolean' });
+        return;
+      }
+      await getConfigStorage().set(SECRETS_AUDIT_CONFIG_SECTION, {
+        auditMetadataOnWrite: String(auditMetadataOnWrite),
+      });
+      res.json({ auditMetadataOnWrite });
+    } catch (error) { next(error); }
+  }
+);
+
 export default router;

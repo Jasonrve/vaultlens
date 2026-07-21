@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
@@ -55,6 +55,38 @@ function getLinkBrand(value: string): (typeof KNOWN_LINK_BRANDS)[number] | null 
   return null;
 }
 
+// ── Version diff utilities ────────────────────────────────
+type DiffLine = { t: 'same' | 'add' | 'del'; v: string };
+
+function diffLines(a: string[], b: string[]): DiffLine[] {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = 1; i <= n; i++)
+    for (let j = 1; j <= m; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+  const result: DiffLine[] = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) { result.unshift({ t: 'same', v: a[i - 1] }); i--; j--; }
+    else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) { result.unshift({ t: 'add', v: b[j - 1] }); j--; }
+    else { result.unshift({ t: 'del', v: a[i - 1] }); i--; }
+  }
+  return result;
+}
+
+function secretToLines(data: Record<string, string>, masked = false): string[] {
+  const entries = Object.entries(data).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return ['{}'];
+  return [
+    '{',
+    ...entries.map(([k, v], i) => {
+      const val = masked ? '••••••••' : v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      return `  "${k}": "${val}"${i < entries.length - 1 ? ',' : ''}`;
+    }),
+    '}',
+  ];
+}
+
 export default function SecretView() {
   const { '*': splat = '' } = useParams();
   const navigate = useNavigate();
@@ -67,6 +99,7 @@ export default function SecretView() {
   const [metadata, setMetadata] = useState<SecretMetadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(true);
   const [editingMetadata, setEditingMetadata] = useState(false);
   const [metadataRows, setMetadataRows] = useState<{ key: string; value: string }[]>([]);
   const [savingMetadata, setSavingMetadata] = useState(false);
@@ -77,11 +110,42 @@ export default function SecretView() {
   const [jsonRevealed, setJsonRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Version viewing
+  const [viewingSecretVersion, setViewingSecretVersion] = useState<number | null>(null);
+  const [metadataRefreshKey, setMetadataRefreshKey] = useState(0);
+
+  // Version diff
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffVersionA, setDiffVersionA] = useState<number | null>(null);
+  const [diffVersionB, setDiffVersionB] = useState<number | null>(null);
+  const [diffValuesA, setDiffValuesA] = useState<Record<string, string> | null>(null);
+  const [diffValuesB, setDiffValuesB] = useState<Record<string, string> | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
+
+  // Version restore
+  const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // Tracks whether user has "show all" active — persisted across version switches
+  const showAllRef = useRef(false);
+
+  // Reset to latest version when navigating to a different secret
   useEffect(() => {
+    setViewingSecretVersion(null);
+    setRevealedKeys(new Set());
+    showAllRef.current = false;
+  }, [splat]);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    setSecretValues(null);
     async function loadSecret() {
       try {
-        const result = await api.readSecret(splat);
-        setFieldKeys(result.keys ?? []);
+        const result = await api.readSecret(splat, viewingSecretVersion ?? undefined);
+        const newKeys = result.keys ?? [];
+        setFieldKeys(newKeys);
         setVersion(result.version);
         const isRestricted = result.restricted === true;
         setRestricted(isRestricted);
@@ -95,12 +159,16 @@ export default function SecretView() {
         // Eagerly load values when user has read permission
         if (!isRestricted) {
           try {
-            const valResult = await api.readSecretValues(splat);
+            const valResult = await api.readSecretValues(splat, viewingSecretVersion ?? undefined);
             const vals: Record<string, string> = {};
             for (const [k, v] of Object.entries(valResult.data)) {
               vals[k] = typeof v === 'string' ? v : JSON.stringify(v);
             }
             setSecretValues(vals);
+            // Re-apply "show all" if it was active before the version switch
+            if (showAllRef.current) {
+              setRevealedKeys(new Set(newKeys));
+            }
           } catch {
             // Values couldn't be loaded — degrade to keys-only view
           }
@@ -112,7 +180,7 @@ export default function SecretView() {
       }
     }
     void loadSecret();
-  }, [splat]);
+  }, [splat, viewingSecretVersion]);
 
   useEffect(() => {
     if (version === 2 || version === null) {
@@ -128,7 +196,67 @@ export default function SecretView() {
         })
         .finally(() => setMetadataLoading(false));
     }
-  }, [splat, version]);
+  }, [splat, version, metadataRefreshKey]);
+
+  async function handleRestoreVersion(versionNum: number) {
+    if (!confirm(`This will create a new version with the data from v${versionNum}. Continue?`)) return;
+    setRestoringVersion(versionNum);
+    setRestoreError(null);
+    try {
+      await api.restoreSecretVersion(splat, versionNum);
+      setViewingSecretVersion(null);
+      setMetadataRefreshKey((k) => k + 1);
+    } catch (e) {
+      setRestoreError(e instanceof Error ? e.message : 'Failed to restore version');
+    } finally {
+      setRestoringVersion(null);
+    }
+  }
+
+  function openDiff(vA: number, vB: number) {
+    setDiffVersionA(vA);
+    setDiffVersionB(vB);
+    setDiffValuesA(null);
+    setDiffValuesB(null);
+    setDiffError(null);
+    setShowDiff(true);
+    void doLoadDiff(vA, vB);
+  }
+
+  async function handleLoadDiff() {
+    if (diffVersionA === null || diffVersionB === null) return;
+    await doLoadDiff(diffVersionA, diffVersionB);
+  }
+
+  async function doLoadDiff(vA: number, vB: number) {
+    setDiffLoading(true);
+    setDiffError(null);
+    setDiffValuesA(null);
+    setDiffValuesB(null);
+    try {
+      if (restricted) {
+        const [keysA, keysB] = await Promise.all([
+          api.readSecret(splat, vA),
+          api.readSecret(splat, vB),
+        ]);
+        setDiffValuesA(Object.fromEntries((keysA.keys ?? []).map((k) => [k, '••••••••'])));
+        setDiffValuesB(Object.fromEntries((keysB.keys ?? []).map((k) => [k, '••••••••'])));
+      } else {
+        const [valsA, valsB] = await Promise.all([
+          api.readSecretValues(splat, vA),
+          api.readSecretValues(splat, vB),
+        ]);
+        const toStrMap = (d: Record<string, unknown>) =>
+          Object.fromEntries(Object.entries(d).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)]));
+        setDiffValuesA(toStrMap(valsA.data));
+        setDiffValuesB(toStrMap(valsB.data));
+      }
+    } catch (e) {
+      setDiffError(e instanceof Error ? e.message : 'Failed to load versions for comparison');
+    } finally {
+      setDiffLoading(false);
+    }
+  }
 
   async function handleDelete() {
     if (!confirm('Delete this secret?')) return;
@@ -152,10 +280,12 @@ export default function SecretView() {
 
   function revealAll() {
     setRevealedKeys(new Set(fieldKeys));
+    showAllRef.current = true;
   }
 
   function hideAll() {
     setRevealedKeys(new Set());
+    showAllRef.current = false;
   }
 
   async function handleCopyJson() {
@@ -240,12 +370,40 @@ export default function SecretView() {
         <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
 
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-gray-800">{segments[segments.length - 1]}</h1>
-          {version != null && <Badge text={`v${version}`} variant="kv" />}
-        </div>
-        <div className="flex gap-2">
+      <div className="mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-bold text-gray-800">{segments[segments.length - 1]}</h1>
+            {version != null && <Badge text={`v${version}`} variant="kv" />}
+          </div>
+        <div className="flex items-center gap-2">
+          {/* Version selector for KV v2 with any version history */}
+          {version === 2 && metadata?.versions && Object.keys(metadata.versions).length >= 1 && (
+            <div className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1">
+              <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <label className="text-xs text-gray-500">Version</label>
+              <select
+                value={viewingSecretVersion ?? (metadata.current_version ?? '')}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  setViewingSecretVersion(v === metadata?.current_version ? null : v);
+                }}
+                className="border-0 bg-transparent text-sm text-gray-700 focus:outline-none cursor-pointer"
+              >
+                {Object.keys(metadata.versions)
+                  .map(Number)
+                  .sort((a, b) => b - a)
+                  .map((vNum) => {
+                    const vInfo = metadata.versions![String(vNum)];
+                    const isCurrent = vNum === metadata.current_version;
+                    const label = `v${vNum}${isCurrent ? ' (current)' : vInfo?.destroyed ? ' (destroyed)' : vInfo?.deletion_time && vInfo.deletion_time !== '' ? ' (deleted)' : ''}`;
+                    return <option key={vNum} value={vNum}>{label}</option>;
+                  })}
+              </select>
+            </div>
+          )}
           {restricted ? (
             canWrite && (
               <button
@@ -272,7 +430,46 @@ export default function SecretView() {
             </>
           )}
         </div>
+        </div>
+        {/* Version info subtitle — KV v2 only */}
+        {version === 2 && metadata && (
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-500">
+            {metadata.current_version != null && (
+              <span>Version <span className="font-medium text-gray-700">{metadata.current_version}</span></span>
+            )}
+            {metadata.created_time && (
+              <><span className="text-gray-300">·</span><span>Created <span className="font-medium text-gray-700">{new Date(metadata.created_time).toLocaleString()}</span></span></>
+            )}
+            {metadata.updated_time && (
+              <><span className="text-gray-300">·</span><span>Updated <span className="font-medium text-gray-700">{new Date(metadata.updated_time).toLocaleString()}</span></span></>
+            )}
+            {metadata.max_versions != null && metadata.max_versions > 0 && (
+              <><span className="text-gray-300">·</span><span>Max versions <span className="font-medium text-gray-700">{metadata.max_versions}</span></span></>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Viewing historical version banner */}
+      {viewingSecretVersion !== null && metadata?.current_version != null && viewingSecretVersion !== metadata.current_version && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <svg className="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Viewing <strong>v{viewingSecretVersion}</strong> — current version is <strong>v{metadata.current_version}</strong></span>
+          </div>
+          {!restricted && (
+            <button
+              onClick={() => { void handleRestoreVersion(viewingSecretVersion); }}
+              disabled={restoringVersion === viewingSecretVersion}
+              className="ml-4 rounded border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+            >
+              {restoringVersion === viewingSecretVersion ? 'Restoring…' : 'Restore as new version'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Restricted access banner */}
       {restricted && (
@@ -496,45 +693,11 @@ export default function SecretView() {
 
           {showMetadata && (
             <div className="rounded-md border border-gray-200 bg-white">
-              {/* System Metadata */}
+              {/* Custom Metadata */}
               {metadataLoading ? (
-                <div className="px-4 py-6 text-center text-sm text-gray-400">Loading metadata…</div>
+                <div className="px-4 py-6 text-center text-sm text-gray-400">Loading…</div>
               ) : metadata ? (
                 <>
-                  <div className="border-b border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600">
-                    Version Info
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 px-4 py-3 text-sm">
-                    {metadata.current_version != null && (
-                      <div>
-                        <span className="text-gray-500">Current Version:</span>{' '}
-                        <span className="font-medium text-gray-700">{metadata.current_version}</span>
-                      </div>
-                    )}
-                    {metadata.created_time && (
-                      <div>
-                        <span className="text-gray-500">Created:</span>{' '}
-                        <span className="font-medium text-gray-700">
-                          {new Date(metadata.created_time).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    {metadata.updated_time && (
-                      <div>
-                        <span className="text-gray-500">Updated:</span>{' '}
-                        <span className="font-medium text-gray-700">
-                          {new Date(metadata.updated_time).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    {metadata.max_versions != null && (
-                      <div>
-                        <span className="text-gray-500">Max Versions:</span>{' '}
-                        <span className="font-medium text-gray-700">{metadata.max_versions}</span>
-                      </div>
-                    )}
-                  </div>
-
                   {/* Custom Metadata */}
                   <div className="border-t border-gray-200">
                     <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
@@ -658,6 +821,224 @@ export default function SecretView() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Version History Section (KV v2 only) */}
+      {version === 2 && (
+        <div className="mt-6">
+          <button
+            onClick={() => setShowVersionHistory(!showVersionHistory)}
+            className="mb-3 flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-800"
+          >
+            <svg
+              className={`h-4 w-4 transform transition-transform ${showVersionHistory ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth={2}
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+            Version History
+            {metadata?.versions && (
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+                {Object.keys(metadata.versions).length}{' '}
+                {Object.keys(metadata.versions).length === 1 ? 'version' : 'versions'}
+              </span>
+            )}
+          </button>
+
+          {showVersionHistory && (
+            <div className="rounded-md border border-gray-200 bg-white">
+              {metadataLoading ? (
+                <div className="px-4 py-6 text-center text-sm text-gray-400">Loading…</div>
+              ) : metadata?.versions && Object.keys(metadata.versions).length > 0 ? (
+                <>
+                  {restoreError && (
+                    <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">{restoreError}</div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200 text-left text-xs font-medium text-gray-500">
+                          <th className="px-4 py-2">Version</th>
+                          <th className="px-4 py-2">Created</th>
+                          <th className="px-4 py-2">Status</th>
+                          <th className="px-4 py-2">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(metadata.versions)
+                          .map(Number)
+                          .sort((a, b) => b - a)
+                          .map((vNum) => {
+                            const vInfo = metadata.versions![String(vNum)];
+                            const isCurrent = vNum === metadata.current_version;
+                            const isDestroyed = vInfo?.destroyed;
+                            const isDeleted = !isDestroyed && vInfo?.deletion_time && vInfo.deletion_time !== '';
+                            const isActive = !isDestroyed && !isDeleted;
+                            return (
+                              <tr key={vNum} className="border-b border-gray-100 hover:bg-gray-50">
+                                <td className="px-4 py-2.5 font-mono font-medium text-gray-700">v{vNum}</td>
+                                <td className="px-4 py-2.5 text-xs text-gray-500">
+                                  {vInfo?.created_time ? new Date(vInfo.created_time).toLocaleString() : '—'}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  {isCurrent ? (
+                                    <span className="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-200">Current</span>
+                                  ) : isDestroyed ? (
+                                    <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-600 ring-1 ring-red-200">Destroyed</span>
+                                  ) : isDeleted ? (
+                                    <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-amber-200">Deleted</span>
+                                  ) : (
+                                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 ring-1 ring-gray-200">Active</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-2">
+                                    {!isCurrent && isActive && !restricted && (
+                                      <button
+                                        onClick={() => { void handleRestoreVersion(vNum); }}
+                                        disabled={restoringVersion === vNum}
+                                        className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                                      >
+                                        {restoringVersion === vNum ? 'Restoring…' : 'Restore as new'}
+                                      </button>
+                                    )}
+                                    {!isDestroyed && (
+                                      <button
+                                        onClick={() => openDiff(vNum, metadata.current_version ?? vNum)}
+                                        className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs text-blue-600 hover:bg-blue-100"
+                                      >
+                                        Compare
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                <div className="px-4 py-4 text-center text-sm text-gray-400">No version history available</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Version diff modal */}
+      {showDiff && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowDiff(false)} />
+          <div className="relative z-10 flex w-full max-w-3xl flex-col rounded-lg bg-white shadow-xl" style={{maxHeight: '85vh'}}>
+          <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-gray-50 px-6 py-3 rounded-t-lg">
+            <h2 className="text-base font-semibold text-gray-800">Version Comparison</h2>
+            <div className="flex items-center gap-3">
+              {metadata?.versions && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-500">From</span>
+                  <select
+                    value={diffVersionA ?? ''}
+                    onChange={(e) => setDiffVersionA(Number(e.target.value) || null)}
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">Select…</option>
+                    {Object.keys(metadata.versions).map(Number).sort((a, b) => b - a).map((v) => (
+                      <option key={v} value={v}>v{v}{v === metadata.current_version ? ' (current)' : ''}</option>
+                    ))}
+                  </select>
+                  <span className="text-gray-400">→</span>
+                  <span className="text-gray-500">To</span>
+                  <select
+                    value={diffVersionB ?? ''}
+                    onChange={(e) => setDiffVersionB(Number(e.target.value) || null)}
+                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                  >
+                    <option value="">Select…</option>
+                    {Object.keys(metadata.versions).map(Number).sort((a, b) => b - a).map((v) => (
+                      <option key={v} value={v}>v{v}{v === metadata.current_version ? ' (current)' : ''}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => { void handleLoadDiff(); }}
+                    disabled={!diffVersionA || !diffVersionB || diffLoading}
+                    className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    Compare
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={() => setShowDiff(false)}
+                className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                title="Close"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto p-6 rounded-b-lg">
+            {diffLoading ? (
+              <LoadingSpinner className="mt-12" />
+            ) : diffError ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{diffError}</div>
+            ) : diffValuesA && diffValuesB ? (
+              <div>
+                <div className="mb-3 flex items-center gap-6 text-xs text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-8 rounded border border-red-200 bg-red-100" />
+                    <span>Removed (v{diffVersionA})</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-8 rounded border border-green-200 bg-green-100" />
+                    <span>Added (v{diffVersionB})</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-md border border-gray-200 font-mono text-sm">
+                  {diffLines(
+                    secretToLines(diffValuesA, restricted),
+                    secretToLines(diffValuesB, restricted),
+                  ).map((line, idx) => (
+                    <div
+                      key={idx}
+                      className={
+                        line.t === 'add'
+                          ? 'flex bg-green-50 text-green-900'
+                          : line.t === 'del'
+                            ? 'flex bg-red-50 text-red-900'
+                            : 'flex bg-white text-gray-700'
+                      }
+                    >
+                      <span
+                        className={`w-8 shrink-0 select-none border-r py-1 text-center text-xs ${
+                          line.t === 'add'
+                            ? 'border-green-200 bg-green-100 text-green-600'
+                            : line.t === 'del'
+                              ? 'border-red-200 bg-red-100 text-red-600'
+                              : 'border-gray-100 bg-gray-50 text-gray-400'
+                        }`}
+                      >
+                        {line.t === 'add' ? '+' : line.t === 'del' ? '−' : ' '}
+                      </span>
+                      <span className="whitespace-pre px-4 py-1">{line.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-12 text-center text-sm text-gray-400">
+                Select two versions and click Compare to see the differences
+              </p>
+            )}
+          </div>
+          </div>
         </div>
       )}
     </div>
