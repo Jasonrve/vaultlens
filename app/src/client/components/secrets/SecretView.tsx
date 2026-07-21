@@ -349,7 +349,27 @@ export default function SecretView() {
 
   if (loading) return <LoadingSpinner className="mt-12" />;
   if (error) return <ErrorMessage message={error} />;
-  if (!fieldKeys.length && !loading) return <ErrorMessage message="No data found" />;
+
+  // Secret exists but has no fields (e.g. written with empty data {})
+  if (!fieldKeys.length && !loading) {
+    return (
+      <div>
+        <div className="mb-4">
+          <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-white px-6 py-12 text-center">
+          <p className="text-sm font-medium text-gray-600">This secret exists but has no key–value pairs.</p>
+          <p className="mt-1 text-xs text-gray-400">It may have been saved with an empty body.</p>
+          <a
+            href={`/secrets/edit/${splat}`}
+            className="mt-4 inline-block rounded bg-[#1563ff] px-4 py-2 text-sm font-medium text-white hover:bg-[#1250d4]"
+          >
+            Edit Secret
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   const customMetadata = metadata?.custom_metadata;
   const hasCustomMetadata = customMetadata && Object.keys(customMetadata).length > 0;

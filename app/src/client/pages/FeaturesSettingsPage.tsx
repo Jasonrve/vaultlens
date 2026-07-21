@@ -52,14 +52,12 @@ interface SectionProps {
   title: string;
   description: string;
   saving: boolean;
-  dirty: boolean;
   error: string | null;
   saved: boolean;
-  onSave: () => void;
   children: React.ReactNode;
 }
 
-function Section({ icon, title, description, saving, dirty, error, saved, onSave, children }: SectionProps) {
+function Section({ icon, title, description, saving, error, saved, children }: SectionProps) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
       {/* Section header */}
@@ -73,14 +71,10 @@ function Section({ icon, title, description, saving, dirty, error, saved, onSave
             <div className="mt-0.5 text-xs text-gray-500">{description}</div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving || !dirty}
-          className="shrink-0 rounded-md bg-[#1563ff] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1250d4] disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-        >
-          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
-        </button>
+        <div className="shrink-0 min-w-[56px] text-right">
+          {saving && <span className="text-xs text-gray-400">Saving…</span>}
+          {!saving && saved && <span className="text-xs font-medium text-green-600">✓ Saved</span>}
+        </div>
       </div>
 
       {/* Error banner */}
@@ -106,28 +100,24 @@ export default function FeaturesSettingsPage() {
     enableAuthLogin: true,
     allowCustomViewCount: false,
   });
-  const [sharingOrig, setSharingOrig] = useState<SharingConfig | null>(null);
   const [sharingSaving, setSharingSaving] = useState(false);
   const [sharingError, setSharingError] = useState<string | null>(null);
   const [sharingSaved, setSharingSaved] = useState(false);
 
   // Policies
   const [policies, setPolicies] = useState<PoliciesConfig>({ allowIdentityPolicyFallback: false });
-  const [policiesOrig, setPoliciesOrig] = useState<PoliciesConfig | null>(null);
   const [policiesSaving, setPoliciesSaving] = useState(false);
   const [policiesError, setPoliciesError] = useState<string | null>(null);
   const [policiesSaved, setPoliciesSaved] = useState(false);
 
   // Auth Methods
   const [authMethods, setAuthMethods] = useState<AuthMethodsConfig>({ enableDevIntegrationGuides: true });
-  const [authMethodsOrig, setAuthMethodsOrig] = useState<AuthMethodsConfig | null>(null);
   const [authMethodsSaving, setAuthMethodsSaving] = useState(false);
   const [authMethodsError, setAuthMethodsError] = useState<string | null>(null);
   const [authMethodsSaved, setAuthMethodsSaved] = useState(false);
 
   // Secrets
   const [secrets, setSecrets] = useState<SecretsAuditConfig>({ auditMetadataOnWrite: false });
-  const [secretsOrig, setSecretsOrig] = useState<SecretsAuditConfig | null>(null);
   const [secretsSaving, setSecretsSaving] = useState(false);
   const [secretsError, setSecretsError] = useState<string | null>(null);
   const [secretsSaved, setSecretsSaved] = useState(false);
@@ -141,61 +131,53 @@ export default function FeaturesSettingsPage() {
       api.getAuthMethodsConfig(),
       api.getSecretsAuditConfig(),
     ]).then(([s, p, a, sc]) => {
-      setSharing(s); setSharingOrig(s);
-      setPolicies(p); setPoliciesOrig(p);
-      setAuthMethods(a); setAuthMethodsOrig(a);
-      setSecrets(sc); setSecretsOrig(sc);
+      setSharing(s);
+      setPolicies(p);
+      setAuthMethods(a);
+      setSecrets(sc);
     }).catch(() => {
       setSharingError('Failed to load feature settings');
     }).finally(() => setLoading(false));
   }, []);
 
-  const isSharingDirty = sharingOrig !== null && JSON.stringify(sharing) !== JSON.stringify(sharingOrig);
-  const isPoliciesDirty = policiesOrig !== null && JSON.stringify(policies) !== JSON.stringify(policiesOrig);
-  const isAuthMethodsDirty = authMethodsOrig !== null && JSON.stringify(authMethods) !== JSON.stringify(authMethodsOrig);
-  const isSecretsDirty = secretsOrig !== null && JSON.stringify(secrets) !== JSON.stringify(secretsOrig);
-
-  async function saveSharing() {
+  // Save functions take the new value directly (state updates are async)
+  async function saveSharing(val: SharingConfig) {
     setSharingSaving(true); setSharingError(null); setSharingSaved(false);
     try {
-      await api.updateSharingConfig(sharing);
-      setSharingOrig({ ...sharing });
+      await api.updateSharingConfig(val);
       setSharingSaved(true);
-      setTimeout(() => setSharingSaved(false), 3000);
-    } catch { setSharingError('Failed to save sharing settings'); }
+      setTimeout(() => setSharingSaved(false), 2000);
+    } catch { setSharingError('Failed to save'); }
     finally { setSharingSaving(false); }
   }
 
-  async function savePolicies() {
+  async function savePolicies(val: PoliciesConfig) {
     setPoliciesSaving(true); setPoliciesError(null); setPoliciesSaved(false);
     try {
-      await api.updatePoliciesConfig(policies);
-      setPoliciesOrig({ ...policies });
+      await api.updatePoliciesConfig(val);
       setPoliciesSaved(true);
-      setTimeout(() => setPoliciesSaved(false), 3000);
-    } catch { setPoliciesError('Failed to save policies settings'); }
+      setTimeout(() => setPoliciesSaved(false), 2000);
+    } catch { setPoliciesError('Failed to save'); }
     finally { setPoliciesSaving(false); }
   }
 
-  async function saveAuthMethods() {
+  async function saveAuthMethods(val: AuthMethodsConfig) {
     setAuthMethodsSaving(true); setAuthMethodsError(null); setAuthMethodsSaved(false);
     try {
-      await api.updateAuthMethodsConfig(authMethods);
-      setAuthMethodsOrig({ ...authMethods });
+      await api.updateAuthMethodsConfig(val);
       setAuthMethodsSaved(true);
-      setTimeout(() => setAuthMethodsSaved(false), 3000);
-    } catch { setAuthMethodsError('Failed to save auth methods settings'); }
+      setTimeout(() => setAuthMethodsSaved(false), 2000);
+    } catch { setAuthMethodsError('Failed to save'); }
     finally { setAuthMethodsSaving(false); }
   }
 
-  async function saveSecrets() {
+  async function saveSecrets(val: SecretsAuditConfig) {
     setSecretsSaving(true); setSecretsError(null); setSecretsSaved(false);
     try {
-      await api.updateSecretsAuditConfig(secrets);
-      setSecretsOrig({ ...secrets });
+      await api.updateSecretsAuditConfig(val);
       setSecretsSaved(true);
-      setTimeout(() => setSecretsSaved(false), 3000);
-    } catch { setSecretsError('Failed to save secrets settings'); }
+      setTimeout(() => setSecretsSaved(false), 2000);
+    } catch { setSecretsError('Failed to save'); }
     finally { setSecretsSaving(false); }
   }
 
@@ -226,34 +208,32 @@ export default function FeaturesSettingsPage() {
         title="Secret Sharing"
         description="Controls which sharing modes users can use when creating shared secret links."
         saving={sharingSaving}
-        dirty={isSharingDirty}
         error={sharingError}
         saved={sharingSaved}
-        onSave={() => { void saveSharing(); }}
       >
         <ToggleRow
           label="One-time View"
           description="Allow users to share secrets via one-time view URLs. The secret is automatically deleted after the first view."
           checked={sharing.enableOneTime}
-          onChange={(v) => setSharing(prev => ({ ...prev, enableOneTime: v }))}
+          onChange={(v) => { const val = { ...sharing, enableOneTime: v }; setSharing(val); void saveSharing(val); }}
         />
         <ToggleRow
           label="OTP Protected"
           description="Allow users to share secrets protected with a one-time passcode. The recipient needs both the URL and the OTP code."
           checked={sharing.enableOtp}
-          onChange={(v) => setSharing(prev => ({ ...prev, enableOtp: v }))}
+          onChange={(v) => { const val = { ...sharing, enableOtp: v }; setSharing(val); void saveSharing(val); }}
         />
         <ToggleRow
           label="Login Required"
           description="Allow users to share secrets that require VaultLens authentication to view. The recipient must be logged in."
           checked={sharing.enableAuthLogin}
-          onChange={(v) => setSharing(prev => ({ ...prev, enableAuthLogin: v }))}
+          onChange={(v) => { const val = { ...sharing, enableAuthLogin: v }; setSharing(val); void saveSharing(val); }}
         />
         <ToggleRow
           label="Custom View Count"
           description="Allow users to set a custom maximum view count on shared secrets (e.g. view up to 5 times). When disabled, one-time is the only view-limit option."
           checked={sharing.allowCustomViewCount}
-          onChange={(v) => setSharing(prev => ({ ...prev, allowCustomViewCount: v }))}
+          onChange={(v) => { const val = { ...sharing, allowCustomViewCount: v }; setSharing(val); void saveSharing(val); }}
         />
         {!sharing.enableOneTime && !sharing.enableOtp && !sharing.enableAuthLogin && (
           <div className="mx-5 mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700">
@@ -272,16 +252,14 @@ export default function FeaturesSettingsPage() {
         title="ACL Policies"
         description="Controls visibility and access behaviour in the Policies section."
         saving={policiesSaving}
-        dirty={isPoliciesDirty}
         error={policiesError}
         saved={policiesSaved}
-        onSave={() => { void savePolicies(); }}
       >
         <ToggleRow
           label="Identity policy fallback"
-          description="When a user lacks permission to list all policies (403), show only the policies attached to their own token and identity instead. Users see a 'Restricted view' notice and can view (but not edit) their own policies."
+          description="When a user lacks permission to list all policies (403), show only the policies attached to their own token and identity instead. Users see a ‘Restricted view’ notice and can view (but not edit) their own policies."
           checked={policies.allowIdentityPolicyFallback}
-          onChange={(v) => setPolicies(prev => ({ ...prev, allowIdentityPolicyFallback: v }))}
+          onChange={(v) => { const val = { ...policies, allowIdentityPolicyFallback: v }; setPolicies(val); void savePolicies(val); }}
         />
       </Section>
 
@@ -295,16 +273,14 @@ export default function FeaturesSettingsPage() {
         title="Auth Methods"
         description="Controls features available in the Auth Methods section."
         saving={authMethodsSaving}
-        dirty={isAuthMethodsDirty}
         error={authMethodsError}
         saved={authMethodsSaved}
-        onSave={() => { void saveAuthMethods(); }}
       >
         <ToggleRow
           label="Developer integration guides"
-          description="Show a 'Developer Guide' tab on role detail pages with rendered markdown guides to help developers integrate. Admins can customise guides per auth type. Disabling hides the tab for all users."
+          description="Show a ‘Developer Guide’ tab on role detail pages with rendered markdown guides to help developers integrate. Admins can customise guides per auth type. Disabling hides the tab for all users."
           checked={authMethods.enableDevIntegrationGuides}
-          onChange={(v) => setAuthMethods(prev => ({ ...prev, enableDevIntegrationGuides: v }))}
+          onChange={(v) => { const val = { ...authMethods, enableDevIntegrationGuides: v }; setAuthMethods(val); void saveAuthMethods(val); }}
         />
       </Section>
 
@@ -318,16 +294,14 @@ export default function FeaturesSettingsPage() {
         title="Secrets"
         description="Controls behaviour when secrets are created or updated via VaultLens."
         saving={secretsSaving}
-        dirty={isSecretsDirty}
         error={secretsError}
         saved={secretsSaved}
-        onSave={() => { void saveSecrets(); }}
       >
         <ToggleRow
           label="Track creator and modifier in custom metadata"
-          description="When enabled, VaultLens automatically stamps KV v2 custom metadata with _created_by, _created_at, _updated_by, and _updated_at on every create or update. Uses the logged-in user's display name. Disabled by default. Only applies to KV v2 engines."
+          description="When enabled, VaultLens automatically stamps KV v2 custom metadata with _created_by, _created_at, _updated_by, and _updated_at on every create or update. Uses the logged-in user’s display name. Disabled by default. Only applies to KV v2 engines."
           checked={secrets.auditMetadataOnWrite}
-          onChange={(v) => setSecrets(prev => ({ ...prev, auditMetadataOnWrite: v }))}
+          onChange={(v) => { const val = { ...secrets, auditMetadataOnWrite: v }; setSecrets(val); void saveSecrets(val); }}
         />
       </Section>
     </div>

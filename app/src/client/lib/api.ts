@@ -239,11 +239,21 @@ export async function generateSecretId(method: string, role: string) {
   return data;
 }
 
+export interface SecretIdInfo {
+  accessor: string;
+  creationTime: string | null;
+  expirationTime: string | null;
+  lastUpdatedTime: string | null;
+  numUses: number;
+  ttl: number;
+  cidrList: string[];
+}
+
 export async function listSecretIds(method: string, role: string) {
-  const { data } = await api.get<{ accessors: string[] }>(
+  const { data } = await api.get<{ secretIds: SecretIdInfo[] }>(
     `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}/secret-ids`,
   );
-  return data.accessors;
+  return data.secretIds;
 }
 
 export async function destroySecretId(method: string, role: string, accessor: string) {

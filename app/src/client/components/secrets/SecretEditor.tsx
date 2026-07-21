@@ -108,6 +108,12 @@ export default function SecretEditor() {
         }
       }
 
+      if (Object.keys(data).length === 0) {
+        setError('Add at least one key\u2013value pair before saving.');
+        setSaving(false);
+        return;
+      }
+
       const writePath = isNew ? `${splat}${path}` : splat;
       await api.writeSecret(writePath, data);
 

@@ -324,6 +324,12 @@ function maskAccessor(accessor: string): string {
   return `${accessor.slice(0, 2)}${'•'.repeat(accessor.length - 4)}${accessor.slice(-2)}`;
 }
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 interface GeneratedSecret {
   secretId: string;
   accessor: string;
@@ -332,7 +338,7 @@ interface GeneratedSecret {
 }
 
 function SecretIdsSection({ method, role }: { method: string; role: string }) {
-  const [accessors, setAccessors] = useState<string[]>([]);
+  const [secretIds, setSecretIds] = useState<api.SecretIdInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -340,12 +346,12 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
   const [destroyingAccessor, setDestroyingAccessor] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<'secretId' | 'accessor' | null>(null);
 
-  const loadAccessors = useCallback(async () => {
+  const loadSecretIds = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const list = await api.listSecretIds(method, role);
-      setAccessors(list);
+      setSecretIds(list);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load secret IDs');
     } finally {
@@ -353,7 +359,7 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
     }
   }, [method, role]);
 
-  useEffect(() => { void loadAccessors(); }, [loadAccessors]);
+  useEffect(() => { void loadSecretIds(); }, [loadSecretIds]);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -361,7 +367,7 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
     try {
       const result = await api.generateSecretId(method, role);
       setGenerated(result);
-      void loadAccessors();
+      void loadSecretIds();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to generate secret ID');
     } finally {
@@ -374,7 +380,7 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
     setDestroyingAccessor(accessor);
     try {
       await api.destroySecretId(method, role, accessor);
-      setAccessors((prev) => prev.filter((a) => a !== accessor));
+      setSecretIds((prev) => prev.filter((s) => s.accessor !== accessor));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to revoke secret ID');
     } finally {
@@ -472,38 +478,63 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
         </div>
       )}
 
-      {/* Accessor list */}
+      {/* Secret ID list */}
       {loading ? (
         <LoadingSpinner />
       ) : (
-        <div className="overflow-hidden rounded-md border border-gray-200">
+        <div className="overflow-x-auto overflow-hidden rounded-md border border-gray-200">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Accessor</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Expires</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Uses remaining</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 bg-white">
-              {accessors.map((accessor) => (
-                <tr key={accessor} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-sm text-gray-700">
-                    {maskAccessor(accessor)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => { void handleRevoke(accessor); }}
-                      disabled={destroyingAccessor === accessor}
-                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                    >
-                      {destroyingAccessor === accessor ? 'Revoking…' : 'Revoke'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {accessors.length === 0 && (
+              {secretIds.map((s) => {
+                const isExpired = s.expirationTime && new Date(s.expirationTime) < new Date();
+                return (
+                  <tr key={s.accessor} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-mono text-sm text-gray-700" title={s.accessor}>
+                      {maskAccessor(s.accessor)}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                      {fmtDate(s.creationTime)}
+                    </td>
+                    <td className="px-4 py-3 text-sm whitespace-nowrap">
+                      {s.expirationTime ? (
+                        <span className={isExpired ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                          {fmtDate(s.expirationTime)}
+                          {isExpired && ' (expired)'}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">Never</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      {s.numUses === 0
+                        ? <span className="text-gray-400">Unlimited</span>
+                        : <span className={s.numUses <= 1 ? 'text-amber-600 font-medium' : ''}>{s.numUses}</span>
+                      }
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => { void handleRevoke(s.accessor); }}
+                        disabled={destroyingAccessor === s.accessor}
+                        className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                      >
+                        {destroyingAccessor === s.accessor ? 'Revoking…' : 'Revoke'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {secretIds.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
                     No active secret IDs — generate one to get started
                   </td>
                 </tr>
