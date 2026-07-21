@@ -52,33 +52,39 @@ router.get(
         data: Record<string, { type: string; config?: Record<string, unknown> }>;
       }>('/sys/auth', token);
 
-      // Only expose OIDC methods — JWT is a different auth type that doesn't support OIDC login flow
-      // Note: default_role is NOT in /sys/auth — it lives in the OIDC-specific config at
-      // /auth/<mount>/config, so we fetch it separately for each method.
+      // Only expose OIDC and JWT methods — both support the OIDC login flow when
+      // oidc_discovery_url is configured. JWT methods that are purely static-key
+      // based (no oidc_discovery_url) will appear in the list but the login attempt
+      // will surface a helpful Vault error to the user.
+      const oidcEntries = Object.entries(response.data)
+        .filter(([, info]) => info.type === 'oidc' || info.type === 'jwt');
+
       const methods = await Promise.all(
-        Object.entries(response.data)
-          .filter(([, info]) => info.type === 'oidc')
-          .map(async ([path, info]) => {
-            const mount = path.replace(/\/$/, '');
-            let defaultRole = '';
-            try {
-              const oidcConfig = await vaultClient.get<{ data?: { default_role?: string } }>(
-                `/auth/${encodeURIComponent(mount)}/config`,
-                token
-              );
-              defaultRole = oidcConfig.data?.default_role || '';
-            } catch {
-              // non-fatal — default_role stays empty
-            }
-            return {
-              path: mount,
-              type: info.type,
-              defaultRole,
-            };
-          })
+        oidcEntries.map(async ([path, info]) => {
+          const mount = path.replace(/\/$/, '');
+          let defaultRole = '';
+          try {
+            const oidcConfig = await vaultClient.get<{ data?: { default_role?: string } }>(
+              `/auth/${encodeURIComponent(mount)}/config`,
+              token
+            );
+            defaultRole = oidcConfig.data?.default_role || '';
+          } catch {
+            // non-fatal — default_role stays empty
+          }
+          return {
+            path: mount,
+            type: info.type,
+            defaultRole,
+          };
+        })
       );
 
-      authMethodsCache = { methods, cachedAt: Date.now() };
+      // Only cache when we actually found methods — don't cache an empty list so
+      // that the next request retries immediately if OIDC is enabled moments later.
+      if (methods.length > 0) {
+        authMethodsCache = { methods, cachedAt: Date.now() };
+      }
       res.json({ methods });
     } catch (error) {
       // Always return an empty list on any failure — this is a public convenience

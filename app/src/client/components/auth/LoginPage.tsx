@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { useAuthStore } from '../../stores/authStore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import * as api from '../../lib/api';
@@ -23,6 +23,7 @@ export default function LoginPage() {
   const [oidcLoading, setOidcLoading] = useState(false);
   const [defaultOidcRole, setDefaultOidcRole] = useState<string>('');
   const [oidcAvailable, setOidcAvailable] = useState(false);
+  const [oidcChecking, setOidcChecking] = useState(false);
 
   const { login, loginWithToken, error, loading } = useAuthStore();
   const navigate = useNavigate();
@@ -39,22 +40,28 @@ export default function LoginPage() {
     };
   }, []);
 
-  // On mount, check if OIDC is available and get default role.
+  // On mount (and on manual retry), check if OIDC is available and get default role.
   // Uses the public /auth/methods endpoint backed by the BFF system token.
   // Returns empty if system token not yet configured (first-time setup = token-only).
-  useEffect(() => {
-    async function initializeAuth() {
+  const checkOidcAvailability = useCallback(async (autoSelect = false) => {
+    setOidcChecking(true);
+    try {
       const methods = await api.getLoginAuthMethods();
       const oidcMethod = methods.find((m) => m.type === 'oidc' || m.type === 'jwt');
       if (oidcMethod) {
         setOidcAvailable(true);
-        setMethod('oidc');
         setMountPath(oidcMethod.path);
         setDefaultOidcRole(oidcMethod.defaultRole);
+        if (autoSelect) setMethod('oidc');
+      } else {
+        setOidcAvailable(false);
       }
+    } finally {
+      setOidcChecking(false);
     }
-    void initializeAuth();
   }, []);
+
+  useEffect(() => { void checkOidcAvailability(true); }, [checkOidcAvailability]);
 
   function navigateAfterLogin() {
     if (returnTo) {
@@ -266,6 +273,16 @@ export default function LoginPage() {
                 Token
               </button>
             </div>
+            {!oidcAvailable && (
+              <button
+                type="button"
+                onClick={() => { void checkOidcAvailability(true); }}
+                disabled={oidcChecking}
+                className="mt-1.5 text-xs text-gray-400 hover:text-[#1563ff] disabled:opacity-50"
+              >
+                {oidcChecking ? 'Checking for OIDC…' : 'Check for OIDC provider'}
+              </button>
+            )}
           </div>
 
           {/* ── Token form ── */}
