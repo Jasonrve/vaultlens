@@ -24,6 +24,7 @@ export default function LoginPage() {
   const [defaultOidcRole, setDefaultOidcRole] = useState<string>('');
   const [oidcAvailable, setOidcAvailable] = useState(false);
   const [oidcChecking, setOidcChecking] = useState(false);
+  const [oidcMethods, setOidcMethods] = useState<{ path: string; type: string; defaultRole: string; description: string }[]>([]);
 
   const { login, loginWithToken, error, loading } = useAuthStore();
   const navigate = useNavigate();
@@ -47,14 +48,16 @@ export default function LoginPage() {
     setOidcChecking(true);
     try {
       const methods = await api.getLoginAuthMethods();
-      const oidcMethod = methods.find((m) => m.type === 'oidc' || m.type === 'jwt');
-      if (oidcMethod) {
+      if (methods.length > 0) {
+        setOidcMethods(methods);
         setOidcAvailable(true);
-        setMountPath(oidcMethod.path);
-        setDefaultOidcRole(oidcMethod.defaultRole);
+        // Auto-select the first method
+        setMountPath(methods[0].path);
+        setDefaultOidcRole(methods[0].defaultRole);
         if (autoSelect) setMethod('oidc');
       } else {
         setOidcAvailable(false);
+        setOidcMethods([]);
       }
     } finally {
       setOidcChecking(false);
@@ -326,11 +329,37 @@ export default function LoginPage() {
           {/* ── OIDC form ── */}
           {method === 'oidc' && oidcAvailable && (
             <form onSubmit={(e) => { e.preventDefault(); void handleOidcLogin(); }}>
-              {/* Mount Path is kept as a hidden value — not displayed to user */}
-              <input
-                type="hidden"
-                value={mountPath}
-              />
+
+              {/* Provider selector — shown only when multiple OIDC mounts are available */}
+              {oidcMethods.length > 1 && (
+                <div className="mb-5">
+                  <label
+                    htmlFor="oidc-provider"
+                    className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-gray-500"
+                  >
+                    Provider
+                  </label>
+                  <select
+                    id="oidc-provider"
+                    value={mountPath}
+                    onChange={(e) => {
+                      const selected = oidcMethods.find((m) => m.path === e.target.value);
+                      if (selected) {
+                        setMountPath(selected.path);
+                        setDefaultOidcRole(selected.defaultRole);
+                        setOidcError('');
+                      }
+                    }}
+                    className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 transition-colors focus:border-[#1563ff] focus:outline-none focus:ring-1 focus:ring-[#1563ff]"
+                  >
+                    {oidcMethods.map((m) => (
+                      <option key={m.path} value={m.path}>
+                        {m.description || m.path}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="mb-5">
                 <label

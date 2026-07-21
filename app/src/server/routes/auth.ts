@@ -1,9 +1,9 @@
 import { Router, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { config } from '../config/index.js';
-import { VaultClient } from '../lib/vaultClient.js';
+import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getSystemToken, clearSystemTokenCache } from '../lib/systemToken.js';
+import { getSystemToken } from '../lib/systemToken.js';
 import { authLoginsTotal, activeSessions } from '../lib/metrics.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
@@ -24,7 +24,7 @@ const authMethodsRateLimit = rateLimit({
 });
 
 interface CachedAuthMethods {
-  methods: { path: string; type: string; defaultRole: string }[];
+  methods: { path: string; type: string; defaultRole: string; description: string }[];
   cachedAt: number;
 }
 let authMethodsCache: CachedAuthMethods | null = null;
@@ -41,59 +41,49 @@ router.get(
         return;
       }
 
-      const token = await getSystemToken();
-      if (!token) {
-        // No system token available — return empty list for token-only login mode
-        res.json({ methods: [] });
-        return;
-      }
+      // Mirror the Vault UI: /sys/internal/ui/mounts is a public (unauthenticated)
+      // endpoint that returns only mounts tuned with listing_visibility="unauth".
+      // This is exactly how the Vault UI decides which methods appear on the login
+      // page — no system token needed, and the Vault admin controls visibility via:
+      //   vault auth tune -listing-visibility=unauth <mount>/
+      const uiMounts = await vaultClient.get<{
+        data: { auth?: Record<string, { type: string; description?: string }> };
+      }>('/sys/internal/ui/mounts', '');
 
-      const response = await vaultClient.get<{
-        data: Record<string, { type: string; config?: Record<string, unknown> }>;
-      }>('/sys/auth', token);
-
-      // Only expose OIDC and JWT methods — both support the OIDC login flow when
-      // oidc_discovery_url is configured. JWT methods that are purely static-key
-      // based (no oidc_discovery_url) will appear in the list but the login attempt
-      // will surface a helpful Vault error to the user.
-      const oidcEntries = Object.entries(response.data)
+      const oidcEntries = Object.entries(uiMounts.data?.auth ?? {})
         .filter(([, info]) => info.type === 'oidc' || info.type === 'jwt');
 
+      // Fetch default_role for each visible mount using the system token (best-effort).
+      // If it fails the method is still returned — the user types the role manually.
       const methods = await Promise.all(
         oidcEntries.map(async ([path, info]) => {
           const mount = path.replace(/\/$/, '');
+          const description = info.description ?? '';
           let defaultRole = '';
           try {
-            const oidcConfig = await vaultClient.get<{ data?: { default_role?: string } }>(
-              `/auth/${encodeURIComponent(mount)}/config`,
-              token
-            );
-            defaultRole = oidcConfig.data?.default_role || '';
+            const sysToken = await getSystemToken();
+            if (sysToken) {
+              const cfg = await vaultClient.get<{ data?: { default_role?: string } }>(
+                `/auth/${encodeURIComponent(mount)}/config`,
+                sysToken
+              );
+              defaultRole = cfg.data?.default_role || '';
+            }
           } catch {
             // non-fatal — default_role stays empty
           }
-          return {
-            path: mount,
-            type: info.type,
-            defaultRole,
-          };
+          return { path: mount, type: info.type, defaultRole, description };
         })
       );
 
-      // Only cache when we actually found methods — don't cache an empty list so
-      // that the next request retries immediately if OIDC is enabled moments later.
       if (methods.length > 0) {
         authMethodsCache = { methods, cachedAt: Date.now() };
       }
       res.json({ methods });
     } catch (error) {
       // Always return an empty list on any failure — this is a public convenience
-      // endpoint used by the login page. Errors (e.g. invalid/stale system token,
-      // permission denied) must not block the login page or reveal internals.
-      // The user will fall back to token-only login and can configure the system
-      // token via /setup.
-      // Clear stale cached token so the next request re-authenticates
-      clearSystemTokenCache();
+      // endpoint used by the login page. Errors must not block the login page or
+      // reveal internals.
       console.warn('[auth/methods] Failed to fetch auth methods (returning empty list):', error instanceof Error ? error.message : error);
       res.json({ methods: [] });
     }
@@ -232,6 +222,19 @@ router.post(
 
       res.json({ authUrl });
     } catch (error) {
+      // Vault 400 on the auth_url endpoint is always a configuration issue, never
+      // a security-sensitive error. Surface it with the exact redirect_uri so the
+      // user knows what to add to the Vault OIDC role's allowed_redirect_uris.
+      if (error instanceof VaultError && error.statusCode === 400) {
+        const vaultMsg = error.message || 'redirect_uri not in allowed_redirect_uris';
+        const helpMsg =
+          `OIDC configuration error: ${vaultMsg}\n\n` +
+          `Add this exact redirect URI to your Vault OIDC role's allowed_redirect_uris:\n` +
+          `  ${(req.body as { redirectUri?: string }).redirectUri ?? '(unknown)'}`;
+        console.warn(`[OIDC] auth_url rejected by Vault (400): ${vaultMsg} — redirect_uri="${(req.body as { redirectUri?: string }).redirectUri}"`);
+        res.status(400).json({ error: helpMsg });
+        return;
+      }
       next(error);
     }
   }

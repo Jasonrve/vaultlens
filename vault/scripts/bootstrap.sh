@@ -271,7 +271,11 @@ vault auth enable \
   -description="OpenID Connect (OIDC) authentication — configure with your IdP" \
   -path=oidc \
   oidc 2>/dev/null || echo "  (already enabled)"
-echo "  ✓ OIDC auth enabled"
+
+# Tune listing_visibility so VaultLens (and the Vault UI) surface this method
+# on the login page via /sys/internal/ui/mounts.
+vault auth tune -listing-visibility=unauth oidc 2>/dev/null || true
+echo "  ✓ OIDC auth enabled (listing_visibility=unauth)"
 
 # Optional: configure OIDC with real IdP credentials supplied via env vars.
 # In docker-compose-development.yml set OIDC_DISCOVERY_URL, OIDC_CLIENT_ID,

@@ -3,7 +3,9 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import app from './app.js';
 import { config } from './config/index.js';
-import { isSystemTokenConfigured } from './lib/systemToken.js';
+import { isSystemTokenConfigured, getSystemToken } from './lib/systemToken.js';
+import { VaultClient } from './lib/vaultClient.js';
+import { SYSTEM_TOKEN_POLICY_HCL, ADMIN_POLICY_HCL } from './lib/policyLoader.js';
 import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
 import { startAuditWatcher } from './routes/hooks.js';
@@ -62,6 +64,32 @@ async function start(): Promise<void> {
         '       Set VAULT_SYSTEM_TOKEN=root in app/.env for local development.'
       );
     } else {
+      // Sync VaultLens policies to current version.
+      // Fixes outdated policies from old setup wizard runs (e.g. missing sys/auth read
+      // for OIDC detection). Uses the legacy sys/policy/* write capability that has
+      // always been in the policy, so this works even on older deployments.
+      try {
+        const sysToken = await getSystemToken();
+        if (sysToken) {
+          const vc = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+          const policyUpdates: Promise<unknown>[] = [
+            vc.put('/sys/policy/vaultlens-system-policy', sysToken, { rules: SYSTEM_TOKEN_POLICY_HCL }),
+            vc.put('/sys/policy/vaultlens-admin', sysToken, { rules: ADMIN_POLICY_HCL }),
+          ];
+          const results = await Promise.allSettled(policyUpdates);
+          const names = ['vaultlens-system-policy', 'vaultlens-admin'];
+          results.forEach((r, i) => {
+            if (r.status === 'fulfilled') {
+              console.log(`[Policy Sync] ${names[i]} updated to current version`);
+            } else {
+              console.warn(`[Policy Sync] Could not update ${names[i]} (non-fatal):`, r.reason instanceof Error ? r.reason.message : r.reason);
+            }
+          });
+        }
+      } catch (err) {
+        console.warn('[Policy Sync] Skipped (non-fatal):', err instanceof Error ? err.message : err);
+      }
+
       // Start background services that need system token
       startRotationScheduler();
       startAuditWatcher();

@@ -203,9 +203,9 @@ export async function getAuthMethods() {
 
 // Public endpoint — uses BFF system token, no user session required.
 // Returns only OIDC/JWT methods for the login page. Empty array = token-only mode.
-export async function getLoginAuthMethods(): Promise<{ path: string; type: string; defaultRole: string }[]> {
+export async function getLoginAuthMethods(): Promise<{ path: string; type: string; defaultRole: string; description: string }[]> {
   try {
-    const { data } = await api.get<{ methods: { path: string; type: string; defaultRole: string }[] }>('/auth/methods');
+    const { data } = await api.get<{ methods: { path: string; type: string; defaultRole: string; description: string }[] }>('/auth/methods');
     return data.methods;
   } catch {
     return [];
