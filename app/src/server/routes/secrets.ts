@@ -4,6 +4,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { secretOperationsTotal } from '../lib/metrics.js';
+import { readSecretsAuditConfig } from './vaultlens-audit.js';
 import type { AuthenticatedRequest, SecretEngine } from '../types/index.js';
 
 const router = Router();
@@ -178,6 +179,56 @@ function buildKVPath(
   return `/${mount}${pathSuffix}`;
 }
 
+/**
+ * If "audit metadata on write" is enabled, stamps KV v2 custom metadata with
+ * `_created_by`/`_created_at` (first write only) and `_updated_by`/`_updated_at`
+ * (every write) using the logged-in user's identity.
+ * Best-effort — silently skipped on any error so the write itself is never blocked.
+ */
+async function stampAuditMetadata(
+  req: AuthenticatedRequest,
+  engineInfo: { mount: string; subPath: string; version: number },
+): Promise<void> {
+  if (engineInfo.version !== 2) return;
+  try {
+    const cfg = await readSecretsAuditConfig();
+    if (!cfg.auditMetadataOnWrite) return;
+
+    const userIdentity =
+      req.tokenInfo?.display_name ||
+      req.tokenInfo?.entity_id ||
+      req.tokenInfo?.accessor ||
+      'unknown';
+    const now = new Date().toISOString();
+    const metaPath = buildKVPath(engineInfo.mount, engineInfo.subPath, 2, 'metadata');
+
+    // Read existing custom metadata to preserve user-defined fields
+    let existing: Record<string, string> = {};
+    try {
+      const metaResp = await vaultClient.get<{
+        data: { custom_metadata?: Record<string, string> | null };
+      }>(metaPath, req.vaultToken!);
+      existing = metaResp.data?.custom_metadata ?? {};
+    } catch {
+      // New secret or unreadable — start fresh
+    }
+
+    const updated: Record<string, string> = { ...existing };
+    // Set created fields only on first write (when not already present)
+    if (!updated['_created_by']) {
+      updated['_created_by'] = userIdentity;
+      updated['_created_at'] = now;
+    }
+    // Always update the last-modified fields
+    updated['_updated_by'] = userIdentity;
+    updated['_updated_at'] = now;
+
+    await vaultClient.post(metaPath, req.vaultToken!, { custom_metadata: updated });
+  } catch {
+    // Best-effort — never let metadata stamp failures affect the write response
+  }
+}
+
 // List secret engines
 router.get(
   '/engines',
@@ -286,32 +337,42 @@ router.get(
         return;
       }
       const engineInfo = await getEngineInfo(req.vaultToken!, secretPath);
+
+      // Optional secret version for KV v2 (e.g. ?version=3)
+      const vParam = req.query.version ? parseInt(String(req.query.version), 10) : undefined;
+      const vSuffix = (engineInfo.version === 2 && vParam != null && !isNaN(vParam) && vParam > 0)
+        ? `?version=${vParam}` : '';
       const vaultPath = buildKVPath(
         engineInfo.mount,
         engineInfo.subPath,
         engineInfo.version,
         'data'
-      );
+      ) + vSuffix;
 
       let fieldKeys: string[] = [];
       let restricted = false;
+      let secretVersion: number | undefined;
+
+      function parseKvResponse(rawData: unknown): void {
+        if (!rawData || typeof rawData !== 'object') return;
+        const rd = rawData as Record<string, unknown>;
+        const inner =
+          engineInfo.version === 2 && 'data' in rd && rd.data && typeof rd.data === 'object'
+            ? (rd.data as Record<string, unknown>)
+            : rd;
+        fieldKeys = Object.keys(inner);
+        if (engineInfo.version === 2 && 'metadata' in rd) {
+          const kvMeta = rd['metadata'] as { version?: number } | null;
+          if (kvMeta?.version != null) secretVersion = kvMeta.version;
+        }
+      }
 
       try {
         const response = await vaultClient.get<{ data: unknown }>(
           vaultPath,
           req.vaultToken!
         );
-
-        // Extract field names only — values are never sent to the client
-        const rawData = response.data as Record<string, unknown> | { data: Record<string, unknown> } | null;
-        if (rawData && typeof rawData === 'object') {
-          // KV v2 wraps actual data under a nested .data property
-          const inner =
-            engineInfo.version === 2 && 'data' in rawData && rawData.data && typeof rawData.data === 'object'
-              ? (rawData.data as Record<string, unknown>)
-              : (rawData as Record<string, unknown>);
-          fieldKeys = Object.keys(inner);
-        }
+        parseKvResponse(response.data);
       } catch (readErr) {
         const status = (readErr as { statusCode?: number }).statusCode;
         if (status === 403) {
@@ -322,15 +383,7 @@ router.get(
               vaultPath,
               sysToken
             );
-
-            const rawData = sysResponse.data as Record<string, unknown> | { data: Record<string, unknown> } | null;
-            if (rawData && typeof rawData === 'object') {
-              const inner =
-                engineInfo.version === 2 && 'data' in rawData && rawData.data && typeof rawData.data === 'object'
-                  ? (rawData.data as Record<string, unknown>)
-                  : (rawData as Record<string, unknown>);
-              fieldKeys = Object.keys(inner);
-            }
+            parseKvResponse(sysResponse.data);
             restricted = true;
           } catch {
             // System token also failed — propagate the original 403
@@ -362,6 +415,7 @@ router.get(
         keys: fieldKeys,
         mount: engineInfo.mount,
         version: engineInfo.version,
+        secretVersion,
         restricted,
         ...(capabilities ? { capabilities } : {}),
       });
@@ -382,12 +436,17 @@ router.get(
         return;
       }
       const engineInfo = await getEngineInfo(req.vaultToken!, secretPath);
+
+      // Optional secret version for KV v2 (e.g. ?version=3)
+      const vParam = req.query.version ? parseInt(String(req.query.version), 10) : undefined;
+      const vSuffix = (engineInfo.version === 2 && vParam != null && !isNaN(vParam) && vParam > 0)
+        ? `?version=${vParam}` : '';
       const vaultPath = buildKVPath(
         engineInfo.mount,
         engineInfo.subPath,
         engineInfo.version,
         'data'
-      );
+      ) + vSuffix;
 
       const response = await vaultClient.get<{ data: unknown }>(
         vaultPath,
@@ -447,6 +506,7 @@ router.post(
       );
 
       secretOperationsTotal.inc({ operation: 'write' });
+      await stampAuditMetadata(req, engineInfo);
       res.json({ success: true, data: response });
     } catch (error) {
       next(error);
@@ -530,10 +590,56 @@ router.post(
       await vaultClient.post(writePath, req.vaultToken!, writeData);
 
       // Return only confirmation with the keys that were updated (never existing values)
+      await stampAuditMetadata(req, engineInfo);
       res.json({
         success: true,
         updatedKeys: Object.keys(userFields),
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Restore a previous secret version as new current version (KV v2 only)
+router.post(
+  '/restore-version/*',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const secretPath = String(req.params[0] || '');
+      if (!isValidSecretPath(secretPath)) {
+        res.status(400).json({ error: 'Invalid path' });
+        return;
+      }
+
+      const fromVersion = parseInt(String(req.query.from ?? ''), 10);
+      if (isNaN(fromVersion) || fromVersion < 1) {
+        res.status(400).json({ error: 'Invalid version number' });
+        return;
+      }
+
+      const engineInfo = await getEngineInfo(req.vaultToken!, secretPath);
+      if (engineInfo.version !== 2) {
+        res.status(400).json({ error: 'Version restore requires a KV v2 secrets engine' });
+        return;
+      }
+
+      const dataPath = buildKVPath(engineInfo.mount, engineInfo.subPath, 2, 'data');
+
+      // Read the specific version — user's own token enforces their read access
+      const readResponse = await vaultClient.get<{ data: unknown }>(
+        `${dataPath}?version=${fromVersion}`,
+        req.vaultToken!
+      );
+
+      const rawData = readResponse.data as { data?: Record<string, unknown> } | null;
+      const versionData = rawData?.data && typeof rawData.data === 'object' ? rawData.data : {};
+
+      // Write old version's data as a new current version using user's token
+      await vaultClient.post(dataPath, req.vaultToken!, { data: versionData });
+
+      secretOperationsTotal.inc({ operation: 'write' });
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }

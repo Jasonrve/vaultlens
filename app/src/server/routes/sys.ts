@@ -1,4 +1,7 @@
 import { Router, Response, NextFunction } from 'express';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -6,6 +9,24 @@ import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+// Resolve paths relative to this compiled file so it works in both dev and prod
+const __thisDir = dirname(fileURLToPath(import.meta.url));
+
+// Cache changelog at startup — one file read total
+let _changelog: Record<string, unknown> | null = null;
+function getChangelogData(): Record<string, unknown> {
+  if (!_changelog) {
+    try {
+      _changelog = JSON.parse(
+        readFileSync(join(__thisDir, '../changelog/CHANGELOG.json'), 'utf-8')
+      ) as Record<string, unknown>;
+    } catch {
+      _changelog = {};
+    }
+  }
+  return _changelog;
+}
 
 router.use(authMiddleware);
 
@@ -126,6 +147,14 @@ router.get(
     } catch (error) {
       return next(error);
     }
+  }
+);
+
+// GET /api/sys/changelog — returns bundled changelog (no Vault call needed, auth still required)
+router.get(
+  '/changelog',
+  (_req: AuthenticatedRequest, res: Response) => {
+    res.json(getChangelogData());
   }
 );
 

@@ -27,6 +27,65 @@ Click any secret to open the detail view. Two display modes are available:
 
 Values are loaded when you open the secret (if you have `read` permission).
 
+## Version History (KV v2)
+
+KV v2 secrets preserve every write as a numbered version. VaultLens exposes the full version history directly in the secret detail view.
+
+### Version dropdown
+
+Next to the **Edit** / **Delete** buttons a **Version** selector appears once metadata loads (only for KV v2 secrets with more than one version). Choose any version from the dropdown to view its field names and values at that point in time.
+
+While viewing a historical version an amber banner at the top of the page shows:
+- Which version you are viewing
+- What the current version is
+- A **Restore as new version** button to promote that snapshot to the latest version
+
+Selecting the *current* version from the dropdown returns to the normal live view.
+
+### Version History table
+
+Expand the **Metadata** section and scroll past Version Info to find the **Version History** table. Each row shows:
+
+| Column | Description |
+|--------|-------------|
+| **Version** | Version number (e.g. `v3`) |
+| **Created** | Timestamp when this version was written |
+| **Status** | `Current`, `Active`, `Deleted`, or `Destroyed` |
+| **Actions** | Restore as new / Compare buttons |
+
+#### Status meanings
+
+| Status | Meaning |
+|--------|---------|
+| **Current** | The latest, active version |
+| **Active** | A previous version whose data is intact |
+| **Deleted** | Soft-deleted — data is still in Vault but marked deleted |
+| **Destroyed** | Permanently destroyed — data is gone |
+
+#### Restore as new version
+
+Clicking **Restore as new** on any `Active` row creates a new version whose data matches that snapshot. This always creates a new version number — it never silently overwrites the current version.
+
+You must have `read` permission on the secret to restore it (the restore reads that version and writes it back through your own token).
+
+### Comparing two versions
+
+Every non-destroyed version row has a **Compare** button. Clicking it opens a full-screen diff overlay pre-loaded with that version vs the current version.
+
+Inside the overlay you can change either version using the **From** / **To** dropdowns and click **Compare** to reload the diff.
+
+The diff shows the JSON representation of each version, line by line:
+
+| Highlight | Meaning |
+|-----------|---------|
+| Blue background with `−` | Line present in the **From** version but removed in the **To** version |
+| Green background with `+` | Line added or changed in the **To** version |
+| No highlight | Unchanged line |
+
+Keys are sorted alphabetically so that unrelated reordering does not produce false-positive changes.
+
+If you only have `list` permission (restricted access), values are shown as `••••••••` in the diff — you can still see which keys were added or removed.
+
 ## Editing Secrets
 
 Click **Edit** to modify a secret. The editor supports:

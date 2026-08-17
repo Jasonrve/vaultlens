@@ -4,6 +4,8 @@ import * as api from '../lib/api';
 import type { AuditLogEntry, AuditSourceInfo } from '../lib/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ErrorMessage from '../components/common/ErrorMessage';
+import AuditContextMenu from '../components/common/AuditContextMenu';
+import AuditWebhookModal from '../components/common/AuditWebhookModal';
 
 function mountIcon(mountType: string): string {
   switch (mountType) {
@@ -119,6 +121,10 @@ export default function AuditLogPage() {
   const [page, setPage] = useState(1);
   const [auditSource, setAuditSource] = useState<AuditSourceInfo | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [pendingUpdates, setPendingUpdates] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: AuditLogEntry } | null>(null);
+  const [webhookEntry, setWebhookEntry] = useState<AuditLogEntry | null>(null);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -151,17 +157,23 @@ export default function AuditLogPage() {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Auto-refresh every 5 seconds in socket mode when Vault is connected
+  // Auto-refresh every 5 seconds in socket mode when Vault is connected — skipped when paused
   useEffect(() => {
     const isSocketConnected =
       auditSource?.source === 'socket' &&
       (auditSource.socket.connectedClients ?? 0) > 0;
 
-    if (isSocketConnected) {
+    if (isSocketConnected && !paused) {
       autoRefreshRef.current = setInterval(() => {
         // Silently re-fetch source stats and logs
         api.getAuditSource().then(setAuditSource).catch(() => {});
         fetchLogs();
+      }, 5000);
+    } else if (isSocketConnected && paused) {
+      // Check silently for new entries so we can show the pending badge
+      autoRefreshRef.current = setInterval(() => {
+        api.getAuditSource().then(setAuditSource).catch(() => {});
+        setPendingUpdates(true);
       }, 5000);
     }
 
@@ -171,7 +183,13 @@ export default function AuditLogPage() {
         autoRefreshRef.current = null;
       }
     };
-  }, [auditSource?.source, auditSource?.socket?.connectedClients, fetchLogs]);
+  }, [auditSource?.source, auditSource?.socket?.connectedClients, fetchLogs, paused]);
+
+  const handleResume = () => {
+    setPaused(false);
+    setPendingUpdates(false);
+    void fetchLogs();
+  };
 
   // Reset to first page when pageSize changes
   useEffect(() => {
@@ -230,13 +248,38 @@ export default function AuditLogPage() {
           </div>
           <AuditSourceBadge source={auditSource} isLive={isLive} />
         </div>
-        <button
-          onClick={fetchLogs}
-          disabled={loading}
-          className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-        >
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <div className="flex items-center gap-2">
+          {isLive && paused && (
+            <button
+              onClick={handleResume}
+              className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-700 hover:bg-amber-100"
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+              </span>
+              Paused{pendingUpdates && ' · updates pending'}
+            </button>
+          )}
+          {isLive && !paused && (
+            <button
+              onClick={() => setPaused(true)}
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50"
+              title="Pause auto-refresh to inspect entries without the view updating"
+            >
+              <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
+              </svg>
+              Pause
+            </button>
+          )}
+          <button
+            onClick={fetchLogs}
+            disabled={loading}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* Inline filters */}
@@ -312,7 +355,11 @@ export default function AuditLogPage() {
                   <Fragment key={entry.requestId}>
                     <tr
                       onClick={() => setExpandedRow(isExpanded ? null : entry.requestId)}
-                      className="cursor-pointer hover:bg-gray-50"
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setContextMenu({ x: e.clientX, y: e.clientY, entry });
+                      }}
+                      className={`cursor-pointer hover:bg-gray-50 ${isExpanded ? 'bg-blue-50' : ''}`}
                     >
                       <td className="w-10 px-2 py-2 text-center">
                         {link ? (
@@ -478,6 +525,22 @@ export default function AuditLogPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {contextMenu && (
+        <AuditContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          entry={contextMenu.entry}
+          onClose={() => setContextMenu(null)}
+          onCreateWebhook={() => setWebhookEntry(contextMenu.entry)}
+        />
+      )}
+      {webhookEntry && (
+        <AuditWebhookModal
+          entry={webhookEntry}
+          onClose={() => setWebhookEntry(null)}
+        />
       )}
     </div>
   );

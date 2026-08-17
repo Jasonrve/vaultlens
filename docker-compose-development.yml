@@ -34,6 +34,14 @@ services:
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "root"
+      # Optional OIDC configuration — set these in your root .env file to enable
+      # full OIDC login in VaultLens. See .env.example for details.
+      OIDC_DISCOVERY_URL: "${OIDC_DISCOVERY_URL:-}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-}"
+      OIDC_DEFAULT_ROLE: "${OIDC_DEFAULT_ROLE:-vault-admin}"
+      OIDC_REDIRECT_URI: "${OIDC_REDIRECT_URI:-http://localhost:3001/oidc-callback/oidc}"
+      OIDC_TOKEN_POLICIES: "${OIDC_TOKEN_POLICIES:-admin,vaultlens-admin}"
     volumes:
       - ./vault/policies:/vault/policies:ro
       - ./vault/scripts:/vault/scripts:ro

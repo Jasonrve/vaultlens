@@ -31,10 +31,16 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Don't redirect when already on /login (avoids reload loop during checkAuth)
-      // or on public pages (shared secret viewer)
+      // Don't redirect when already on a public page — avoids reload loops
+      // during the initial checkAuth call and mid-wizard sessions.
       const path = window.location.pathname;
-      const isPublicPage = path === '/' || path === '/login' || path.startsWith('/shared/') || path.startsWith('/oidc-callback/');
+      const isPublicPage =
+        path === '/' ||
+        path === '/login' ||
+        path === '/about' ||
+        path === '/setup' ||
+        path.startsWith('/shared/') ||
+        path.startsWith('/oidc-callback/');
       if (!isPublicPage) {
         window.location.href = '/login';
       }
@@ -92,16 +98,26 @@ export async function listSecrets(path: string) {
   return data;
 }
 
-export async function readSecret(path: string) {
-  const { data } = await api.get<{ keys: string[]; mount: string; version: number; restricted?: boolean; capabilities?: string[] }>(
-    `/secrets/read/${path}`,
+export async function readSecret(path: string, version?: number) {
+  const qs = version != null ? `?version=${version}` : '';
+  const { data } = await api.get<{ keys: string[]; mount: string; version: number; secretVersion?: number; restricted?: boolean; capabilities?: string[] }>(
+    `/secrets/read/${path}${qs}`,
   );
   return data;
 }
 
-export async function readSecretValues(path: string) {
+export async function readSecretValues(path: string, version?: number) {
+  const qs = version != null ? `?version=${version}` : '';
   const { data } = await api.get<{ data: Record<string, unknown>; mount: string; version: number }>(
-    `/secrets/values/${path}`,
+    `/secrets/values/${path}${qs}`,
+  );
+  return data;
+}
+
+export async function restoreSecretVersion(path: string, fromVersion: number) {
+  const { data } = await api.post<{ success: boolean }>(
+    `/secrets/restore-version/${path}?from=${fromVersion}`,
+    {},
   );
   return data;
 }
@@ -118,6 +134,7 @@ export async function deleteSecret(path: string) {
   const { data } = await api.delete<{ success: boolean }>(`/secrets/delete/${path}`);
   return data;
 }
+
 
 export async function mergeSecret(path: string, secretData: Record<string, unknown>) {
   const { data } = await api.post<{ success: boolean; updatedKeys: string[] }>(
@@ -186,9 +203,9 @@ export async function getAuthMethods() {
 
 // Public endpoint — uses BFF system token, no user session required.
 // Returns only OIDC/JWT methods for the login page. Empty array = token-only mode.
-export async function getLoginAuthMethods(): Promise<{ path: string; type: string; defaultRole: string }[]> {
+export async function getLoginAuthMethods(): Promise<{ path: string; type: string; defaultRole: string; description: string }[]> {
   try {
-    const { data } = await api.get<{ methods: { path: string; type: string; defaultRole: string }[] }>('/auth/methods');
+    const { data } = await api.get<{ methods: { path: string; type: string; defaultRole: string; description: string }[] }>('/auth/methods');
     return data.methods;
   } catch {
     return [];
@@ -203,8 +220,45 @@ export async function getRoles(method: string) {
 }
 
 export async function getRole(method: string, role: string) {
-  const { data } = await api.get<{ method: string; role: string; data: Record<string, unknown> }>(
+  const { data } = await api.get<{ method: string; role: string; authType: string; data: Record<string, unknown> }>(
     `/auth-methods/${method}/roles/${role}`,
+  );
+  return data;
+}
+
+export async function generateSecretId(method: string, role: string) {
+  const { data } = await api.post<{
+    secretId: string;
+    accessor: string;
+    ttl: number;
+    numUses: number;
+  }>(
+    `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}/secret-id`,
+    {},
+  );
+  return data;
+}
+
+export interface SecretIdInfo {
+  accessor: string;
+  creationTime: string | null;
+  expirationTime: string | null;
+  lastUpdatedTime: string | null;
+  numUses: number;
+  ttl: number;
+  cidrList: string[];
+}
+
+export async function listSecretIds(method: string, role: string) {
+  const { data } = await api.get<{ secretIds: SecretIdInfo[] }>(
+    `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}/secret-ids`,
+  );
+  return data.secretIds;
+}
+
+export async function destroySecretId(method: string, role: string, accessor: string) {
+  const { data } = await api.delete<{ success: boolean }>(
+    `/auth-methods/${encodeURIComponent(method)}/roles/${encodeURIComponent(role)}/secret-ids/${encodeURIComponent(accessor)}`,
   );
   return data;
 }
@@ -486,6 +540,21 @@ export async function getAuthMethodsConfig() {
 
 export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/auth-methods-config', config);
+  return data;
+}
+
+// ── Secrets Config ────────────────────────────────────────
+export interface SecretsAuditConfig {
+  auditMetadataOnWrite: boolean;
+}
+
+export async function getSecretsAuditConfig() {
+  const { data } = await api.get<SecretsAuditConfig>('/vaultlens-audit/secrets-audit-config');
+  return data;
+}
+
+export async function updateSecretsAuditConfig(config: SecretsAuditConfig) {
+  const { data } = await api.put<SecretsAuditConfig>('/vaultlens-audit/secrets-audit-config', config);
   return data;
 }
 
@@ -971,5 +1040,21 @@ export async function getVaultInternalCounters() {
     entities: Record<string, unknown>;
     requests: Record<string, unknown>;
   }>('/sys/internal-counters');
+  return data;
+}
+
+// ── Changelog ─────────────────────────────────────────────
+export interface ChangelogEntry {
+  date: string;
+  highlights: string[];
+  sections: {
+    New?: { title: string; description: string }[];
+    Improved?: { title: string; description: string }[];
+    Fixed?: { title: string; description: string }[];
+  };
+}
+
+export async function getChangelog(): Promise<Record<string, ChangelogEntry>> {
+  const { data } = await api.get<Record<string, ChangelogEntry>>('/sys/changelog');
   return data;
 }
