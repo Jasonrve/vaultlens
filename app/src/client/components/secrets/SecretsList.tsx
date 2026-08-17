@@ -18,6 +18,7 @@ export default function SecretsList() {
 
   useEffect(() => {
     setLoading(true);
+    setSearch('');
     api
       .listSecrets(splat)
       .then((data) => setKeys(data.keys))
