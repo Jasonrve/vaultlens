@@ -6,6 +6,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { getAvailableTemplates, getTemplate, saveTemplateOverride } from '../lib/devIntegrationLoader.js';
 import { backupsTotal, backupDurationSeconds, lastBackupTimestamp, lastBackupSizeBytes, lastBackupSecretsCount } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
@@ -115,11 +116,13 @@ router.get(
       const backups = files.map(filename => {
         const filePath = path.join(BACKUP_DIR, filename);
         const stats = fs.statSync(filePath);
-        let type: 'snapshot' | 'legacy-json' | 'kv-json';
+        let type: 'snapshot' | 'legacy-json' | 'kv-json' | 'app-json';
         if (filename.endsWith('.snap')) {
           type = 'snapshot';
         } else if (filename.startsWith('kv-backup-')) {
           type = 'kv-json';
+        } else if (filename.startsWith('app-backup-')) {
+          type = 'app-json';
         } else {
           type = 'legacy-json';
         }
@@ -497,6 +500,151 @@ router.post(
       }
 
       res.json({ success: true, filename: safeFilename, restoredCount, failedCount });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// ── Application Backup / Restore ──────────────────────────────────────────────
+// Backs up VaultLens's own settings: feature flags and other config sections
+// (branding, sharing, secrets-audit, auth methods, policies, webhooks, rotation
+// schedule, AppRole credentials, ...), logo/blob uploads, and custom developer
+// integration guide overrides. Does NOT include Vault secrets (see KV backup).
+
+interface AppBackupFile {
+  version: 1;
+  backupType: 'app';
+  createdAt: string;
+  config: Record<string, Record<string, string>>;
+  blobs: Record<string, { mimeType: string; data: string }>;
+  devGuides: Record<string, string>;
+}
+
+/** Generate an application settings backup filename. */
+function generateAppBackupFilename(): string {
+  ensureBackupDir();
+  const now = new Date();
+  const dateStr = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+  return `app-backup-${dateStr}.json`;
+}
+
+// POST /api/backup/app-create — dump all VaultLens app settings (feature flags, branding,
+// webhooks, dev guides, ...) to a JSON file
+router.post(
+  '/app-create',
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const storage = getConfigStorage();
+
+      const sections = await storage.list();
+      const appConfig: Record<string, Record<string, string>> = {};
+      for (const section of sections) {
+        if (section.startsWith('_blob_')) continue; // Vault backend mixes blobs into list()
+        const data = await storage.get(section);
+        if (data) appConfig[section] = data;
+      }
+
+      const blobKeys = await storage.listBlobs();
+      const blobs: Record<string, { mimeType: string; data: string }> = {};
+      for (const key of blobKeys) {
+        const blob = await storage.getBlob(key);
+        if (blob) blobs[key] = { mimeType: blob.mimeType, data: blob.data.toString('base64') };
+      }
+
+      const devGuides: Record<string, string> = {};
+      for (const authType of getAvailableTemplates()) {
+        const content = getTemplate(authType);
+        if (content !== undefined) devGuides[authType] = content;
+      }
+
+      const backupData: AppBackupFile = {
+        version: 1,
+        backupType: 'app',
+        createdAt: new Date().toISOString(),
+        config: appConfig,
+        blobs,
+        devGuides,
+      };
+
+      ensureBackupDir();
+      const filename = generateAppBackupFilename();
+      const filePath = path.join(BACKUP_DIR, filename);
+      fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+      const stats = fs.statSync(filePath);
+
+      res.json({
+        success: true,
+        filename,
+        size: stats.size,
+        createdAt: backupData.createdAt,
+        sectionCount: Object.keys(appConfig).length,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/backup/app-restore — restore VaultLens app settings from a JSON backup file
+router.post(
+  '/app-restore',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { filename } = req.body as { filename?: string };
+
+      if (!filename || typeof filename !== 'string') {
+        res.status(400).json({ error: 'Backup filename is required' });
+        return;
+      }
+
+      const safeFilename = path.basename(filename);
+      if (!safeFilename.endsWith('.json')) {
+        res.status(400).json({ error: 'Invalid backup file type. Expected a .json application backup.' });
+        return;
+      }
+
+      const filePath = path.join(BACKUP_DIR, safeFilename);
+      if (!fs.existsSync(filePath)) {
+        res.status(404).json({ error: 'Backup file not found' });
+        return;
+      }
+
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      let backupData: AppBackupFile;
+      try {
+        backupData = JSON.parse(raw) as AppBackupFile;
+      } catch {
+        res.status(400).json({ error: 'Invalid backup file: not valid JSON' });
+        return;
+      }
+
+      if (backupData.backupType !== 'app' || backupData.version !== 1 || typeof backupData.config !== 'object') {
+        res.status(400).json({ error: 'Invalid backup file: unrecognised format' });
+        return;
+      }
+
+      const storage = getConfigStorage();
+
+      for (const [section, data] of Object.entries(backupData.config)) {
+        await storage.set(section, data);
+      }
+
+      for (const [key, blob] of Object.entries(backupData.blobs || {})) {
+        await storage.setBlob(key, Buffer.from(blob.data, 'base64'), blob.mimeType);
+      }
+
+      for (const [authType, content] of Object.entries(backupData.devGuides || {})) {
+        await saveTemplateOverride(authType, content);
+      }
+
+      res.json({
+        success: true,
+        filename: safeFilename,
+        restoredSections: Object.keys(backupData.config).length,
+        restoredBlobs: Object.keys(backupData.blobs || {}).length,
+        restoredDevGuides: Object.keys(backupData.devGuides || {}).length,
+      });
     } catch (error) {
       next(error);
     }

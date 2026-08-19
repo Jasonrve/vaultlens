@@ -14,7 +14,7 @@ function instrumentStorage(
   backend: 'file' | 'vault',
 ): ConfigStorageProvider {
   const time = async <T>(
-    operation: 'get' | 'set' | 'delete' | 'list' | 'getBlob' | 'setBlob' | 'deleteBlob',
+    operation: 'get' | 'set' | 'delete' | 'list' | 'listBlobs' | 'getBlob' | 'setBlob' | 'deleteBlob',
     fn: () => Promise<T>,
   ): Promise<T> => {
     const start = process.hrtime.bigint();
@@ -33,6 +33,7 @@ function instrumentStorage(
       time('set', () => provider.set(section, data)),
     delete: (section: string) => time('delete', () => provider.delete(section)),
     list: () => time('list', () => provider.list()),
+    listBlobs: () => time('listBlobs', () => provider.listBlobs()),
     getBlob: (key: string) => time('getBlob', () => provider.getBlob(key)),
     setBlob: (key: string, data: Buffer, mimeType: string) =>
       time('setBlob', () => provider.setBlob(key, data, mimeType)),

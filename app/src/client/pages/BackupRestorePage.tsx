@@ -77,6 +77,21 @@ export default function BackupRestorePage() {
     }
   };
 
+  const handleCreateApp = async () => {
+    setCreating(true);
+    setSuccessMsg(null);
+    setError(null);
+    try {
+      const result = await api.createAppBackup();
+      setSuccessMsg(`Application backup created: ${result.filename} — ${result.sectionCount} settings sections backed up (${formatSize(result.size)})`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create application backup');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const handleRestore = async (filename: string) => {
     setRestoring(filename);
     setSuccessMsg(null);
@@ -86,6 +101,9 @@ export default function BackupRestorePage() {
       if (filename.startsWith('kv-backup-') && filename.endsWith('.json')) {
         const result = await api.restoreKvBackup(filename);
         setSuccessMsg(`KV backup restored: ${result.restoredCount} secrets written${result.failedCount > 0 ? `, ${result.failedCount} failed` : ''}`);
+      } else if (filename.startsWith('app-backup-') && filename.endsWith('.json')) {
+        const result = await api.restoreAppBackup(filename);
+        setSuccessMsg(`Application backup restored: ${result.restoredSections} settings sections, ${result.restoredBlobs} files, ${result.restoredDevGuides} developer guides`);
       } else {
         const result = await api.restoreBackup(filename);
         setSuccessMsg(`Vault snapshot restored: ${result.filename}`);
@@ -155,6 +173,13 @@ export default function BackupRestorePage() {
               {creating ? 'Creating...' : 'Create KV Backup'}
             </button>
           )}
+          <button
+            onClick={handleCreateApp}
+            disabled={creating}
+            className="rounded-md border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : 'Create Application Backup'}
+          </button>
         </div>
       </div>
 
@@ -275,6 +300,9 @@ export default function BackupRestorePage() {
                     {backup.type === 'kv-json' && (
                       <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">kv</span>
                     )}
+                    {backup.type === 'app-json' && (
+                      <span className="ml-2 rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-700">app</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{formatSize(backup.size)}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{new Date(backup.createdAt).toLocaleString()}</td>
@@ -298,7 +326,7 @@ export default function BackupRestorePage() {
                         </>
                       ) : (
                         <>
-                          {(backup.type === 'snapshot' || backup.type === 'kv-json') && (
+                          {(backup.type === 'snapshot' || backup.type === 'kv-json' || backup.type === 'app-json') && (
                             <button
                               onClick={() => setConfirmRestore(backup.filename)}
                               className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"

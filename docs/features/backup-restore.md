@@ -65,8 +65,25 @@ Backup files are JSON with the structure:
 
 Backup files can be downloaded directly from the Admin UI for off-site storage. You can also upload a previously downloaded backup file to restore from it.
 
+## Application Backup
+
+Separately from Vault secrets, VaultLens can back up **its own settings** — everything configured under **Admin → Features**, **Admin → Branding**, **Admin → Webhooks**, and the backup schedule itself, plus any custom developer integration guide overrides (**Auth Methods → Role → Developer Guide**).
+
+Click **Create Application Backup** on the **Admin → Backup & Restore** page to produce an `app-backup-*.json` file containing:
+
+- Every configuration section (feature toggles, branding colours/name, sharing options, webhook definitions, backup schedule, AppRole system-token credentials, etc.)
+- Uploaded blobs such as the custom logo
+- Any custom developer guide markdown overrides
+
+Restoring an application backup writes these settings back via the same config storage used at runtime — like KV restore, it is additive and overwrites matching sections/keys but does not delete settings that aren't present in the backup.
+
+::: tip
+Application backups do not contain Vault secrets. Use a KV or Raft snapshot backup for secret data, and an application backup for VaultLens's own configuration.
+:::
+
 ## Security Notes
 
 - Backup files contain **all secret values in plaintext** — protect them accordingly
 - Backups are performed using the system token, which requires `vaultlens-system` policy permissions
 - File-mode backups are stored on the VaultLens server's filesystem; ensure appropriate filesystem permissions
+- Application backups may contain encrypted AppRole credentials; they remain encrypted at rest (AES-256-GCM, key derived from `VAULT_ADDR`) but the file should still be treated as sensitive
