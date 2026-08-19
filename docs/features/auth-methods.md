@@ -119,6 +119,19 @@ Supported auth method types with role browsing:
 If an auth method has no roles configured, the Roles tab shows an empty table — not an error.
 :::
 
+## Audit Error Badges
+
+The auth method detail page and its Roles tab show a small red **error counter** whenever recent Vault audit log entries contain an error for that backend:
+
+- **Auth method header** — next to the Relationships button, shows the total error count for the whole mount.
+- **Roles table** — each role row shows its own error count next to the Delete action.
+
+Badges only appear when at least one error is found — a healthy backend shows no badge. Click a badge to open a popup with the audit log pre-filtered to that mount (or role), with the "Errors only" filter checked by default. It's the same filterable audit table used on the main Audit Log page and the Role Detail Audits tab, so you can search, change filters, or turn off "Errors only" to see all activity.
+
+::: tip Role attribution is best-effort
+Errors are attributed to a role when the audit entry's path includes `role/<name>` (role admin operations) or the request body has a `role` field (e.g. login attempts). Errors that don't reference a role by name — like a malformed login request before Vault can pick a role — only count toward the mount's total, not any specific role.
+:::
+
 ### Role Detail Tabs
 
 Each role opens a detail page with the following tabs (some are type-specific):

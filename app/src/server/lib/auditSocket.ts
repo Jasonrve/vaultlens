@@ -13,12 +13,20 @@
 import net from 'net';
 import https from 'https';
 import http from 'http';
+import { notifyAuditUpdate } from './auditEvents.js';
 
 // Maximum number of raw audit entries to keep in memory.
 const MAX_BUFFER_ENTRIES = 50_000;
 
 // Ring buffer — newest entries are at the end.
 const ringBuffer: unknown[] = [];
+
+/** True for a Vault audit "response" entry that recorded an error. */
+function isErrorResponseEntry(entry: unknown): boolean {
+  if (typeof entry !== 'object' || entry === null) return false;
+  const e = entry as { type?: unknown; error?: unknown };
+  return e.type === 'response' && typeof e.error === 'string' && e.error.length > 0;
+}
 
 let socketServer: net.Server | null = null;
 let serverHost = '0.0.0.0';
@@ -76,6 +84,7 @@ export function startAuditSocketServer(port: number, host: string): void {
           if (ringBuffer.length > MAX_BUFFER_ENTRIES) {
             ringBuffer.splice(0, ringBuffer.length - MAX_BUFFER_ENTRIES);
           }
+          if (isErrorResponseEntry(entry)) notifyAuditUpdate();
         } catch {
           // Malformed line — skip silently
         }

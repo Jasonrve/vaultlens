@@ -30,6 +30,7 @@ This starts:
   - ACL policies (`admin`, `readonly`, `app-specific`, `vaultlens-admin`, `vaultlens-system`)
   - Auth methods (AppRole, GitHub, Kubernetes, LDAP, OIDC, USERPASS, ...)
   - Identity entities and groups
+- **vault-audit-demo** *(optional)* — runs `vault/scripts/audit-demo-seed.sh`, which registers the socket audit device and fires a few deliberately-failing logins once VaultLens is listening, so the audit error badges have example data. It's a standalone container, not app code, and isn't part of production.
 
 ## 3. Configure the App
 

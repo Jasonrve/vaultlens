@@ -5,7 +5,7 @@
       "label": "docker-compose-up",
       "type": "shell",
       "command": "docker-compose",
-      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault", "vault-init"],
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault", "vault-init", "vault-audit-demo"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "presentation": {

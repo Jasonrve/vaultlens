@@ -49,6 +49,26 @@ services:
     command: /vault/scripts/bootstrap.sh
     restart: "no"
 
+  # Optional — generates a few deliberately-failing Vault logins so the audit
+  # error badges in the UI have example data on a fresh `docker compose up`.
+  # Waits for VaultLens itself to be listening on the audit socket before
+  # firing, so it's safe to start alongside vault/vault-init.
+  vault-audit-demo:
+    image: hashicorp/vault:1.17
+    container_name: vaultlens-vault-audit-demo
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "root"
+      VAULT_AUDIT_SOCKET_VAULT_ADDRESS: "${VAULT_AUDIT_SOCKET_VAULT_ADDRESS:-host.docker.internal:9090}"
+    volumes:
+      - ./vault/scripts:/vault/scripts:ro
+    entrypoint: /bin/sh
+    command: /vault/scripts/audit-demo-seed.sh
+    restart: "no"
+
   vaultlens:
     image: node:22-alpine
     container_name: vaultlens-app
