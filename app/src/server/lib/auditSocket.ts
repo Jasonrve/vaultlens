@@ -13,6 +13,7 @@
 import net from 'net';
 import https from 'https';
 import http from 'http';
+import v8 from 'v8';
 import { notifyAuditUpdate } from './auditEvents.js';
 
 // Maximum number of raw audit entries to keep in memory.
@@ -116,6 +117,15 @@ export function startAuditSocketServer(port: number, host: string): void {
 /** Return a snapshot of the ring buffer (newest entries last). */
 export function getAuditBuffer(): unknown[] {
   return ringBuffer;
+}
+
+// V8's structured-clone byte length approximates real memory usage far better than
+// JSON text length (doubles instead of decimal text, no punctuation overhead), without
+// needing a full heap snapshot. Only computed on-demand (Analytics page load) since
+// serializing the whole buffer isn't cheap enough to run on every audit event.
+export function estimateAuditBufferBytes(): number {
+  if (ringBuffer.length === 0) return 0;
+  return v8.serialize(ringBuffer).byteLength;
 }
 
 /** Return connection statistics. */

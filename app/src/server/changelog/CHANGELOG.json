@@ -54,6 +54,10 @@
         {
           "title": "Audit log right-click in auth method detail",
           "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
+        },
+        {
+          "title": "Audit buffer memory estimate on Analytics",
+          "description": "The Audit Logging card on the Analytics page now shows an estimated memory footprint for the in-memory audit buffer, so you can gauge how much space the cached events are using."
         }
       ],
       "Fixed": []

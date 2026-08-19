@@ -5,7 +5,7 @@ import readline from 'readline';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getAuditBuffer, getAuditSocketStats, autoRegisterSocketAuditWithVault } from '../lib/auditSocket.js';
+import { getAuditBuffer, getAuditSocketStats, autoRegisterSocketAuditWithVault, estimateAuditBufferBytes } from '../lib/auditSocket.js';
 import { subscribeToAuditEvents } from '../lib/auditEvents.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { auditEventsProcessedTotal } from '../lib/metrics.js';
@@ -95,6 +95,16 @@ router.get(
       source: config.auditSource,
       socket: stats,
     });
+  },
+);
+
+// GET /api/audit/memory-estimate — on-demand estimate of ring buffer memory usage.
+// Not folded into /source since serializing the whole buffer is too slow to run
+// on every stats poll; callers should fetch this separately (e.g. once per page load).
+router.get(
+  '/memory-estimate',
+  (_req: AuthenticatedRequest, res: Response) => {
+    res.json({ bytes: estimateAuditBufferBytes() });
   },
 );
 

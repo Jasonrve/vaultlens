@@ -660,6 +660,11 @@ export async function getAuditSource(): Promise<AuditSourceInfo> {
   return data;
 }
 
+export async function getAuditMemoryEstimate(): Promise<{ bytes: number }> {
+  const { data } = await api.get<{ bytes: number }>('/audit/memory-estimate');
+  return data;
+}
+
 export async function getAuditDevices(): Promise<AuditDevice[]> {
   const { data } = await api.get<{ devices: AuditDevice[] }>('/audit/devices');
   return data.devices;
