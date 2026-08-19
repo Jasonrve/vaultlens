@@ -1,0 +1,121 @@
+{
+  "0.8.0": {
+    "date": "2026-07-21",
+    "highlights": [
+      "Secret version history with diff comparison",
+      "Audit log pause and right-click context menu",
+      "Create webhooks directly from audit entries",
+      "AppRole secret ID generation and management"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Secret version history",
+          "description": "Browse every version of a KV v2 secret, compare any two versions side by side with a colour-coded diff (green = added, red = removed), and restore a previous version as the new current version — all without leaving the secret detail page."
+        },
+        {
+          "title": "Audit log pause button",
+          "description": "Freeze the live auto-refresh while you inspect an entry. A 'updates pending' badge appears so you know new events have arrived. The selected row stays expanded and highlighted when you resume."
+        },
+        {
+          "title": "Right-click audit log entries",
+          "description": "Right-click any audit log row to copy the path, user display name, or the full entry as JSON. A 'Create webhook…' option opens a pre-filled webhook form using the entry's path and identity fields."
+        },
+        {
+          "title": "Create webhook from audit entry",
+          "description": "The new webhook popup pre-fills the secret path pattern from the selected audit entry. At the bottom it shows all existing webhooks and highlights which ones already match the entry's path, so you can avoid duplicates."
+        },
+        {
+          "title": "AppRole secret ID generation",
+          "description": "Generate new Secret IDs for AppRole roles directly in the UI. The Secret ID is displayed once at creation and never shown again — copy it before closing. Existing secret ID accessors are listed (masked to first and last two characters) so you can track and revoke them individually."
+        },
+        {
+          "title": "Creator / modifier metadata stamping",
+          "description": "An optional setting (Features → Secrets) automatically adds _created_by, _created_at, _updated_by, and _updated_at to KV v2 custom metadata on every write from VaultLens. Disabled by default."
+        },
+        {
+          "title": "What's New (this panel)",
+          "description": "A release changelog is now bundled with VaultLens. An unread dot appears on your user menu whenever a new version is deployed. Dismiss this panel to mark the version as seen."
+        }
+      ],
+      "Improved": [
+        {
+          "title": "Version dropdown on secret detail",
+          "description": "A version selector appears next to Edit/Delete for KV v2 secrets with multiple versions. Switching versions preserves any revealed values if you had Show All active."
+        },
+        {
+          "title": "Version history table in metadata",
+          "description": "The Metadata accordion on the secret detail page now shows a full version history table with Created, Status (Current / Active / Deleted / Destroyed), and per-row Restore and Compare actions."
+        },
+        {
+          "title": "Audit log right-click in auth method detail",
+          "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
+        }
+      ],
+      "Fixed": []
+    }
+  },
+  "0.7.0": {
+    "date": "2026-06-01",
+    "highlights": [
+      "Full KV v1 and v2 secrets management",
+      "Auth methods, entities, groups, and ACL policies",
+      "Secret auto-rotation and scheduled backups",
+      "End-to-end encrypted secret sharing"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Secrets engine browser",
+          "description": "Browse and manage KV v1 and v2 secrets across all mounted engines. Create, edit, merge partial updates, and delete secrets with full restricted-access support."
+        },
+        {
+          "title": "Auth methods management",
+          "description": "View, configure, and manage all Vault auth methods including Kubernetes, GitHub, OIDC, AppRole, and LDAP. Manage roles, tune settings, and see per-method audit logs."
+        },
+        {
+          "title": "Identity — entities and groups",
+          "description": "Browse Vault identity entities and groups, view aliases, policies, and memberships. Visualise identity relationships with the built-in graph view."
+        },
+        {
+          "title": "ACL policies viewer",
+          "description": "List, read, and parse ACL policies. View per-path capabilities and simulate what any entity can do on any path via the Permission Tester."
+        },
+        {
+          "title": "Secret auto-rotation",
+          "description": "Configure rotation intervals on any KV v2 secret using custom_metadata. A background scheduler rotates secrets automatically and supports per-key format overrides."
+        },
+        {
+          "title": "Backup and restore",
+          "description": "Manual and scheduled full KV backups. Download, restore, or delete snapshots. Supports configurable cron-style schedules."
+        },
+        {
+          "title": "End-to-end encrypted secret sharing",
+          "description": "Share secrets via URL with OpenPGP encryption. The decryption key lives in the URL fragment — the server never sees it. Supports one-time view, OTP-protected, and login-required modes."
+        },
+        {
+          "title": "Webhook notifications",
+          "description": "Configure HTTP webhooks that fire when audit log events match a path pattern and optional field filters. Test delivery from the UI."
+        },
+        {
+          "title": "Analytics dashboard",
+          "description": "View Vault health, seal status, token and entity counters, and host info at a glance."
+        },
+        {
+          "title": "React Flow visualisations",
+          "description": "Interactive graph views for auth-method → policy, policy → secret path, and identity relationships."
+        },
+        {
+          "title": "Custom branding",
+          "description": "Set a custom app name, logo, and primary colour. Config is stored in the pluggable config backend and applied to all users."
+        },
+        {
+          "title": "OIDC login",
+          "description": "Sign in via any configured OIDC/JWT auth method using a popup flow. No redirect away from the app."
+        }
+      ],
+      "Improved": [],
+      "Fixed": []
+    }
+  }
+}

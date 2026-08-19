@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/mix-bag-of-features-and-fixes
     paths:
       - 'docs/**'
       - '.github/workflows/docs.yml'

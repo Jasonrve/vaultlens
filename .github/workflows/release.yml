@@ -263,4 +263,6 @@ jobs:
           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Push chart to GHCR OCI
-        run: helm push vaultlens-${{ inputs.version }}.tgz oci://ghcr.io/${{ github.repository_owner }}/charts
+        run: |
+          OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          helm push vaultlens-${{ inputs.version }}.tgz oci://ghcr.io/${OWNER}/charts

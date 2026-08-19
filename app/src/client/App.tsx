@@ -26,6 +26,7 @@ import HooksPage from './pages/HooksPage';
 import SystemTokenSetupPage from './pages/SystemTokenSetupPage';
 import VaultLensAuditPage from './pages/VaultLensAuditPage';
 import FeaturesSettingsPage from './pages/FeaturesSettingsPage';
+import ChangelogPage from './pages/ChangelogPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
 const queryClient = new QueryClient({
@@ -150,7 +151,7 @@ function SetupRouteGuard({ children }: { children: React.ReactNode }) {
 
   // If system token is already configured AND this is not a repair, redirect to dashboard
   if (systemTokenStatus?.hasSystemToken && !isRepairMode) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/app" replace />;
   }
 
   return <>{children}</>;
@@ -178,7 +179,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={
-        isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+        isAuthenticated ? <Navigate to="/app" replace /> : <LoginPage />
       } />
       {/* OIDC popup callback — public, no Layout, no auth guard */}
       <Route path="/oidc-callback/:mountPath" element={<OidcCallbackPage />} />
@@ -191,6 +192,12 @@ function AppRoutes() {
         </SetupRouteGuard>
       } />
 
+      {/* Root: redirect to dashboard if logged in, otherwise to login */}
+      <Route path="/" element={
+        isAuthenticated ? <Navigate to="/app" replace /> : <Navigate to="/login" replace />
+      } />
+
+
       {/* Authenticated VaultLens app */}
       <Route
         element={
@@ -201,7 +208,7 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<DashboardPage />} />
+        <Route path="/app" element={<DashboardPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />
@@ -220,10 +227,11 @@ function AppRoutes() {
         <Route path="/admin/policies-settings" element={<Navigate to="/admin/features" replace />} />
         <Route path="/admin/auth-methods-settings" element={<Navigate to="/admin/features" replace />} />
         <Route path="/admin/features" element={<FeaturesSettingsPage />} />
+        <Route path="/admin/changelog" element={<ChangelogPage />} />
         <Route path="/admin/sharing-audit" element={<VaultLensAuditPage />} />
         <Route path="/tools/share" element={<ShareSecretPage />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );
 }

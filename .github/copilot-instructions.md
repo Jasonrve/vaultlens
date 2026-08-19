@@ -207,6 +207,22 @@ vaultClient.list<T>(path, token)  // Uses Vault LIST HTTP method
 ```
 Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `VaultError` to handle Vault-specific errors (404, 403, etc.) before calling `next(error)`.
 
+#### KV v2 response shape
+`vaultClient.get<{ data: unknown }>(path, token)` returns the **entire Vault JSON body**. For KV v2, `response.data` (the Vault `data` field) looks like:
+```typescript
+{
+  data: { key1: 'value1', ... },          // actual secret values
+  metadata: { version: 3, created_time: '...', deletion_time: '', destroyed: false }
+}
+```
+So `response.data.data` = secret values; `response.data.metadata.version` = secret version number.
+
+To read a **specific version** of a KV v2 secret, append `?version=N` to the Vault data path:
+```
+/${mount}/data/${subPath}?version=2
+```
+Deleted versions are still readable this way. Destroyed versions return a Vault error.
+
 ### Config Storage & Encryption
 - Pluggable backend for VaultLens's own configuration (branding, webhooks, rotation, backup schedules).
 - **Interface**: `ConfigStorageProvider` with `get/set/delete/list` + `getBlob/setBlob/deleteBlob`.
@@ -241,6 +257,11 @@ Throws `VaultError` (with `.statusCode`) on non-2xx responses. Always catch `Vau
 
 - Values are loaded eagerly on mount via `GET /secrets/values/*` when the user has `read` permission.
 - **Restricted mode** (no `read` permission): only Key/Value mode is available. Values are permanently masked with `••••••••`. No eye icons or JSON toggle.
+
+#### SecretView state naming
+- `version` state = KV **engine** version (1 or 2) — **not** the secret's data version number.
+- The secret's current data version lives in `metadata.current_version` (a number).
+- `metadata.versions` keys are **strings** (`"1"`, `"2"`, …). Convert with `Object.keys(metadata.versions).map(Number)` for numeric sorting, and use `String(vNum)` when indexing back into the map.
 
 ### Restricted-Access Secret Keys & Partial Updates
 When a user can navigate to a secret (has `list` permission on the parent path) but lacks `read` permission on the secret itself:
@@ -480,6 +501,25 @@ docker-compose* text eol=lf
 -  **DO:** Check lint after all multifile changes
 -  **DO:** Make sure that docker build still works for all large changes
 
+## ⚠️ IMPORTANT: Changelog Requirements
+Every user-visible feature, improvement, or fix **must be recorded** in `app/src/server/changelog/CHANGELOG.json` under the current `package.json` version entry.
+
+**Rules:**
+- Add to `sections.New` for new features, `sections.Improved` for enhancements, `sections.Fixed` for bug fixes.
+- Write the `title` as a short noun phrase (e.g. "Audit log pause button") — no verbs, no full stops.
+- Write the `description` in plain language a non-technical user can understand. One or two sentences. Focus on what the user can now *do*, not how it was implemented.
+- Update `highlights` with a one-line summary of the most impactful changes (max 4 items per version).
+- Do **not** create a new version key — always append to the key that matches the current `package.json` version.
+- The CHANGELOG update must be in the same change as the feature, not a separate commit.
+
+**Example entry:**
+```json
+{
+  "title": "Audit log pause button",
+  "description": "Freeze the live auto-refresh while you inspect an entry. A 'updates pending' badge appears so you know new events have arrived."
+}
+```
+
 ## ⚠️ IMPORTANT: Documentation Requirements
 Every piece of client-side functionality that is user-visible **must be documented** in the VitePress docs under `docs/features/` or `docs/guide/`.
 
@@ -493,6 +533,11 @@ This includes (but is not limited to):
 **Rule:** When implementing or modifying client-side functionality, always identify the appropriate docs page and update it in the same change. If no suitable page exists, create one under `docs/features/`.
 
 The docs site is built with VitePress and lives in `docs/`. Feature docs are in `docs/features/`. Images go in `docs/public/screenshots/` and are referenced as `/screenshots/filename.png` in markdown.
+
+## Common UI Patterns
+
+### Modal component
+The existing `Modal` (`components/common/Modal.tsx`) has a fixed `max-w-lg` width and centres on screen. For full-screen or wide overlays (diff views, code editors, large tables) use a raw `fixed inset-0 z-50 flex flex-col bg-white` div directly rather than the Modal component.
 
 ## UI Convention: Always Show Friendly Names
 - **Never display raw UUIDs/IDs** as the primary label in any UI component.

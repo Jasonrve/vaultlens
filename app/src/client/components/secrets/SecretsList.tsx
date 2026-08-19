@@ -14,15 +14,21 @@ export default function SecretsList() {
   const [error, setError] = useState<string | null>(null);
   const [showRelGraph, setShowRelGraph] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     setLoading(true);
+    setSearch('');
     api
       .listSecrets(splat)
       .then((data) => setKeys(data.keys))
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
   }, [splat]);
+
+  const filtered = search
+    ? keys.filter((k) => k.toLowerCase().includes(search.toLowerCase()))
+    : keys;
 
   const segments = splat.split('/').filter(Boolean);
   const enginePath = segments[0] ? segments[0] + '/' : '';
@@ -54,12 +60,21 @@ export default function SecretsList() {
         <h1 className="text-xl font-bold text-gray-800">
           {enginePath || 'Secrets'}
         </h1>
-        <button
-          onClick={() => navigate(`/secrets/create/${normalizedSplat}`)}
-          className="rounded-md bg-[#1563ff] px-4 py-2 text-sm font-medium text-white hover:bg-[#1250d4]"
-        >
-          Create secret +
-        </button>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Search keys…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:ring-1 focus:ring-[#1563ff] focus:outline-none"
+          />
+          <button
+            onClick={() => navigate(`/secrets/create/${normalizedSplat}`)}
+            className="rounded-md bg-[#1563ff] px-4 py-2 text-sm font-medium text-white hover:bg-[#1250d4]"
+          >
+            Create secret +
+          </button>
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-md border border-gray-200">
@@ -73,7 +88,7 @@ export default function SecretsList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {keys.map((key) => {
+            {filtered.map((key) => {
               const isFolder = key.endsWith('/');
               const linkPath = isFolder
                 ? `/secrets/${normalizedSplat}${key}`
@@ -146,10 +161,10 @@ export default function SecretsList() {
                 </tr>
               );
             })}
-            {keys.length === 0 && (
+            {filtered.length === 0 && (
               <tr>
                 <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
-                  No secrets found at this path
+                  {search ? `No keys match "${search}"` : 'No secrets found at this path'}
                 </td>
               </tr>
             )}
