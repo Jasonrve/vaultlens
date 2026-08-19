@@ -1,6 +1,7 @@
 ﻿import { useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
 import { useRef, useState, useEffect } from 'react';
+import * as api from '../../lib/api';
 
 const LABELS: Record<string, string> = {
   access: 'Access',
@@ -22,17 +23,27 @@ export default function Header() {
   const { tokenInfo, logout } = useAuthStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [showHeaderLinks, setShowHeaderLinks] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const infoRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    api.getGeneralConfig().then((cfg) => setShowHeaderLinks(cfg.showHeaderLinks)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setDropdownOpen(false);
       }
+      if (infoRef.current && !infoRef.current.contains(e.target as Node)) {
+        setInfoOpen(false);
+      }
     }
-    if (dropdownOpen) document.addEventListener('mousedown', handleClickOutside);
+    if (dropdownOpen || infoOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [dropdownOpen]);
+  }, [dropdownOpen, infoOpen]);
 
   function copyToken() {
     if (!tokenInfo?.id) return;
@@ -109,6 +120,46 @@ export default function Header() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
+        {showHeaderLinks && (
+        <div className="relative" ref={infoRef}>
+          <button
+            onClick={() => setInfoOpen((o) => !o)}
+            aria-label="Help and links"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+          >
+            <svg className="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+            </svg>
+          </button>
+
+          {infoOpen && (
+            <div className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-lg border border-gray-200 bg-white shadow-lg py-1">
+              <a
+                href="https://github.com/Jasonrve/vaultlens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="h-4 w-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61-.546-1.385-1.333-1.754-1.333-1.754-1.089-.745.083-.729.083-.729 1.205.084 1.84 1.237 1.84 1.237 1.07 1.834 2.807 1.304 3.492.997.108-.775.418-1.305.762-1.605-2.665-.303-5.467-1.332-5.467-5.93 0-1.31.469-2.38 1.235-3.22-.124-.303-.535-1.523.117-3.176 0 0 1.008-.322 3.301 1.23A11.51 11.51 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.29-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.873.118 3.176.77.84 1.233 1.91 1.233 3.22 0 4.61-2.807 5.624-5.48 5.92.43.372.823 1.102.823 2.222 0 1.606-.014 2.898-.014 3.293 0 .322.216.694.825.576C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
+                </svg>
+                GitHub Repo
+              </a>
+              <a
+                href="https://jasonrve.github.io/vaultlens/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+                Documentation
+              </a>
+            </div>
+          )}
+        </div>
+        )}
         {tokenInfo?.display_name && (
           <div className="relative" ref={dropdownRef}>
             <button

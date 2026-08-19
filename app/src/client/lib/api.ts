@@ -489,6 +489,21 @@ export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
   return data;
 }
 
+// ── General Config ─────────────────────────────────────
+export interface GeneralConfig {
+  showHeaderLinks: boolean;
+}
+
+export async function getGeneralConfig() {
+  const { data } = await api.get<GeneralConfig>('/vaultlens-audit/general-config');
+  return data;
+}
+
+export async function updateGeneralConfig(config: GeneralConfig) {
+  const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/general-config', config);
+  return data;
+}
+
 // ── VaultLens Audit ───────────────────────────────────────
 export interface VaultLensAuditEntry {
   timestamp: string;

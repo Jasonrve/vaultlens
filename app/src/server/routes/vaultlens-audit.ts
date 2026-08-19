@@ -206,6 +206,68 @@ router.put(
   }
 );
 
+// ── General Config ────────────────────────────────────────
+
+const GENERAL_CONFIG_SECTION = 'general';
+
+export interface GeneralConfig {
+  showHeaderLinks: boolean;
+}
+
+const DEFAULT_GENERAL_CONFIG: GeneralConfig = {
+  showHeaderLinks: false,
+};
+
+export async function readGeneralConfig(): Promise<GeneralConfig> {
+  try {
+    const storage = getConfigStorage();
+    const data = await storage.get(GENERAL_CONFIG_SECTION);
+    if (data) {
+      return {
+        showHeaderLinks: data['showHeaderLinks'] === 'true',
+      };
+    }
+  } catch {
+    // Fall back to defaults
+  }
+  return { ...DEFAULT_GENERAL_CONFIG };
+}
+
+// GET /api/vaultlens-audit/general-config — read current general config (any authenticated user)
+router.get(
+  '/general-config',
+  authMiddleware,
+  async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const cfg = await readGeneralConfig();
+      res.json(cfg);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// PUT /api/vaultlens-audit/general-config — update general config (admin only)
+router.put(
+  '/general-config',
+  authMiddleware,
+  requireAdmin,
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const { showHeaderLinks } = req.body as Partial<GeneralConfig>;
+
+      const storage = getConfigStorage();
+      await storage.set(GENERAL_CONFIG_SECTION, {
+        showHeaderLinks: String(showHeaderLinks === true),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 // ── VaultLens Audit Logs ──────────────────────────────────
 
 // GET /api/vaultlens-audit/logs — retrieve audit entries (admin only)

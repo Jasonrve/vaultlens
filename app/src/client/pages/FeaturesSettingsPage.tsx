@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as api from '../lib/api';
-import type { SharingConfig, PoliciesConfig, AuthMethodsConfig } from '../lib/api';
+import type { SharingConfig, PoliciesConfig, AuthMethodsConfig, GeneralConfig } from '../lib/api';
 
 // ── Toggle row ────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,13 @@ function Section({ icon, title, description, saving, dirty, error, saved, onSave
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FeaturesSettingsPage() {
+  // General
+  const [general, setGeneral] = useState<GeneralConfig>({ showHeaderLinks: false });
+  const [generalOrig, setGeneralOrig] = useState<GeneralConfig | null>(null);
+  const [generalSaving, setGeneralSaving] = useState(false);
+  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [generalSaved, setGeneralSaved] = useState(false);
+
   // Sharing
   const [sharing, setSharing] = useState<SharingConfig>({
     enableOneTime: true,
@@ -129,10 +136,12 @@ export default function FeaturesSettingsPage() {
 
   useEffect(() => {
     Promise.all([
+      api.getGeneralConfig(),
       api.getSharingConfig(),
       api.getPoliciesConfig(),
       api.getAuthMethodsConfig(),
-    ]).then(([s, p, a]) => {
+    ]).then(([g, s, p, a]) => {
+      setGeneral(g); setGeneralOrig(g);
       setSharing(s); setSharingOrig(s);
       setPolicies(p); setPoliciesOrig(p);
       setAuthMethods(a); setAuthMethodsOrig(a);
@@ -141,9 +150,21 @@ export default function FeaturesSettingsPage() {
     }).finally(() => setLoading(false));
   }, []);
 
+  const isGeneralDirty = generalOrig !== null && JSON.stringify(general) !== JSON.stringify(generalOrig);
   const isSharingDirty = sharingOrig !== null && JSON.stringify(sharing) !== JSON.stringify(sharingOrig);
   const isPoliciesDirty = policiesOrig !== null && JSON.stringify(policies) !== JSON.stringify(policiesOrig);
   const isAuthMethodsDirty = authMethodsOrig !== null && JSON.stringify(authMethods) !== JSON.stringify(authMethodsOrig);
+
+  async function saveGeneral() {
+    setGeneralSaving(true); setGeneralError(null); setGeneralSaved(false);
+    try {
+      await api.updateGeneralConfig(general);
+      setGeneralOrig({ ...general });
+      setGeneralSaved(true);
+      setTimeout(() => setGeneralSaved(false), 3000);
+    } catch { setGeneralError('Failed to save general settings'); }
+    finally { setGeneralSaving(false); }
+  }
 
   async function saveSharing() {
     setSharingSaving(true); setSharingError(null); setSharingSaved(false);
@@ -194,6 +215,29 @@ export default function FeaturesSettingsPage() {
           Enable or disable functionality across VaultLens. Each section can be saved independently.
         </p>
       </div>
+
+      {/* ── General ──────────────────────────────────────────────────────── */}
+      <Section
+        icon={
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+          </svg>
+        }
+        title="General"
+        description="Controls general UI elements shown across VaultLens."
+        saving={generalSaving}
+        dirty={isGeneralDirty}
+        error={generalError}
+        saved={generalSaved}
+        onSave={() => { void saveGeneral(); }}
+      >
+        <ToggleRow
+          label="Header info links"
+          description="Show the info icon in the top-right of the header with links to the GitHub repo and documentation site."
+          checked={general.showHeaderLinks}
+          onChange={(v) => setGeneral(prev => ({ ...prev, showHeaderLinks: v }))}
+        />
+      </Section>
 
       {/* ── Sharing ───────────────────────────────────────────────────────── */}
       <Section
