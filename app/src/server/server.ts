@@ -9,7 +9,7 @@ import { SYSTEM_TOKEN_POLICY_HCL, ADMIN_POLICY_HCL } from './lib/policyLoader.js
 import { initializeTemplates } from './lib/devIntegrationLoader.js';
 import { startRotationScheduler } from './routes/rotation.js';
 import { startAuditWatcher } from './routes/hooks.js';
-import { startAuditSocketServer } from './lib/auditSocket.js';
+import { autoRegisterSocketAuditWithVault, startAuditSocketServer } from './lib/auditSocket.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -85,6 +85,15 @@ async function start(): Promise<void> {
               console.warn(`[Policy Sync] Could not update ${names[i]} (non-fatal):`, r.reason instanceof Error ? r.reason.message : r.reason);
             }
           });
+
+          if (config.auditSource === 'socket') {
+            await autoRegisterSocketAuditWithVault(
+              config.vaultAddr,
+              sysToken,
+              config.auditSocketVaultAddress,
+              config.vaultSkipTlsVerify,
+            );
+          }
         }
       } catch (err) {
         console.warn('[Policy Sync] Skipped (non-fatal):', err instanceof Error ? err.message : err);
@@ -95,7 +104,7 @@ async function start(): Promise<void> {
       startAuditWatcher();
 
       if (config.auditSource === 'socket') {
-        console.log('[Audit Socket] Listening for Vault audit events. Register the socket audit device via the /setup flow.');
+        console.log('[Audit Socket] Listening for Vault audit events. Socket audit device registration is handled automatically on startup.');
       }
     }
   });

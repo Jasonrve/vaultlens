@@ -151,7 +151,7 @@ export async function autoRegisterSocketAuditWithVault(
     },
   });
 
-  await new Promise<void>((resolve, reject) => {
+  const requestVault = (method: 'PUT' | 'DELETE') => new Promise<{ statusCode: number; body: string }>((resolve, reject) => {
     const parsedUrl = new URL(url);
     const isHttps = parsedUrl.protocol === 'https:';
     const lib = isHttps ? https : http;
@@ -161,44 +161,64 @@ export async function autoRegisterSocketAuditWithVault(
         hostname: parsedUrl.hostname,
         port: parsedUrl.port || (isHttps ? 443 : 80),
         path: parsedUrl.pathname,
-        method: 'PUT',
+        method,
         headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
+          ...(method === 'PUT' ? {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+          } : {}),
           'X-Vault-Token': systemToken,
         },
-        // Only skip TLS verification when explicitly configured
         ...(isHttps && skipTlsVerify ? { rejectUnauthorized: false } : {}),
       },
       (res) => {
         let responseBody = '';
         res.on('data', (chunk: Buffer) => { responseBody += chunk.toString(); });
-        res.on('end', () => {
-          if (res.statusCode === 204) {
-            console.log(`[Audit Socket] Registered socket audit device with Vault (address: ${vaultAddress})`);
-            resolve();
-          } else if (res.statusCode === 400) {
-            // Vault returns 400 for two different cases:
-            //   1. "path is already in use" — device already registered, this is fine
-            //   2. Connection failure (e.g. socket not reachable) — this is an error
-            if (responseBody.includes('already in use') || responseBody.includes('path is already in use')) {
-              console.log(`[Audit Socket] Socket audit device already registered with Vault`);
-              resolve();
-            } else {
-              console.error(`[Audit Socket] Failed to register socket audit device (Vault returned 400): ${responseBody.trim()}`);
-              // Resolve rather than reject so a registration failure doesn't crash the server
-              resolve();
-            }
-          } else {
-            console.error(`[Audit Socket] Failed to register socket audit device: HTTP ${res.statusCode ?? 'unknown'} — ${responseBody.trim()}`);
-            resolve();
-          }
-        });
+        res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, body: responseBody }));
       },
     );
 
     req.on('error', reject);
-    req.write(body);
+    if (method === 'PUT') req.write(body);
     req.end();
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    requestVault('PUT')
+      .then(async ({ statusCode, body: responseBody }) => {
+        if (statusCode === 204) {
+          console.log(`[Audit Socket] Registered socket audit device with Vault (address: ${vaultAddress})`);
+          resolve();
+          return;
+        }
+
+        if (statusCode === 400) {
+          if (responseBody.includes('already in use') || responseBody.includes('path is already in use')) {
+            const deleteResult = await requestVault('DELETE');
+            if (deleteResult.statusCode !== 204) {
+              console.warn(`[Audit Socket] Could not replace existing socket audit device: HTTP ${deleteResult.statusCode} — ${deleteResult.body.trim()}`);
+              resolve();
+              return;
+            }
+
+            const retry = await requestVault('PUT');
+            if (retry.statusCode === 204) {
+              console.log(`[Audit Socket] Replaced socket audit device with Vault (address: ${vaultAddress})`);
+            } else {
+              console.error(`[Audit Socket] Failed to register socket audit device after replacement: HTTP ${retry.statusCode} — ${retry.body.trim()}`);
+            }
+            resolve();
+            return;
+          }
+
+          console.error(`[Audit Socket] Failed to register socket audit device (Vault returned 400): ${responseBody.trim()}`);
+          resolve();
+          return;
+        }
+
+        console.error(`[Audit Socket] Failed to register socket audit device: HTTP ${statusCode || 'unknown'} — ${responseBody.trim()}`);
+        resolve();
+      })
+      .catch(reject);
   });
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import * as api from '../lib/api';
 import type { AuditLogEntry, AuditSourceInfo } from '../lib/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -69,6 +69,10 @@ function operationBadge(op: string) {
   );
 }
 
+function isEntityId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 function AuditSourceBadge({ source, isLive }: { source: AuditSourceInfo | null; isLive?: boolean }) {
   if (!source) return null;
   if (source.source === 'socket') {
@@ -109,11 +113,16 @@ function AuditSourceBadge({ source, isLive }: { source: AuditSourceInfo | null; 
 }
 
 export default function AuditLogPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryEntityId = searchParams.get('entityId') || '';
+  const queryDisplayName = searchParams.get('displayName') || '';
+  const querySearch = queryDisplayName || queryEntityId;
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(querySearch);
   const [operationFilter, setOperationFilter] = useState('');
   const [mountTypeFilter, setMountTypeFilter] = useState('');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -131,6 +140,25 @@ export default function AuditLogPage() {
     api.getAuditSource().then(setAuditSource).catch(() => { /* non-critical */ });
   }, []);
 
+  useEffect(() => {
+    if (queryEntityId || queryDisplayName) {
+      setSearch(querySearch);
+    }
+  }, [queryEntityId, queryDisplayName, querySearch]);
+
+  const clearEntityUrlParams = () => {
+    if (!queryEntityId && !queryDisplayName) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete('entityId');
+    next.delete('displayName');
+    setSearchParams(next, { replace: true });
+  };
+
+  const trimmedSearch = search.trim();
+  const useUrlEntityFilter = queryEntityId && trimmedSearch === querySearch;
+  const effectiveEntityIdFilter = useUrlEntityFilter ? queryEntityId : '';
+  const effectiveSearch = effectiveEntityIdFilter ? '' : trimmedSearch;
+
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -139,9 +167,10 @@ export default function AuditLogPage() {
       const result = await api.getAuditLogs({
         offset,
         limit: pageSize,
-        search: search || undefined,
+        search: effectiveSearch || undefined,
         operation: operationFilter || undefined,
         mountType: mountTypeFilter || undefined,
+        entityId: effectiveEntityIdFilter || undefined,
       });
       setEntries(result.entries);
       setTotal(result.total);
@@ -150,8 +179,9 @@ export default function AuditLogPage() {
       setError(e instanceof Error ? e.message : 'Failed to load audit logs');
     } finally {
       setLoading(false);
+      setHasLoaded(true);
     }
-  }, [search, operationFilter, mountTypeFilter, page, pageSize]);
+  }, [effectiveSearch, operationFilter, mountTypeFilter, effectiveEntityIdFilter, page, pageSize]);
 
   useEffect(() => {
     fetchLogs();
@@ -199,12 +229,12 @@ export default function AuditLogPage() {
   // Reset to first page when filters change
   useEffect(() => {
     setPage(1);
-  }, [search, operationFilter, mountTypeFilter]);
+  }, [effectiveSearch, operationFilter, mountTypeFilter, effectiveEntityIdFilter]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const displayedEntries = entries;
 
-  // Derive unique operations, mount types, paths, and display names for filter suggestions
+  // Derive unique operations, mount types, paths, and users for filter suggestions
   const { operations, mountTypes, uniquePaths, uniqueUsers } = useMemo(() => {
     const ops = new Set<string>();
     const mounts = new Set<string>();
@@ -228,7 +258,7 @@ export default function AuditLogPage() {
     auditSource?.source === 'socket' &&
     (auditSource.socket.connectedClients ?? 0) > 0;
 
-  if (loading && entries.length === 0) return <LoadingSpinner className="mt-12" />;
+  if (loading && !hasLoaded) return <LoadingSpinner className="mt-12" />;
   if (error && entries.length === 0) return <ErrorMessage message={error} onRetry={fetchLogs} />;
 
   return (
@@ -287,9 +317,12 @@ export default function AuditLogPage() {
         <input
           type="text"
           list="audit-search-suggestions"
-          placeholder="Search path, user, error…"
+          placeholder="Search path, user, entity, operation, error…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            clearEntityUrlParams();
+          }}
           className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:ring-1 focus:ring-[#1563ff] focus:outline-none"
         />
         <datalist id="audit-search-suggestions">
@@ -327,6 +360,21 @@ export default function AuditLogPage() {
           <option value={100}>100 per page</option>
           <option value={200}>200 per page</option>
         </select>
+        {trimmedSearch && (
+          <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-sm text-blue-700">
+            <span>Search: {trimmedSearch}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                clearEntityUrlParams();
+              }}
+              className="font-medium hover:text-blue-900"
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table */}

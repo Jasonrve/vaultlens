@@ -53,7 +53,11 @@ VaultLens stores its own configuration (branding, webhooks, rotation schedules, 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULT_AUDIT_LOG_PATH` | — | Path to Vault audit log file (required for webhook notifications) |
+| `VAULT_AUDIT_SOURCE` | `file` | Audit source for the UI and webhooks: `file` or `socket` |
+| `VAULT_AUDIT_LOG_PATH` | — | Path to Vault audit log file when `VAULT_AUDIT_SOURCE=file` |
+| `VAULT_AUDIT_SOCKET_PORT` | `9090` | TCP port VaultLens listens on when `VAULT_AUDIT_SOURCE=socket` |
+| `VAULT_AUDIT_SOCKET_HOST` | `0.0.0.0` | TCP host/interface VaultLens binds for socket audit events |
+| `VAULT_AUDIT_SOCKET_VAULT_ADDRESS` | `host.docker.internal:9090` | Address Vault should use to connect back to the VaultLens socket listener |
 
 ## System Token Resolution Order
 

@@ -36,6 +36,10 @@
         {
           "title": "What's New (this panel)",
           "description": "A release changelog is now bundled with VaultLens. An unread dot appears on your user menu whenever a new version is deployed. Dismiss this panel to mark the version as seen."
+        },
+        {
+          "title": "Entity audit popup",
+          "description": "Open the audit log as a popup filtered to the selected entity from the Entities view. Accessible from the entity detail header as an Audit button."
         }
       ],
       "Improved": [
@@ -52,7 +56,16 @@
           "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
         }
       ],
-      "Fixed": []
+      "Fixed": [
+        {
+          "title": "Local socket audit startup",
+          "description": "Local debugging now starts audit log collection in socket mode and re-registers the Vault socket device automatically, so recent audit entries appear without configuring a file audit log."
+        },
+        {
+          "title": "Entity audit full view link",
+          "description": "The entity audit popup now opens the full audit log page with the search field filled for the selected entity. The search field stays usable while results refresh, and the Audit button uses a clearer document search icon."
+        }
+      ]
     }
   },
   "0.7.0": {

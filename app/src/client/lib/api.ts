@@ -672,6 +672,8 @@ export async function getAuditLogs(params?: {
   operation?: string;
   mountType?: string;
   mountPath?: string;
+  entityId?: string;
+  displayName?: string;
 }) {
   const query = new URLSearchParams();
   if (params?.offset) query.set('offset', String(params.offset));
@@ -680,6 +682,8 @@ export async function getAuditLogs(params?: {
   if (params?.operation) query.set('operation', params.operation);
   if (params?.mountType) query.set('mountType', params.mountType);
   if (params?.mountPath) query.set('mountPath', params.mountPath);
+  if (params?.entityId) query.set('entityId', params.entityId);
+  if (params?.displayName) query.set('displayName', params.displayName);
   const qs = query.toString();
   const { data } = await api.get<{ entries: AuditLogEntry[]; total: number; offset: number; limit: number }>(
     `/audit/logs${qs ? `?${qs}` : ''}`,

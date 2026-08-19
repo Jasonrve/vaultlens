@@ -296,7 +296,11 @@ VaultLens supports multiple deployment methods:
 | `VAULTLENS_CONFIG_STORAGE` | No | `file` | Config backend: `file` or `vault` |
 | `VAULTLENS_CONFIG_PATH` | No | `/config` | Directory for `config.ini` and logo blobs (file mode) |
 | `VAULTLENS_BACKUP_PATH` | No | `/backups` | Directory for backup JSON files |
-| `VAULT_AUDIT_LOG_PATH` | No | — | Path to Vault audit log file (required for webhooks) |
+| `VAULT_AUDIT_SOURCE` | No | `file` | Audit source for the UI and webhooks: `file` or `socket` |
+| `VAULT_AUDIT_LOG_PATH` | No | — | Path to Vault audit log file when using file audit mode |
+| `VAULT_AUDIT_SOCKET_PORT` | No | `9090` | TCP port VaultLens listens on when using socket audit mode |
+| `VAULT_AUDIT_SOCKET_HOST` | No | `0.0.0.0` | TCP host/interface VaultLens binds for socket audit events |
+| `VAULT_AUDIT_SOCKET_VAULT_ADDRESS` | No | `host.docker.internal:9090` | Address Vault should use to connect back to VaultLens in socket audit mode |
 | `RATE_LIMIT_MAX` | No | `500` | Max API requests per window |
 | `RATE_LIMIT_WINDOW_MS` | No | `900000` | Rate limit window in ms (15 min) |
 

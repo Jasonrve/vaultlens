@@ -14,6 +14,8 @@ Click an entity to see:
 - Aliases (auth method + accessor)
 - Group memberships
 
+The entity detail header includes an **Audit** button. It opens recent Vault audit entries for that entity in a popup, and **View full audit** opens the main audit log page with the search field filled for that entity. The audit search field can match paths, users, entity IDs, operations, sources, remote addresses, and errors.
+
 ## Groups
 
 ![Groups](/screenshots/groups.png)

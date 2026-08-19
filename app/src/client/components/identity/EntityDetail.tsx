@@ -6,6 +6,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Badge from '../common/Badge';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
+import AuditModal from './AuditModal';
 
 export default function EntityDetail() {
   const { id = '' } = useParams();
@@ -13,6 +14,7 @@ export default function EntityDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -47,6 +49,10 @@ export default function EntityDetail() {
           onClose={() => setShowGraph(false)}
         />
       )}
+
+      {showAudit && entity && (
+        <AuditModal open={showAudit} onClose={() => setShowAudit(false)} entityId={entity.id} entityName={friendlyName} />
+      )}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link to="/access/entities" className="text-sm text-[#1563ff] hover:text-[#1250d4]">
@@ -57,20 +63,38 @@ export default function EntityDetail() {
             <span className="ml-2 font-mono text-sm font-normal text-gray-400">({entity.id})</span>
           </h1>
         </div>
-        <button
-          onClick={() => setShowGraph(true)}
-          title="View relationship graph"
-          className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-            <circle cx="6" cy="12" r="2" />
-            <circle cx="18" cy="6" r="2" />
-            <circle cx="18" cy="18" r="2" />
-            <path strokeLinecap="round" d="M8 11.2l8-4" />
-            <path strokeLinecap="round" d="M8 12.8l8 4" />
-          </svg>
-          Relationships
-        </button>
+        <div className="actions flex items-center gap-2">
+          <button
+            onClick={() => setShowGraph(true)}
+            title="View relationship graph"
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+              <circle cx="6" cy="12" r="2" />
+              <circle cx="18" cy="6" r="2" />
+              <circle cx="18" cy="18" r="2" />
+              <path strokeLinecap="round" d="M8 11.2l8-4" />
+              <path strokeLinecap="round" d="M8 12.8l8 4" />
+            </svg>
+            Relationships
+          </button>
+
+          <button
+            onClick={() => setShowAudit(true)}
+            title="View audit for this entity"
+            aria-label={`View audit for ${friendlyName || entity.id}`}
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 3.75h6.5L17.25 7.5v5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 3.75A2.25 2.25 0 004.75 6v12A2.25 2.25 0 007 20.25h5" />
+              <path strokeLinecap="round" d="M8 9.25h5.5M8 12.75h3" />
+              <circle cx="15.75" cy="16.25" r="2.75" />
+              <path strokeLinecap="round" d="M17.75 18.25l2 2" />
+            </svg>
+            Audit
+          </button>
+        </div>
       </div>
 
       <div className="space-y-6">

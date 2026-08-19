@@ -17,7 +17,11 @@
         "NODE_ENV": "development",
         "VAULT_ADDR": "http://127.0.0.1:8200",
         "VAULT_SYSTEM_TOKEN": "root",
-        "VAULT_SKIP_TLS_VERIFY": "false"
+        "VAULT_SKIP_TLS_VERIFY": "false",
+        "VAULT_AUDIT_SOURCE": "socket",
+        "VAULT_AUDIT_SOCKET_PORT": "9090",
+        "VAULT_AUDIT_SOCKET_HOST": "0.0.0.0",
+        "VAULT_AUDIT_SOCKET_VAULT_ADDRESS": "host.docker.internal:9090"
       }
     },
     {

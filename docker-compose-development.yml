@@ -1,7 +1,6 @@
 services:
   vault:
     image: hashicorp/vault:1.17
-    container_name: vaultlens-vault
     cap_add:
       - IPC_LOCK
     ports:
@@ -27,7 +26,6 @@ services:
 
   vault-init:
     image: hashicorp/vault:1.17
-    container_name: vaultlens-vault-init
     depends_on:
       vault:
         condition: service_healthy

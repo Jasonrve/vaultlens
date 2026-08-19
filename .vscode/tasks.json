@@ -4,8 +4,8 @@
     {
       "label": "docker-compose-up",
       "type": "shell",
-      "command": "docker-compose",
-      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault", "vault-init"],
+      "command": "node",
+      "args": [".vscode/dev-vault-up.mjs"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "presentation": {

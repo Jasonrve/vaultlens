@@ -112,6 +112,9 @@ router.get(
       const filterOperation = String(req.query['operation'] ?? '');
       const filterMountType = String(req.query['mountType'] ?? '');
       const filterMountPath = String(req.query['mountPath'] ?? '').replace(/\/$/, '');
+      // New filters for entity-focused audit modal
+      const filterEntityId = String(req.query['entityId'] ?? '');
+      const filterDisplayName = String(req.query['displayName'] ?? '').toLowerCase();
 
       let rawEntries: AuditEntry[];
 
@@ -203,6 +206,10 @@ router.get(
           ].join(' ').toLowerCase();
           if (!searchFields.includes(search)) continue;
         }
+
+        // Apply entity-specific filters (exact entityId match, displayName substring match)
+        if (filterEntityId && entityId !== filterEntityId) continue;
+        if (filterDisplayName && !String(displayName).toLowerCase().includes(filterDisplayName)) continue;
 
         // Sanitize request/response data — redact HMAC'd tokens
         const requestData = reqEntry.request?.data ?? null;
