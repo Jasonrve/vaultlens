@@ -11,6 +11,7 @@ export default function AuthMethodList() {
   const [methods, setMethods] = useState<AuthMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     api
@@ -20,12 +21,30 @@ export default function AuthMethodList() {
       .finally(() => setLoading(false));
   }, []);
 
+  const filtered = search
+    ? methods.filter(
+        (m) =>
+          m.path.toLowerCase().includes(search.toLowerCase()) ||
+          m.type.toLowerCase().includes(search.toLowerCase()) ||
+          (m.description ?? '').toLowerCase().includes(search.toLowerCase()),
+      )
+    : methods;
+
   if (loading) return <LoadingSpinner className="mt-12" />;
   if (error) return <ErrorMessage message={error} />;
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold text-gray-800">Auth Methods</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">Auth Methods</h1>
+        <input
+          type="text"
+          placeholder="Search auth methods…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-64 rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:ring-1 focus:ring-[#1563ff] focus:outline-none"
+        />
+      </div>
       <div className="overflow-hidden rounded-md border border-gray-200">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -45,7 +64,7 @@ export default function AuthMethodList() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {methods.map((m) => (
+            {filtered.map((m) => (
               <tr key={m.path} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
@@ -67,6 +86,13 @@ export default function AuthMethodList() {
                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{m.accessor}</td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
+                  {search ? `No auth methods match "${search}"` : 'No auth methods found'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
