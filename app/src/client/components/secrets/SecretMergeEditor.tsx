@@ -7,6 +7,7 @@ interface FieldState {
   key: string;
   value: string;
   modified: boolean;
+  showMask: boolean;
 }
 
 export default function SecretMergeEditor() {
@@ -25,8 +26,9 @@ export default function SecretMergeEditor() {
         setFields(
           keys.map((key) => ({
             key,
-            value: '********',
+            value: '',
             modified: false,
+            showMask: true,
           })),
         );
         setLoaded(true);
@@ -37,27 +39,25 @@ export default function SecretMergeEditor() {
   }, [splat]);
 
   function updateField(index: number, value: string) {
-    const updated = [...fields];
-    updated[index] = { ...updated[index], value, modified: true };
-    setFields(updated);
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index ? { ...field, value, modified: true, showMask: false } : field
+    )));
   }
 
   function focusField(index: number) {
-    const field = fields[index];
-    if (!field || field.modified) return;
-
-    const updated = [...fields];
-    updated[index] = { ...field, value: '' };
-    setFields(updated);
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index ? { ...field, showMask: false } : field
+    )));
   }
 
   function blurField(index: number) {
-    const field = fields[index];
-    if (!field || !field.modified || field.value !== '') return;
-
-    const updated = [...fields];
-    updated[index] = { ...field, value: '********', modified: false };
-    setFields(updated);
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index && field.value === ''
+        ? { ...field, showMask: true, modified: false }
+        : fieldIndex === index
+          ? { ...field, showMask: false, modified: true }
+        : field
+    )));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -104,6 +104,7 @@ export default function SecretMergeEditor() {
               <input
                 type="text"
                 value={field.value}
+                placeholder={field.showMask ? '********' : undefined}
                 onFocus={() => focusField(i)}
                 onBlur={() => blurField(i)}
                 onChange={(e) => updateField(i, e.target.value)}
