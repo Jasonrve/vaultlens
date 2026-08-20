@@ -42,6 +42,24 @@ export default function SecretMergeEditor() {
     setFields(updated);
   }
 
+  function focusField(index: number) {
+    const field = fields[index];
+    if (!field || field.modified) return;
+
+    const updated = [...fields];
+    updated[index] = { ...field, value: '' };
+    setFields(updated);
+  }
+
+  function blurField(index: number) {
+    const field = fields[index];
+    if (!field || !field.modified || field.value !== '') return;
+
+    const updated = [...fields];
+    updated[index] = { ...field, value: '********', modified: false };
+    setFields(updated);
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
@@ -49,7 +67,7 @@ export default function SecretMergeEditor() {
     try {
       const changedData: Record<string, unknown> = {};
       for (const field of fields) {
-        if (field.modified) {
+        if (field.modified && field.value !== '') {
           changedData[field.key] = field.value;
         }
       }
@@ -86,6 +104,8 @@ export default function SecretMergeEditor() {
               <input
                 type="text"
                 value={field.value}
+                onFocus={() => focusField(i)}
+                onBlur={() => blurField(i)}
                 onChange={(e) => updateField(i, e.target.value)}
                 className={`flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none ${
                   field.modified

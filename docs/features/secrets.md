@@ -107,8 +107,10 @@ When you have `list` permission on a secret path but not `read` permission:
 The Partial Update flow lets you modify individual fields of a secret you cannot read:
 
 1. Open the merge editor — it shows field names with `********` placeholders
-2. Edit only the fields you want to change (leave others blank to preserve them)
-3. Submit — the backend reads the existing secret with the system token, merges your changes, and writes back using **your token**
+2. Click a field to clear its placeholder, then enter the replacement value
+3. Click away without entering a value to restore the placeholder and leave that field unchanged
+4. Edit only the fields you want to change (empty fields are omitted from the update)
+5. Submit — the backend reads the existing secret with the system token, merges your changes, and writes back using **your token**
 
 Vault's ACL policies still control write access. You never see values you aren't permitted to read.
 
