@@ -5,6 +5,8 @@ import * as api from '../../lib/api';
 
 type AuthMethod = 'token' | 'oidc';
 
+const LAST_ROLE_KEY = 'vaultlens-last-oidc-role';
+
 function VaultHexIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 32 32" fill="none">
@@ -18,7 +20,9 @@ export default function LoginPage() {
   const [method, setMethod] = useState<AuthMethod>('token');
   const [token, setToken] = useState('');
   const [mountPath, setMountPath] = useState('oidc');
-  const [role, setRole] = useState('');
+  const [role, setRole] = useState(() => {
+    try { return localStorage.getItem(LAST_ROLE_KEY) || ''; } catch { return ''; }
+  });
   const [oidcError, setOidcError] = useState('');
   const [oidcLoading, setOidcLoading] = useState(false);
   const [defaultOidcRole, setDefaultOidcRole] = useState<string>('');
@@ -373,7 +377,10 @@ export default function LoginPage() {
                   id="role"
                   type="text"
                   value={role}
-                  onChange={(e) => setRole(e.target.value)}
+                  onChange={(e) => {
+                    setRole(e.target.value);
+                    try { localStorage.setItem(LAST_ROLE_KEY, e.target.value); } catch { /* private mode */ }
+                  }}
                   placeholder={defaultOidcRole || 'default'}
                   autoComplete="off"
                   className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-[#1563ff] focus:outline-none focus:ring-1 focus:ring-[#1563ff]"
