@@ -8,6 +8,7 @@ import AuthMethodTune from './AuthMethodTune';
 import RoleList from './RoleList';
 import { AuthMethodMeta } from './AuthMethodMeta';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
+import AuditErrorBadge from '../common/AuditErrorBadge';
 
 type Tab = 'Configuration' | 'Method Options' | 'Roles';
 const ALL_TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
@@ -19,6 +20,7 @@ export default function AuthMethodDetail() {
   const [loading, setLoading] = useState(true);
   const [showGraph, setShowGraph] = useState(false);
   const [tuneAccessible, setTuneAccessible] = useState(true);
+  const [errorCounts, setErrorCounts] = useState<api.AuditErrorCounts | null>(null);
 
   // Resolve the method type from the auth methods list
   useEffect(() => {
@@ -40,6 +42,26 @@ export default function AuthMethodDetail() {
         const status = (err as { response?: { status?: number } })?.response?.status;
         if (status === 403) setTuneAccessible(false);
       });
+  }, [method]);
+
+  // Audit error counts — single call covers both the mount total (shown here)
+  // and the per-role breakdown (shown in RoleList), so navigating between the
+  // header and the Roles tab doesn't trigger duplicate audit scans.
+  useEffect(() => {
+    api.getAuditErrorCounts(method)
+      .then(setErrorCounts)
+      .catch(() => setErrorCounts(null));
+  }, [method]);
+
+  // Live updates — the server debounces these, so a burst of new audit errors
+  // still only triggers one graceful refetch instead of spamming the UI.
+  useEffect(() => {
+    const unsubscribe = api.subscribeToAuditUpdates(() => {
+      api.getAuditErrorCounts(method)
+        .then(setErrorCounts)
+        .catch(() => {});
+    });
+    return unsubscribe;
   }, [method]);
 
   const tabs: Tab[] = ALL_TABS.filter((t) => t !== 'Method Options' || tuneAccessible);
@@ -74,20 +96,23 @@ export default function AuthMethodDetail() {
             )
           }
         </div>
-        <button
-          onClick={() => setShowGraph(true)}
-          title="View relationship graph"
-          className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
-            <circle cx="6" cy="12" r="2" />
-            <circle cx="18" cy="6" r="2" />
-            <circle cx="18" cy="18" r="2" />
-            <path strokeLinecap="round" d="M8 11.2l8-4" />
-            <path strokeLinecap="round" d="M8 12.8l8 4" />
-          </svg>
-          Relationships
-        </button>
+        <div className="flex items-center gap-2">
+          <AuditErrorBadge count={errorCounts?.mountTotal ?? 0} mountPath={method} label={method} />
+          <button
+            onClick={() => setShowGraph(true)}
+            title="View relationship graph"
+            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 shadow-sm hover:bg-gray-50 hover:text-[#1563ff]"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+              <circle cx="6" cy="12" r="2" />
+              <circle cx="18" cy="6" r="2" />
+              <circle cx="18" cy="18" r="2" />
+              <path strokeLinecap="round" d="M8 11.2l8-4" />
+              <path strokeLinecap="round" d="M8 12.8l8 4" />
+            </svg>
+            Relationships
+          </button>
+        </div>
       </div>
 
       {methodInfo?.description && (
@@ -127,9 +152,10 @@ export default function AuthMethodDetail() {
           </div>
         )}
         {activeTab === 'Roles' && (
-          <RoleList embedded />
+          <RoleList embedded errorCounts={errorCounts} />
         )}
       </div>
     </div>
   );
 }
+

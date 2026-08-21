@@ -36,6 +36,10 @@
         {
           "title": "What's New (this panel)",
           "description": "A release changelog is now bundled with VaultLens. An unread dot appears on your user menu whenever a new version is deployed. Dismiss this panel to mark the version as seen."
+        },
+        {
+          "title": "Auth method error badges",
+          "description": "The auth method page and its roles list now show a small red counter when recent audit errors are found for that backend or role. Click the badge to open a filtered audit log popup scoped to just those errors."
         }
       ],
       "Improved": [
@@ -50,6 +54,10 @@
         {
           "title": "Audit log right-click in auth method detail",
           "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
+        },
+        {
+          "title": "Audit buffer memory estimate on Analytics",
+          "description": "The Audit Logging card on the Analytics page now shows an estimated memory footprint for the in-memory audit buffer, so you can gauge how much space the cached events are using."
         }
       ],
       "Fixed": [

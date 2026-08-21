@@ -660,6 +660,11 @@ export async function getAuditSource(): Promise<AuditSourceInfo> {
   return data;
 }
 
+export async function getAuditMemoryEstimate(): Promise<{ bytes: number }> {
+  const { data } = await api.get<{ bytes: number }>('/audit/memory-estimate');
+  return data;
+}
+
 export async function getAuditDevices(): Promise<AuditDevice[]> {
   const { data } = await api.get<{ devices: AuditDevice[] }>('/audit/devices');
   return data.devices;
@@ -672,6 +677,8 @@ export async function getAuditLogs(params?: {
   operation?: string;
   mountType?: string;
   mountPath?: string;
+  role?: string;
+  errorOnly?: boolean;
 }) {
   const query = new URLSearchParams();
   if (params?.offset) query.set('offset', String(params.offset));
@@ -680,11 +687,37 @@ export async function getAuditLogs(params?: {
   if (params?.operation) query.set('operation', params.operation);
   if (params?.mountType) query.set('mountType', params.mountType);
   if (params?.mountPath) query.set('mountPath', params.mountPath);
+  if (params?.role) query.set('role', params.role);
+  if (params?.errorOnly) query.set('errorOnly', 'true');
   const qs = query.toString();
   const { data } = await api.get<{ entries: AuditLogEntry[]; total: number; offset: number; limit: number }>(
     `/audit/logs${qs ? `?${qs}` : ''}`,
   );
   return data;
+}
+
+export interface AuditErrorCounts {
+  mountTotal: number;
+  byRole: Record<string, number>;
+}
+
+export async function getAuditErrorCounts(mountPath: string): Promise<AuditErrorCounts> {
+  const { data } = await api.get<AuditErrorCounts>(
+    `/audit/error-counts?mountPath=${encodeURIComponent(mountPath)}`,
+  );
+  return data;
+}
+
+/**
+ * Subscribes to live audit-update notifications (Server-Sent Events).
+ * `onUpdate` fires when new audit errors have arrived — already debounced
+ * server-side, so callers can just refetch without their own throttling.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToAuditUpdates(onUpdate: () => void): () => void {
+  const source = new EventSource('/api/audit/events', { withCredentials: true });
+  source.onmessage = () => onUpdate();
+  return () => source.close();
 }
 
 // ── Secrets Engines Management ────────────────────────────

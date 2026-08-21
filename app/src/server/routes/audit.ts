@@ -5,9 +5,11 @@ import readline from 'readline';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { getAuditBuffer, getAuditSocketStats, autoRegisterSocketAuditWithVault } from '../lib/auditSocket.js';
+import { getAuditBuffer, getAuditSocketStats, autoRegisterSocketAuditWithVault, estimateAuditBufferBytes } from '../lib/auditSocket.js';
+import { subscribeToAuditEvents } from '../lib/auditEvents.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { auditEventsProcessedTotal } from '../lib/metrics.js';
+import { attributeAuditError } from '../lib/auditErrorAttribution.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -96,9 +98,115 @@ router.get(
   },
 );
 
+// GET /api/audit/memory-estimate — on-demand estimate of ring buffer memory usage.
+// Not folded into /source since serializing the whole buffer is too slow to run
+// on every stats poll; callers should fetch this separately (e.g. once per page load).
+router.get(
+  '/memory-estimate',
+  (_req: AuthenticatedRequest, res: Response) => {
+    res.json({ bytes: estimateAuditBufferBytes() });
+  },
+);
+
+// Short-lived cache around the raw audit source read (file I/O or ring buffer
+// copy). Several widgets (auth method header, roles table, audit tab) can all
+// request audit data within the same page load — this avoids re-reading a
+// multi-MB file or re-copying the buffer for every one of them.
+const RAW_ENTRIES_CACHE_TTL_MS = 5000;
+let rawEntriesCache: { data: AuditEntry[]; expires: number } | null = null;
+
+// Reads from the in-memory ring buffer (socket mode) or the on-disk audit
+// log file (file mode), cached briefly to absorb bursts of requests.
+async function readRawAuditEntries(): Promise<AuditEntry[]> {
+  if (rawEntriesCache && rawEntriesCache.expires > Date.now()) {
+    return rawEntriesCache.data;
+  }
+
+  let entries: AuditEntry[];
+  if (config.auditSource === 'socket') {
+    entries = getAuditBuffer() as AuditEntry[];
+  } else if (!fs.existsSync(AUDIT_LOG_FILE)) {
+    entries = [];
+  } else {
+    // Read efficiently from the end of the file so large multi-GB logs have no impact.
+    // We grab the last CHUNK_SIZE_BYTES bytes, which covers ~20k typical audit entries.
+    // The first line of a mid-file chunk may be incomplete and is skipped.
+    const MAX_AUDIT_LINES = 20_000;
+    const CHUNK_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB window from end
+
+    const fileStats = await fs.promises.stat(AUDIT_LOG_FILE);
+    const fileSize = fileStats.size;
+    const startByte = Math.max(0, fileSize - CHUNK_SIZE_BYTES);
+
+    const fileEntries: AuditEntry[] = [];
+    const fileStream = fs.createReadStream(AUDIT_LOG_FILE, {
+      encoding: 'utf-8',
+      start: startByte,
+    });
+    const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+
+    let skipFirst = startByte > 0; // first line may be incomplete when starting mid-file
+    for await (const line of rl) {
+      if (skipFirst) { skipFirst = false; continue; }
+      if (!line.trim()) continue;
+      if (fileEntries.length >= MAX_AUDIT_LINES) break;
+      try {
+        fileEntries.push(JSON.parse(line) as AuditEntry);
+      } catch {
+        // Skip malformed lines
+      }
+    }
+    entries = fileEntries;
+  }
+
+  rawEntriesCache = { data: entries, expires: Date.now() + RAW_ENTRIES_CACHE_TTL_MS };
+  return entries;
+}
+
+// Pairs up request/response audit entries by request ID. No filtering here —
+// callers (/logs, /error-counts) apply their own filters over the full set.
+function buildGroupedEntries(rawEntries: AuditEntry[]): GroupedAuditEntry[] {
+  const requestMap = new Map<string, AuditEntry>();
+  const responseMap = new Map<string, AuditEntry>();
+
+  for (const entry of rawEntries) {
+    const reqId = entry.request?.id;
+    if (!reqId) continue;
+    if (entry.type === 'request') {
+      requestMap.set(reqId, entry);
+    } else if (entry.type === 'response') {
+      responseMap.set(reqId, entry);
+    }
+  }
+
+  const grouped: GroupedAuditEntry[] = [];
+  for (const [reqId, reqEntry] of requestMap) {
+    const respEntry = responseMap.get(reqId);
+
+    grouped.push({
+      requestId: reqId,
+      time: reqEntry.time,
+      operation: reqEntry.request?.operation ?? '',
+      path: reqEntry.request?.path ?? '',
+      mountType: reqEntry.request?.mount_type ?? respEntry?.response?.mount_type ?? '',
+      mountPoint: reqEntry.request?.mount_point ?? respEntry?.response?.mount_point ?? '',
+      displayName: reqEntry.auth?.display_name ?? '',
+      entityId: reqEntry.auth?.entity_id ?? '',
+      policies: reqEntry.auth?.policies ?? reqEntry.auth?.token_policies ?? [],
+      clientTokenAccessor: reqEntry.request?.client_token_accessor ?? reqEntry.auth?.accessor ?? '',
+      remoteAddress: reqEntry.request?.remote_address ?? '',
+      error: respEntry?.error ?? '',
+      requestData: reqEntry.request?.data ?? null,
+      responseData: respEntry?.response?.data ?? null,
+      hasResponse: !!respEntry,
+    });
+  }
+
+  grouped.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  return grouped;
+}
+
 // GET /api/audit/logs — read and return grouped audit log entries (server-side paginated)
-// In socket mode: reads from the in-memory ring buffer (no file I/O).
-// In file mode: reads from the on-disk audit log file.
 router.get(
   '/logs',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -112,123 +220,36 @@ router.get(
       const filterOperation = String(req.query['operation'] ?? '');
       const filterMountType = String(req.query['mountType'] ?? '');
       const filterMountPath = String(req.query['mountPath'] ?? '').replace(/\/$/, '');
+      const filterRole = String(req.query['role'] ?? '');
+      const errorOnly = String(req.query['errorOnly'] ?? '') === 'true';
 
-      let rawEntries: AuditEntry[];
+      const rawEntries = await readRawAuditEntries();
+      const allGrouped = buildGroupedEntries(rawEntries);
 
-      if (config.auditSource === 'socket') {
-        // ── Socket mode: read from in-memory ring buffer (no file I/O) ───────
-        rawEntries = getAuditBuffer() as AuditEntry[];
-      } else {
-        // ── File mode: read from on-disk audit log file ───────────────────────
-        if (!fs.existsSync(AUDIT_LOG_FILE)) {
-          return res.json({ entries: [], total: 0 });
-        }
-
-        // Read efficiently from the end of the file so large multi-GB logs have no impact.
-        // We grab the last CHUNK_SIZE_BYTES bytes, which covers ~20k typical audit entries.
-        // The first line of a mid-file chunk may be incomplete and is skipped.
-        const MAX_AUDIT_LINES = 20_000;
-        const CHUNK_SIZE_BYTES = 30 * 1024 * 1024; // 30 MB window from end
-
-        const fileStats = await fs.promises.stat(AUDIT_LOG_FILE);
-        const fileSize = fileStats.size;
-        const startByte = Math.max(0, fileSize - CHUNK_SIZE_BYTES);
-
-        const fileEntries: AuditEntry[] = [];
-        const fileStream = fs.createReadStream(AUDIT_LOG_FILE, {
-          encoding: 'utf-8',
-          start: startByte,
-        });
-        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-
-        let skipFirst = startByte > 0; // first line may be incomplete when starting mid-file
-        for await (const line of rl) {
-          if (skipFirst) { skipFirst = false; continue; }
-          if (!line.trim()) continue;
-          if (fileEntries.length >= MAX_AUDIT_LINES) break;
-          try {
-            fileEntries.push(JSON.parse(line) as AuditEntry);
-          } catch {
-            // Skip malformed lines
-          }
-        }
-        rawEntries = fileEntries;
-      }
-
-      // Group requests and responses by request ID
-      const requestMap = new Map<string, AuditEntry>();
-      const responseMap = new Map<string, AuditEntry>();
-
-      for (const entry of rawEntries) {
-        const reqId = entry.request?.id;
-        if (!reqId) continue;
-        if (entry.type === 'request') {
-          requestMap.set(reqId, entry);
-        } else if (entry.type === 'response') {
-          responseMap.set(reqId, entry);
-        }
-      }
-
-      // Build grouped entries
-      const grouped: GroupedAuditEntry[] = [];
-      for (const [reqId, reqEntry] of requestMap) {
-        const respEntry = responseMap.get(reqId);
-
-        const operation = reqEntry.request?.operation ?? '';
-        const reqPath = reqEntry.request?.path ?? '';
-        const mountType = reqEntry.request?.mount_type
-          ?? respEntry?.response?.mount_type ?? '';
-        const mountPoint = reqEntry.request?.mount_point
-          ?? respEntry?.response?.mount_point ?? '';
-        const displayName = reqEntry.auth?.display_name ?? '';
-        const entityId = reqEntry.auth?.entity_id ?? '';
-        const policies = reqEntry.auth?.policies ?? reqEntry.auth?.token_policies ?? [];
-        const clientTokenAccessor = reqEntry.request?.client_token_accessor
-          ?? reqEntry.auth?.accessor ?? '';
-        const remoteAddress = reqEntry.request?.remote_address ?? '';
-        const error = respEntry?.error ?? '';
-
-        // Apply filters
-        if (filterOperation && operation !== filterOperation) continue;
-        if (filterMountType && mountType !== filterMountType) continue;
+      const grouped = allGrouped.filter((entry) => {
+        if (filterOperation && entry.operation !== filterOperation) return false;
+        if (filterMountType && entry.mountType !== filterMountType) return false;
+        if (errorOnly && !entry.error) return false;
         if (filterMountPath) {
           // mountPoint in audit logs is e.g. "auth/github/" for auth mounts
-          const cleanMountPoint = mountPoint.replace(/^auth\//, '').replace(/\/$/, '');
-          if (cleanMountPoint !== filterMountPath && !mountPoint.includes(filterMountPath)) continue;
+          const cleanMountPoint = entry.mountPoint.replace(/^auth\//, '').replace(/\/$/, '');
+          if (cleanMountPoint !== filterMountPath && !entry.mountPoint.includes(filterMountPath)) return false;
+        }
+        // Uses the same role-matching heuristic as /error-counts so the popup
+        // shows exactly the entries the badge counted (role isn't in the path
+        // for login attempts, so plain text search can't find these).
+        if (filterRole && filterMountPath) {
+          if (attributeAuditError(filterMountPath, entry).role !== filterRole) return false;
         }
         if (search) {
           const searchFields = [
-            reqPath, operation, mountType, displayName,
-            entityId, error, remoteAddress, mountPoint,
+            entry.path, entry.operation, entry.mountType, entry.displayName,
+            entry.entityId, entry.error, entry.remoteAddress, entry.mountPoint,
           ].join(' ').toLowerCase();
-          if (!searchFields.includes(search)) continue;
+          if (!searchFields.includes(search)) return false;
         }
-
-        // Sanitize request/response data — redact HMAC'd tokens
-        const requestData = reqEntry.request?.data ?? null;
-        const responseData = respEntry?.response?.data ?? null;
-
-        grouped.push({
-          requestId: reqId,
-          time: reqEntry.time,
-          operation,
-          path: reqPath,
-          mountType,
-          mountPoint,
-          displayName,
-          entityId,
-          policies,
-          clientTokenAccessor,
-          remoteAddress,
-          error,
-          requestData,
-          responseData,
-          hasResponse: !!respEntry,
-        });
-      }
-
-      // Sort by time descending (most recent first)
-      grouped.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+        return true;
+      });
 
       // Apply server-side pagination
       const total = grouped.length;
@@ -240,6 +261,65 @@ router.get(
       return next(error);
     }
   }
+);
+
+// GET /api/audit/error-counts?mountPath=<method> — error totals for an auth
+// method mount plus a per-role breakdown, so the UI can render small "N
+// errors" badges without the client re-scanning the audit source itself.
+// See attributeAuditError() for the role-matching heuristic and its ceiling.
+router.get(
+  '/error-counts',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const mountPath = String(req.query['mountPath'] ?? '').replace(/\/$/, '');
+      if (!mountPath) {
+        res.status(400).json({ error: 'mountPath is required' });
+        return;
+      }
+
+      const rawEntries = await readRawAuditEntries();
+      const grouped = buildGroupedEntries(rawEntries);
+
+      let mountTotal = 0;
+      const byRole: Record<string, number> = {};
+
+      for (const entry of grouped) {
+        if (!entry.error) continue;
+        const { inMount, role } = attributeAuditError(mountPath, entry);
+        if (!inMount) continue;
+        mountTotal += 1;
+        if (role) byRole[role] = (byRole[role] ?? 0) + 1;
+      }
+
+      return res.json({ mountTotal, byRole });
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+// GET /api/audit/events — Server-Sent Events stream that tells the UI when to
+// refetch audit data (e.g. error badge counts). Notifications are debounced
+// server-side (see auditEvents.ts) so bursts of errors don't spam the client.
+router.get(
+  '/events',
+  (req: AuthenticatedRequest, res: Response) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+    res.write('\n');
+
+    const unsubscribe = subscribeToAuditEvents(res);
+    // Keep the connection alive through proxies/load balancers that drop idle streams
+    const heartbeat = setInterval(() => res.write(': ping\n\n'), 20000);
+
+    req.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  },
 );
 
 // GET /api/audit/devices — list Vault audit backends (file, socket, syslog, etc.)

@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
+import AuditErrorBadge from '../common/AuditErrorBadge';
 
 interface AppRoleForm {
   bindSecretId: boolean;
@@ -45,7 +46,12 @@ function appRoleFormToBody(form: AppRoleForm): Record<string, unknown> {
   return body;
 }
 
-export default function RoleList({ embedded = false }: { embedded?: boolean }) {
+interface RoleListProps {
+  embedded?: boolean;
+  errorCounts?: api.AuditErrorCounts | null;
+}
+
+export default function RoleList({ embedded = false, errorCounts = null }: RoleListProps) {
   const { method = '' } = useParams();
   const [roles, setRoles] = useState<string[]>([]);
   const [methodType, setMethodType] = useState('');
@@ -362,13 +368,16 @@ export default function RoleList({ embedded = false }: { embedded?: boolean }) {
                   </Link>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <button
-                    onClick={() => { void handleDelete(role); }}
-                    disabled={deletingRole === role}
-                    className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                  >
-                    {deletingRole === role ? 'Deleting…' : 'Delete'}
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <AuditErrorBadge count={errorCounts?.byRole[role] ?? 0} mountPath={method} roleFilter={role} label={role} />
+                    <button
+                      onClick={() => { void handleDelete(role); }}
+                      disabled={deletingRole === role}
+                      className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
+                    >
+                      {deletingRole === role ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

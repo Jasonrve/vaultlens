@@ -60,6 +60,18 @@ function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let value = bytes / 1024;
+  let i = 0;
+  while (value >= 1024 && i < units.length - 1) {
+    value /= 1024;
+    i++;
+  }
+  return `${value.toFixed(1)} ${units[i]}`;
+}
+
 export default function AnalyticsPage() {
   const [health, setHealth] = useState<HealthData | null>(null);
   const [seal, setSeal] = useState<SealData | null>(null);
@@ -77,6 +89,8 @@ export default function AnalyticsPage() {
   const [auditDevices, setAuditDevices] = useState<api.AuditDevice[] | null>(null);
   const [auditActionLoading, setAuditActionLoading] = useState(false);
   const [auditActionMsg, setAuditActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [auditMemoryBytes, setAuditMemoryBytes] = useState<number | null>(null);
+  const [auditMemoryLoading, setAuditMemoryLoading] = useState(true);
 
   const refreshAudit = useCallback(() => {
     Promise.allSettled([api.getAuditSource(), api.getAuditDevices()]).then(([src, dev]) => {
@@ -112,6 +126,15 @@ export default function AnalyticsPage() {
       if (dev.status === 'fulfilled') setAuditDevices(dev.value);
       setLoading(false);
     });
+  }, []);
+
+  // Fetched separately (not in the batch above) since serializing the ring buffer
+  // for a real memory estimate is too slow to bundle with the fast page-load stats.
+  useEffect(() => {
+    api.getAuditMemoryEstimate()
+      .then((res) => setAuditMemoryBytes(res.bytes))
+      .catch(() => setAuditMemoryBytes(null))
+      .finally(() => setAuditMemoryLoading(false));
   }, []);
 
   if (loading) return <LoadingSpinner className="mt-12" />;
@@ -317,7 +340,7 @@ export default function AnalyticsPage() {
 
             {/* Socket stats */}
             {auditSource.source === 'socket' && auditSource.socket.listening && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 pt-2 border-t border-gray-100">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 pt-2 border-t border-gray-100">
                 <div>
                   <p className="text-xs text-gray-500">Connected Clients</p>
                   <p className="text-lg font-semibold text-gray-800">{auditSource.socket.connectedClients}</p>
@@ -329,6 +352,16 @@ export default function AnalyticsPage() {
                 <div>
                   <p className="text-xs text-gray-500">Buffer Size</p>
                   <p className="text-lg font-semibold text-gray-800">{auditSource.socket.bufferSize.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Memory (est.)</p>
+                  {auditMemoryLoading ? (
+                    <div className="mt-1.5 h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-600" />
+                  ) : (
+                    <p className="text-lg font-semibold text-gray-800">
+                      {auditMemoryBytes !== null ? formatBytes(auditMemoryBytes) : '—'}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Last Event</p>

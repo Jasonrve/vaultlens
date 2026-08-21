@@ -51,6 +51,7 @@ export default [
         MessageEvent: 'readonly',
         StorageEvent: 'readonly',
         BroadcastChannel: 'readonly',
+        EventSource: 'readonly',
         localStorage: 'readonly',
         React: 'readonly',
         File: 'readonly',
