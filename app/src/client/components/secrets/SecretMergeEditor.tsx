@@ -7,6 +7,7 @@ interface FieldState {
   key: string;
   value: string;
   modified: boolean;
+  showMask: boolean;
 }
 
 export default function SecretMergeEditor() {
@@ -25,8 +26,9 @@ export default function SecretMergeEditor() {
         setFields(
           keys.map((key) => ({
             key,
-            value: '********',
+            value: '',
             modified: false,
+            showMask: true,
           })),
         );
         setLoaded(true);
@@ -37,9 +39,25 @@ export default function SecretMergeEditor() {
   }, [splat]);
 
   function updateField(index: number, value: string) {
-    const updated = [...fields];
-    updated[index] = { ...updated[index], value, modified: true };
-    setFields(updated);
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index ? { ...field, value, modified: true, showMask: false } : field
+    )));
+  }
+
+  function focusField(index: number) {
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index ? { ...field, showMask: false } : field
+    )));
+  }
+
+  function blurField(index: number) {
+    setFields((currentFields) => currentFields.map((field, fieldIndex) => (
+      fieldIndex === index && field.value === ''
+        ? { ...field, showMask: true, modified: false }
+        : fieldIndex === index
+          ? { ...field, showMask: false, modified: true }
+        : field
+    )));
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -49,7 +67,7 @@ export default function SecretMergeEditor() {
     try {
       const changedData: Record<string, unknown> = {};
       for (const field of fields) {
-        if (field.modified) {
+        if (field.modified && field.value !== '') {
           changedData[field.key] = field.value;
         }
       }
@@ -86,6 +104,9 @@ export default function SecretMergeEditor() {
               <input
                 type="text"
                 value={field.value}
+                placeholder={field.showMask ? '********' : undefined}
+                onFocus={() => focusField(i)}
+                onBlur={() => blurField(i)}
                 onChange={(e) => updateField(i, e.target.value)}
                 className={`flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none ${
                   field.modified

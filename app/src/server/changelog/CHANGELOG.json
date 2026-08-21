@@ -52,7 +52,12 @@
           "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
         }
       ],
-      "Fixed": []
+      "Fixed": [
+        {
+          "title": "Restricted secret partial updates",
+          "description": "Masked values are cleared when you edit a restricted secret field, so replacement text is saved without the mask. Empty fields are ignored and restore their placeholder when left unchanged."
+        }
+      ]
     }
   },
   "0.7.0": {
