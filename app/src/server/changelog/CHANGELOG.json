@@ -40,6 +40,10 @@
         {
           "title": "Application settings backup",
           "description": "Back up and restore VaultLens's own configuration — feature toggles, branding, sharing options, webhooks, backup schedule, and custom developer integration guides — separately from your Vault secrets. Available from the Backup & Restore admin page."
+        },
+        }
+          "title": "Auth method error badges",
+          "description": "The auth method page and its roles list now show a small red counter when recent audit errors are found for that backend or role. Click the badge to open a filtered audit log popup scoped to just those errors."
         }
       ],
       "Improved": [
@@ -54,9 +58,18 @@
         {
           "title": "Audit log right-click in auth method detail",
           "description": "The embedded audit log inside Auth Method → Role Detail also gains the right-click context menu and webhook creation modal."
+        },
+        {
+          "title": "Audit buffer memory estimate on Analytics",
+          "description": "The Audit Logging card on the Analytics page now shows an estimated memory footprint for the in-memory audit buffer, so you can gauge how much space the cached events are using."
         }
       ],
-      "Fixed": []
+      "Fixed": [
+        {
+          "title": "Restricted secret partial updates",
+          "description": "Masked values are cleared when you edit a restricted secret field, so replacement text is saved without the mask. Empty fields are ignored and restore their placeholder when left unchanged."
+        }
+      ]
     }
   },
   "0.7.0": {

@@ -2,7 +2,7 @@
 
 # Read secrets
 path "kv/data/product/service/nprd/*" {
-  capabilities = ["create", "read", "update", "delete"]
+  capabilities = ["create", "update", "delete"]
 }
 
 # List secrets
@@ -16,5 +16,9 @@ path "kv/metadata/product/*" {
 }
 
 path "kv/metadata/product/service/*" {
+  capabilities = ["list"]
+}
+
+path "kv/metadata/*" {
   capabilities = ["list"]
 }

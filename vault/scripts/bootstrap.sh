@@ -1,4 +1,4 @@
-﻿#!/bin/sh
+#!/bin/sh
 set -e
 
 echo "============================================"
@@ -18,6 +18,12 @@ echo "✓ Vault is ready"
 echo ""
 echo "→ Socket audit is configured via VAULT_AUDIT_SOURCE=socket (server-managed)"
 echo "✓ File audit disabled for local testing — using socket only"
+
+# A stale vault-audit-demo socket device (pointing at a previous app process)
+# would block every request below, since Vault fails closed when a configured
+# audit device is unreachable. Clear it up front — vault-audit-demo re-registers
+# it once VaultLens is listening again.
+vault audit disable vaultlens-socket-demo > /dev/null 2>&1 || true
 
 # ── Enable KV v2 secret engine ────────────────────────────────────────────────
 echo ""
@@ -129,6 +135,12 @@ vault write auth/kubernetes/role/argo-deployer \
   max_ttl="8h"
 echo "  ✓ Kubernetes role 'argo-deployer' created"
 
+# Role names aren't sensitive, but Vault HMACs every request body field by
+# default — exempt "role" so login failures can be attributed to a role name
+# in the audit log (used by VaultLens's per-role error badges).
+vault auth tune -audit-non-hmac-request-keys=role kubernetes/ 2>/dev/null || true
+echo "  ✓ Kubernetes 'role' field exempted from audit HMAC"
+
 # ── Enable second Kubernetes Auth (nprd cluster) — demonstrates newline label format ──
 echo ""
 echo "→ Enabling Kubernetes auth method (nprd cluster — newline label format)..."
@@ -157,6 +169,9 @@ vault write auth/kubernetes-nprd/role/app-role \
   ttl="1h" \
   max_ttl="4h" 2>/dev/null || true
 echo "  ✓ kubernetes-nprd role 'app-role' created"
+
+vault auth tune -audit-non-hmac-request-keys=role kubernetes-nprd/ 2>/dev/null || true
+echo "  ✓ kubernetes-nprd 'role' field exempted from audit HMAC"
 
 # ── Enable GitHub Auth ────────────────────────────────────────────────────────
 echo ""
