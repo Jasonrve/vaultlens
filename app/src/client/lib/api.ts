@@ -812,7 +812,7 @@ export interface BackupEntry {
   filename: string;
   size: number;
   createdAt: string;
-  type: 'snapshot' | 'legacy-json' | 'kv-json';
+  type: 'snapshot' | 'legacy-json' | 'kv-json' | 'app-json';
 }
 
 export async function createKvBackup() {
@@ -838,6 +838,28 @@ export async function restoreKvBackup(filename: string) {
 
 export async function getBackupStatus() {
   const { data } = await api.get<{ raftAvailable: boolean }>('/backup/status');
+  return data;
+}
+
+export async function createAppBackup() {
+  const { data } = await api.post<{
+    success: boolean;
+    filename: string;
+    size: number;
+    createdAt: string;
+    sectionCount: number;
+  }>('/backup/app-create', {});
+  return data;
+}
+
+export async function restoreAppBackup(filename: string) {
+  const { data } = await api.post<{
+    success: boolean;
+    filename: string;
+    restoredSections: number;
+    restoredBlobs: number;
+    restoredDevGuides: number;
+  }>('/backup/app-restore', { filename });
   return data;
 }
 

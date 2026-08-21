@@ -74,6 +74,13 @@ export class VaultConfigStorage implements ConfigStorageProvider {
     }
   }
 
+  async listBlobs(): Promise<string[]> {
+    const all = await this.list();
+    return all
+      .filter(k => k.startsWith('_blob_'))
+      .map(k => decodeURIComponent(k.slice('_blob_'.length)));
+  }
+
   async getBlob(key: string): Promise<{ data: Buffer; mimeType: string } | null> {
     const token = await getSystemToken();
     if (!token) return null;

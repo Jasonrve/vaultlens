@@ -104,6 +104,11 @@ export class FileConfigStorage implements ConfigStorageProvider {
     return Object.keys(this.readAll());
   }
 
+  async listBlobs(): Promise<string[]> {
+    this.ensureDirs();
+    return fs.readdirSync(this.blobDir).filter(f => !f.endsWith('.meta'));
+  }
+
   async getBlob(key: string): Promise<{ data: Buffer; mimeType: string } | null> {
     const safeKey = path.basename(key);
     const blobPath = path.join(this.blobDir, safeKey);

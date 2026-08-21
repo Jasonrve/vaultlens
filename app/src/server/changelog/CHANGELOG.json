@@ -3,9 +3,9 @@
     "date": "2026-07-21",
     "highlights": [
       "Secret version history with diff comparison",
+      "Application settings backup and restore",
       "Audit log pause and right-click context menu",
-      "Create webhooks directly from audit entries",
-      "AppRole secret ID generation and management"
+      "Create webhooks directly from audit entries"
     ],
     "sections": {
       "New": [
@@ -38,6 +38,10 @@
           "description": "A release changelog is now bundled with VaultLens. An unread dot appears on your user menu whenever a new version is deployed. Dismiss this panel to mark the version as seen."
         },
         {
+          "title": "Application settings backup",
+          "description": "Back up and restore VaultLens's own configuration — feature toggles, branding, sharing options, webhooks, backup schedule, and custom developer integration guides — separately from your Vault secrets. Available from the Backup & Restore admin page."
+        },
+        }
           "title": "Auth method error badges",
           "description": "The auth method page and its roles list now show a small red counter when recent audit errors are found for that backend or role. Click the badge to open a filtered audit log popup scoped to just those errors."
         }

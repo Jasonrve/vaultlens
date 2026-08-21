@@ -15,6 +15,9 @@ export interface ConfigStorageProvider {
   /** List all configuration sections. */
   list(): Promise<string[]>;
 
+  /** List all binary blob keys (e.g. logo files). */
+  listBlobs(): Promise<string[]>;
+
   /** Read a binary blob (e.g. logo file). Returns null if not found. */
   getBlob(key: string): Promise<{ data: Buffer; mimeType: string } | null>;
 
