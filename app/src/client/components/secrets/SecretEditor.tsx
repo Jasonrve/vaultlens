@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 import JsonEditor from '../common/JsonEditor';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
+import { decodeSecretImport, type SecretImportPayload } from '../../lib/crypto';
 
 interface KvRow {
   key: string;
@@ -13,7 +14,9 @@ interface KvRow {
 export default function SecretEditor() {
   const { '*': splat = '' } = useParams();
   const navigate = useNavigate();
-  const isNew = window.location.pathname.startsWith('/secrets/create');
+  const isImport = window.location.pathname === '/secrets/import';
+  const isNew = isImport || window.location.pathname.startsWith('/secrets/create');
+  const [importPayload, setImportPayload] = useState<SecretImportPayload | null>(null);
   const [path, setPath] = useState(isNew ? '' : splat);
   const [mode, setMode] = useState<'kv' | 'json'>('kv');
   const [rows, setRows] = useState<KvRow[]>([{ key: '', value: '' }]);
@@ -27,6 +30,25 @@ export default function SecretEditor() {
   const [metaRows, setMetaRows] = useState<KvRow[]>([]);
   const [showMeta, setShowMeta] = useState(false);
   const [isKvV2, setIsKvV2] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!isImport) return;
+    try {
+      const encoded = window.location.hash.replace(/^#(?:vaultlens-import=)?/, '');
+      const payload = decodeSecretImport(encoded);
+      setImportPayload(payload);
+      setPath(payload.path);
+      const kvRows = Object.entries(payload.data).map(([key, value]) => ({
+        key,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+      }));
+      setRows(kvRows.length > 0 ? kvRows : [{ key: '', value: '' }]);
+      setJson(JSON.stringify(payload.data, null, 2));
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid import link');
+    }
+  }, [isImport]);
 
   // Load existing secret values when editing
   useEffect(() => {
@@ -157,8 +179,13 @@ export default function SecretEditor() {
           />
         </div>
       )}
+      {isImport && importPayload && (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Review this imported draft{importPayload.source ? ` from ${importPayload.source}` : ''} before saving. The link is a bearer secret until it is removed from your history.
+        </div>
+      )}
       <h1 className="mb-6 text-2xl font-bold text-gray-800">
-        {isNew ? 'Create Secret' : 'Edit Secret'}
+        {isImport ? 'Import Secret Draft' : isNew ? 'Create Secret' : 'Edit Secret'}
       </h1>
 
       <form onSubmit={(e) => { void handleSubmit(e); }} className="space-y-6">

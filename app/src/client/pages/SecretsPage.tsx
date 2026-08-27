@@ -12,6 +12,7 @@ export default function SecretsPage() {
       <Route path="view/*" element={<SecretView />} />
       <Route path="edit/*" element={<SecretEditor />} />
       <Route path="create/*" element={<SecretEditor />} />
+      <Route path="import" element={<SecretEditor />} />
       <Route path="merge/*" element={<SecretMergeEditor />} />
       <Route path="*" element={<SecretsList />} />
     </Routes>

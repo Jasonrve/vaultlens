@@ -179,6 +179,85 @@ function buildKVPath(
   return `/${mount}${pathSuffix}`;
 }
 
+interface MoveRequest {
+  source?: unknown;
+  destination?: unknown;
+  conflict?: unknown;
+}
+
+interface MoveItem {
+  source: string;
+  destination: string;
+}
+
+async function listMoveSecrets(
+  mount: string,
+  prefix: string,
+  version: number,
+  token: string,
+  depth = 0,
+): Promise<string[]> {
+  if (depth > 20) throw new Error('Secret path is too deep');
+  const listPath = buildKVPath(mount, prefix, version, 'metadata');
+  const response = await vaultClient.list<{ data: { keys: string[] } }>(listPath, token);
+  const paths: string[] = [];
+  for (const key of response.data?.keys ?? []) {
+    if (key.endsWith('/')) {
+      paths.push(...await listMoveSecrets(mount, prefix + key, version, token, depth + 1));
+    } else {
+      paths.push(prefix + key);
+    }
+  }
+  return paths;
+}
+
+async function readMoveSecret(
+  engineInfo: { mount: string; subPath: string; version: number },
+  token: string,
+): Promise<Record<string, unknown>> {
+  const response = await vaultClient.get<{ data: unknown }>(
+    buildKVPath(engineInfo.mount, engineInfo.subPath, engineInfo.version, 'data'),
+    token,
+  );
+  const raw = response.data;
+  if (!raw || typeof raw !== 'object') return {};
+  if (engineInfo.version === 2 && 'data' in raw && raw.data && typeof raw.data === 'object') {
+    return raw.data as Record<string, unknown>;
+  }
+  return raw as Record<string, unknown>;
+}
+
+async function moveDestinationExists(
+  engineInfo: { mount: string; subPath: string; version: number },
+  token: string,
+): Promise<boolean> {
+  try {
+    await vaultClient.get(
+      buildKVPath(engineInfo.mount, engineInfo.subPath, engineInfo.version, 'data'),
+      token,
+    );
+    return true;
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode === 404) return false;
+    throw error;
+  }
+}
+
+async function deleteMoveSecret(
+  engineInfo: { mount: string; subPath: string; version: number },
+  token: string,
+): Promise<void> {
+  await vaultClient.delete(
+    buildKVPath(
+      engineInfo.mount,
+      engineInfo.subPath,
+      engineInfo.version,
+      engineInfo.version === 2 ? 'metadata' : 'data',
+    ),
+    token,
+  );
+}
+
 /**
  * If "audit metadata on write" is enabled, stamps KV v2 custom metadata with
  * `_created_by`/`_created_at` (first write only) and `_updated_by`/`_updated_at`
@@ -512,6 +591,122 @@ router.post(
       next(error);
     }
   }
+);
+
+// Move one secret or all secrets below a folder using the logged-in user's token
+router.post(
+  '/move',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as MoveRequest;
+      const source = typeof body?.source === 'string' ? body.source : '';
+      const destination = typeof body?.destination === 'string' ? body.destination : '';
+      const conflict = body?.conflict === 'skip' || body?.conflict === 'overwrite'
+        ? body.conflict
+        : 'fail';
+      const sourceIsFolder = source.endsWith('/');
+      const destinationIsFolder = destination.endsWith('/');
+      const cleanSource = source.replace(/\/+$/, '');
+      const cleanDestination = destination.replace(/\/+$/, '');
+
+      if (!cleanSource || !cleanDestination || !isValidSecretPath(source) || !isValidSecretPath(destination)) {
+        res.status(400).json({ error: 'Source and destination must be valid paths' });
+        return;
+      }
+      if (cleanSource === cleanDestination || (sourceIsFolder && cleanDestination.startsWith(`${cleanSource}/`))) {
+        res.status(400).json({ error: 'Destination cannot be the source or a child of the source' });
+        return;
+      }
+
+      const sourceEngine = await getEngineInfo(req.vaultToken!, cleanSource);
+      if (sourceEngine.type !== 'kv' && sourceEngine.type !== 'cubbyhole') {
+        res.status(400).json({ error: 'Moves are only supported for KV secrets engines' });
+        return;
+      }
+
+      const sourcePaths = sourceIsFolder
+        ? (await listMoveSecrets(
+          sourceEngine.mount,
+          `${sourceEngine.subPath.replace(/\/+$/, '')}/`,
+          sourceEngine.version,
+          req.vaultToken!,
+        )).map((path) => `${sourceEngine.mount}/${path}`)
+        : [cleanSource];
+      if (!sourceIsFolder && !destinationIsFolder && sourcePaths.length !== 1) {
+        res.status(400).json({ error: 'An exact destination can only be used for one secret' });
+        return;
+      }
+      if (sourcePaths.length === 0) {
+        res.json({ success: true, moved: 0, skipped: [], conflicts: [] });
+        return;
+      }
+
+      const sourcePrefix = sourceIsFolder ? `${cleanSource}/` : cleanSource;
+      const items: MoveItem[] = sourcePaths.map((path) => {
+        const relativePath = path.startsWith(sourcePrefix) ? path.slice(sourcePrefix.length) : path.split('/').pop()!;
+        return {
+          source: path,
+          destination: destinationIsFolder ? `${cleanDestination}/${relativePath}` : cleanDestination,
+        };
+      });
+
+      const resolved = await Promise.all(items.map(async (item) => ({
+        item,
+        sourceInfo: await getEngineInfo(req.vaultToken!, item.source),
+        destinationInfo: await getEngineInfo(req.vaultToken!, item.destination),
+      })));
+      const conflicts: MoveItem[] = [];
+      for (const entry of resolved) {
+        if (await moveDestinationExists(entry.destinationInfo, req.vaultToken!)) conflicts.push(entry.item);
+      }
+      if (conflicts.length > 0 && conflict === 'fail') {
+        res.status(409).json({ success: false, conflicts });
+        return;
+      }
+
+      const skipped: Array<MoveItem & { reason: string }> = [];
+      let moved = 0;
+      for (const entry of resolved) {
+        const isConflict = conflicts.some((item) => item.destination === entry.item.destination);
+        if (isConflict && conflict === 'skip') {
+          skipped.push({ ...entry.item, reason: 'Destination already exists' });
+          continue;
+        }
+        try {
+          const data = await readMoveSecret(entry.sourceInfo, req.vaultToken!);
+          const writeData = entry.destinationInfo.version === 2 ? { data } : data;
+          try {
+            await vaultClient.post(
+              buildKVPath(entry.destinationInfo.mount, entry.destinationInfo.subPath, entry.destinationInfo.version, 'data'),
+              req.vaultToken!,
+              writeData,
+            );
+          } catch (error) {
+            throw new Error((error as { statusCode?: number }).statusCode === 403 ? 'Destination write permission denied' : 'Destination write failed');
+          }
+          try {
+            await deleteMoveSecret(entry.sourceInfo, req.vaultToken!);
+          } catch (error) {
+            throw new Error((error as { statusCode?: number }).statusCode === 403 ? 'Source delete permission denied' : 'Source delete failed');
+          }
+          secretOperationsTotal.inc({ operation: 'write' });
+          secretOperationsTotal.inc({ operation: 'delete' });
+          moved++;
+        } catch (error) {
+          const statusCode = (error as { statusCode?: number }).statusCode;
+          skipped.push({
+            ...entry.item,
+            reason: error instanceof Error
+              ? error.message
+              : statusCode === 403 ? 'Source read permission denied' : 'Source read failed',
+          });
+        }
+      }
+      res.json({ success: true, moved, skipped, conflicts });
+    } catch (error) {
+      next(error);
+    }
+  },
 );
 
 // Merge (partial update) a secret - uses system token for read, user token for write

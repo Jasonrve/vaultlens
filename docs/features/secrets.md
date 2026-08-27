@@ -93,6 +93,30 @@ Click **Edit** to modify a secret. The editor supports:
 - Editing values inline
 - Updating custom metadata (for KV v2)
 
+## Agent Import Links
+
+Claude, Codex, and other tools can prepare a new secret draft for review in VaultLens with a client-only import link:
+
+```
+/secrets/import#vaultlens-import=<base64url-encoded-json>
+```
+
+The JSON payload must contain a `path` and an object-valued `data` field. It may also include `source` and an `expiresAt` timestamp in milliseconds. VaultLens decodes the fragment in the browser, opens the normal editor, and never saves automatically. The user must review the values and click **Save**.
+
+The fragment is not sent to the VaultLens server, but it is still a bearer secret in browser history, chat history, screenshots, and clipboard contents. Do not paste import links into logs or tickets. Expiry is enforced by the browser and is not server-side revocation. Existing secrets should use normal authenticated edit links containing the path only; their current values must never be serialized into a URL.
+
+## Moving Secrets
+
+Use **Move** on a secret or folder to relocate it to another KV path. The move is performed by the server using your logged-in Vault token; your browser sends paths only and never receives the secret values.
+
+- For one secret, a destination ending in `/` places it in that folder while keeping its name. A destination without `/` renames it to the exact path.
+- For a folder, the move is recursive and preserves the folder structure below the source. Folder destinations must end in `/`.
+- If a destination already exists, VaultLens reports the conflicts before changing anything. Choose **Skip conflicts** to leave those secrets where they are, or **Overwrite conflicts** to replace them.
+- You need permission to read, write, and delete the affected secrets. Vault permissions are checked separately for each source and destination.
+- KV v2 moves the current readable data as a new version at the destination. Version history and version numbers are not copied.
+
+If some individual moves fail, successfully moved secrets remain moved and the result lists the skipped paths. A source is deleted only after its destination has been written successfully.
+
 ## Restricted-Access Secrets
 
 When you have `list` permission on a secret path but not `read` permission:

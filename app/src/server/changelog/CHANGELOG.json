@@ -5,10 +5,19 @@
       "Faster browsing with search across secrets and access pages",
       "Application settings backup and restore",
       "Audit error visibility for auth methods and roles",
-      "Streamlined login and dashboard entry"
+      "Streamlined login and dashboard entry",
+      "Generic Lens Audit events"
     ],
     "sections": {
       "New": [
+        {
+          "title": "Agent secret import links",
+          "description": "Open a prepared secret draft from Claude, Codex, or another tool in the VaultLens editor for review. Nothing is saved until you confirm the change."
+        },
+        {
+          "title": "Move secrets",
+          "description": "Move an individual secret or an entire folder of secrets to another KV path. Existing destinations are shown before anything changes, so you can skip or overwrite conflicts."
+        },
         {
           "title": "Search across secrets and access pages",
           "description": "Search secret keys, auth methods, and identity groups directly from their list pages to find what you need faster."
@@ -24,6 +33,10 @@
         {
           "title": "Header information links",
           "description": "The public landing page has been removed so the app opens directly at login or the dashboard, with optional information links available in the header."
+        },
+        {
+          "title": "Generic Lens Audit events",
+          "description": "Lens Audits now use a consistent event format that can cover authentication, sharing, and future VaultLens features with an action, status, actor, target, and event details."
         }
       ],
       "Improved": [

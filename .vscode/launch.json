@@ -8,7 +8,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "cwd": "${workspaceFolder}/app",
-      "preLaunchTask": "docker-compose-up",
+      "preLaunchTask": "docker-compose-refresh",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,

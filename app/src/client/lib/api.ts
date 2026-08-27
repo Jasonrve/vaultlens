@@ -135,6 +135,39 @@ export async function deleteSecret(path: string) {
   return data;
 }
 
+export interface MoveItemResult {
+  source: string;
+  destination: string;
+  reason?: string;
+}
+
+export interface MoveSecretsResult {
+  success: boolean;
+  moved?: number;
+  skipped?: MoveItemResult[];
+  conflicts?: MoveItemResult[];
+}
+
+export async function moveSecrets(
+  source: string,
+  destination: string,
+  conflict: 'fail' | 'skip' | 'overwrite' = 'fail',
+) {
+  try {
+    const { data } = await api.post<MoveSecretsResult>('/secrets/move', {
+      source,
+      destination,
+      conflict,
+    });
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError<MoveSecretsResult>(error) && error.response?.status === 409) {
+      return error.response.data;
+    }
+    throw error;
+  }
+}
+
 
 export async function mergeSecret(path: string, secretData: Record<string, unknown>) {
   const { data } = await api.post<{ success: boolean; updatedKeys: string[] }>(
@@ -561,12 +594,11 @@ export async function updateSecretsAuditConfig(config: SecretsAuditConfig) {
 // ── VaultLens Audit ───────────────────────────────────────
 export interface VaultLensAuditEntry {
   timestamp: string;
-  action: 'share_created' | 'share_viewed';
-  shareId: string;
-  shareMode: ShareMode;
-  url: string;
-  creator?: string;
-  viewer?: string;
+  action: string;
+  status?: 'success' | 'failure';
+  actor?: string;
+  target?: string;
+  details?: Record<string, string | number | boolean | null>;
   clientIp?: string;
 }
 
