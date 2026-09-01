@@ -24,9 +24,21 @@
         {
           "title": "Header information links",
           "description": "The public landing page has been removed so the app opens directly at login or the dashboard, with optional information links available in the header."
+        },
+        {
+          "title": "Selectable scheduled backup types",
+          "description": "The backup schedule now lets you choose Vault backup, VaultLens settings backup, or both. The scheduler runs whichever types are selected on every due occurrence."
         }
       ],
       "Improved": [
+        {
+          "title": "Container runtime hardening",
+          "description": "VaultLens containers now run as an unprivileged user and keep shell commands disabled unless debugging is explicitly enabled."
+        },
+        {
+          "title": "Persisted developer guide overrides",
+          "description": "Custom developer integration guide overrides now live on the same mounted configuration volume as the rest of VaultLens's settings, so they survive container restarts and upgrades instead of resetting."
+        },
         {
           "title": "Audit buffer memory estimate",
           "description": "The Analytics page now shows an estimated memory footprint for the in-memory audit buffer."

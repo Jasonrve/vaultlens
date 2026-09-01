@@ -112,6 +112,8 @@ podLabels: {}
 podSecurityContext:
   fsGroup: 1001
   runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false

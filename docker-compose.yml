@@ -3,6 +3,11 @@ services:
     image: ghcr.io/Jasonrve/vaultlens:latest
     container_name: vaultlens
     restart: unless-stopped
+    user: "1001:1001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "${VAULTLENS_PORT:-3001}:3001"
     environment:
@@ -16,6 +21,7 @@ services:
       - VAULTLENS_CONFIG_PATH=/config
       # Backup storage
       - VAULTLENS_BACKUP_PATH=/backups
+      - VAULTLENS_DEBUG_SHELL=${VAULTLENS_DEBUG_SHELL:-false}
     volumes:
       - vaultlens_config:/config
       - vaultlens_backups:/backups

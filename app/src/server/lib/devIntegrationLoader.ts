@@ -1,10 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { watch } from 'fs';
+import { config } from '../config/index.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const TEMPLATES_DIR = path.join(__dirname, '..', 'templates', 'dev-guides');
+// Lives under the persisted data/config volume (not the image) so custom guides survive restarts and upgrades.
+const TEMPLATES_DIR = path.join(config.configStoragePath || path.resolve(process.cwd(), 'data'), 'dev-guides');
 
 /**
  * Validates that a template path exists and is within TEMPLATES_DIR to prevent directory traversal.

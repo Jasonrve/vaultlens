@@ -27,14 +27,14 @@ Restore is additive — it writes secrets from the backup but does not delete se
 
 ## Backup Schedule
 
-Configure automatic backups under **Admin → Backup & Restore → Schedule**:
+Configure automatic backups under **Admin → Backup & Restore → Backup Schedule**:
 
-| Interval | Example |
-|----------|---------|
-| Minutes | `30m` |
-| Hours | `6h` |
-| Days | `1d` |
-| Weeks | `1w` |
+- **Enable scheduled backups** — turns the scheduler on or off
+- **Vault backup** — Raft snapshot when available, otherwise a KV JSON export
+- **VaultLens backup** — the application settings backup described below
+- **Cron expression** — 5-field `MIN HOUR DOM MON DOW` format (e.g. `0 2 * * *` for daily at 2 AM), with quick presets for common schedules
+
+At least one of **Vault backup** or **VaultLens backup** must be selected to enable the schedule. Both can be selected together — the scheduler runs whichever types are enabled on every due occurrence.
 
 The backup scheduler runs at server startup and checks every minute for due backups.
 
@@ -74,6 +74,8 @@ Click **Create Application Backup** on the **Admin → Backup & Restore** page t
 - Every configuration section (feature toggles, branding colours/name, sharing options, webhook definitions, backup schedule, AppRole system-token credentials, etc.)
 - Uploaded blobs such as the custom logo
 - Any custom developer guide markdown overrides
+
+Custom developer guide overrides are stored on disk under the same mounted directory as VaultLens's other configuration (`VAULTLENS_CONFIG_PATH`, default `/config`), so they survive container restarts and image upgrades, and are included automatically in every application backup.
 
 Restoring an application backup writes these settings back via the same config storage used at runtime — like KV restore, it is additive and overwrites matching sections/keys but does not delete settings that aren't present in the backup.
 

@@ -904,19 +904,23 @@ export async function getBackupSchedule() {
   const { data } = await api.get<{
     enabled: boolean;
     cron: string;
+    vaultBackup: boolean;
+    appBackup: boolean;
     lastBackup: string | null;
     nextBackup: string | null;
   }>('/backup/schedule');
   return data;
 }
 
-export async function updateBackupSchedule(enabled: boolean, cron: string) {
+export async function updateBackupSchedule(enabled: boolean, cron: string, vaultBackup: boolean, appBackup: boolean) {
   const { data } = await api.put<{
     enabled: boolean;
     cron: string;
+    vaultBackup: boolean;
+    appBackup: boolean;
     lastBackup: string | null;
     nextBackup: string | null;
-  }>('/backup/schedule', { enabled, cron });
+  }>('/backup/schedule', { enabled, cron, vaultBackup, appBackup });
   return data;
 }
 

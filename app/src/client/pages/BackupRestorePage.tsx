@@ -19,10 +19,12 @@ export default function BackupRestorePage() {
   const [schedule, setSchedule] = useState<{
     enabled: boolean;
     cron: string;
+    vaultBackup: boolean;
+    appBackup: boolean;
     lastBackup: string | null;
     nextBackup: string | null;
   } | null>(null);
-  const [scheduleForm, setScheduleForm] = useState({ enabled: false, cron: '0 2 * * *' });
+  const [scheduleForm, setScheduleForm] = useState({ enabled: false, cron: '0 2 * * *', vaultBackup: true, appBackup: false });
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -36,7 +38,12 @@ export default function BackupRestorePage() {
       ]);
       setBackups(backupList);
       setSchedule(scheduleData);
-      setScheduleForm({ enabled: scheduleData.enabled, cron: scheduleData.cron });
+      setScheduleForm({
+        enabled: scheduleData.enabled,
+        cron: scheduleData.cron,
+        vaultBackup: scheduleData.vaultBackup,
+        appBackup: scheduleData.appBackup,
+      });
       setRaftAvailable(statusData.raftAvailable);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load backup data');
@@ -131,7 +138,12 @@ export default function BackupRestorePage() {
   const handleSaveSchedule = async () => {
     try {
       setError(null);
-      const result = await api.updateBackupSchedule(scheduleForm.enabled, scheduleForm.cron);
+      const result = await api.updateBackupSchedule(
+        scheduleForm.enabled,
+        scheduleForm.cron,
+        scheduleForm.vaultBackup,
+        scheduleForm.appBackup,
+      );
       setSchedule(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update schedule');
@@ -205,10 +217,9 @@ export default function BackupRestorePage() {
       )}
 
       {/* Schedule Configuration */}
-      {raftAvailable && (
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Backup Schedule</h2>
-          <div className="space-y-3">
+      <div className="rounded-lg border border-gray-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Backup Schedule</h2>
+        <div className="space-y-3">
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -218,6 +229,26 @@ export default function BackupRestorePage() {
               />
               Enable scheduled backups
             </label>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={scheduleForm.vaultBackup}
+                  onChange={e => setScheduleForm(prev => ({ ...prev, vaultBackup: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                Vault backup <span className="text-gray-400">(Raft snapshot or KV export)</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={scheduleForm.appBackup}
+                  onChange={e => setScheduleForm(prev => ({ ...prev, appBackup: e.target.checked }))}
+                  className="rounded border-gray-300"
+                />
+                VaultLens backup <span className="text-gray-400">(settings, branding, dev guides)</span>
+              </label>
+            </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">
                 Cron expression <span className="text-gray-400">(MIN HOUR DOM MON DOW)</span>
@@ -265,8 +296,7 @@ export default function BackupRestorePage() {
             <span>Next backup: {schedule.nextBackup ? new Date(schedule.nextBackup).toLocaleString() : 'N/A'}</span>
           </div>
         )}
-        </div>
-      )}
+      </div>
 
       {/* Backup List */}
       {loading ? (
