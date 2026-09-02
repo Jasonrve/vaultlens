@@ -56,6 +56,8 @@ export interface AuthMethod {
   config: Record<string, unknown>;
 }
 
+export type { AuthActionConfig, AuthActionContext, AuthActionDefinition, AuthActionIcon, AuthActionScreen, ResolvedAuthAction } from '../../shared/authActions';
+
 export interface Role {
   name: string;
   [key: string]: unknown;

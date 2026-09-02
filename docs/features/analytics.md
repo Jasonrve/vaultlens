@@ -50,6 +50,19 @@ Expanded seal information including:
 
 ## Audit Logging
 
+The **Lens Audits** page records events from VaultLens features and integrations using a generic format:
+
+| Field | Description |
+|-------|-------------|
+| **Action** | The event name, such as `login`, `logout`, or `share.created` |
+| **Status** | Whether the event succeeded or failed, when applicable |
+| **Actor** | The user, service, or system that performed the action |
+| **Target** | The resource, path, or object affected by the action |
+| **Details** | Event-specific context for filtering and investigation |
+| **Client IP** | The originating client address, when available |
+
+This allows authentication, sharing, and future event types to appear in the same audit trail. Credentials and secret values are never written to the audit log. Older sharing entries are converted to the generic format when read.
+
 When the [socket audit source](/architecture/system-token) is active, the Audit Logging card shows live stats about the in-memory audit buffer:
 
 | Stat | Description |

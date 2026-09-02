@@ -8,6 +8,9 @@ import type {
   Group,
   GraphData,
   VaultTokenInfo,
+  AuthActionConfig,
+  AuthActionContext,
+  ResolvedAuthAction,
 } from '../types';
 
 const api = axios.create({
@@ -133,6 +136,39 @@ export async function writeSecret(path: string, secretData: Record<string, unkno
 export async function deleteSecret(path: string) {
   const { data } = await api.delete<{ success: boolean }>(`/secrets/delete/${path}`);
   return data;
+}
+
+export interface MoveItemResult {
+  source: string;
+  destination: string;
+  reason?: string;
+}
+
+export interface MoveSecretsResult {
+  success: boolean;
+  moved?: number;
+  skipped?: MoveItemResult[];
+  conflicts?: MoveItemResult[];
+}
+
+export async function moveSecrets(
+  source: string,
+  destination: string,
+  conflict: 'fail' | 'skip' | 'overwrite' = 'fail',
+) {
+  try {
+    const { data } = await api.post<MoveSecretsResult>('/secrets/move', {
+      source,
+      destination,
+      conflict,
+    });
+    return data;
+  } catch (error) {
+    if (axios.isAxiosError<MoveSecretsResult>(error) && error.response?.status === 409) {
+      return error.response.data;
+    }
+    throw error;
+  }
 }
 
 
@@ -298,6 +334,23 @@ export async function getAuthMethodTune(method: string) {
     `/auth-methods/${encodeURIComponent(method)}/tune`,
   );
   return { tune: data.tune, readonly: data.readonly ?? false };
+}
+
+export async function getAuthActions(context: AuthActionContext) {
+  const { data } = await api.get<{ authType: string; tokens: Record<string, string>; actions: ResolvedAuthAction[] }>('/auth-actions', {
+    params: { screen: context.screen, mount: context.mount, role: context.role },
+  });
+  return data;
+}
+
+export async function getAuthActionConfig(scope: AuthActionConfig['scope'], key: string) {
+  const { data } = await api.get<AuthActionConfig>('/auth-actions/config', { params: { scope, key } });
+  return data;
+}
+
+export async function saveAuthActionConfig(value: AuthActionConfig) {
+  const { data } = await api.put<AuthActionConfig>('/auth-actions/config', value);
+  return data;
 }
 
 export async function updateAuthMethodTune(method: string, tune: Record<string, unknown>) {
@@ -561,12 +614,11 @@ export async function updateSecretsAuditConfig(config: SecretsAuditConfig) {
 // ── VaultLens Audit ───────────────────────────────────────
 export interface VaultLensAuditEntry {
   timestamp: string;
-  action: 'share_created' | 'share_viewed';
-  shareId: string;
-  shareMode: ShareMode;
-  url: string;
-  creator?: string;
-  viewer?: string;
+  action: string;
+  status?: 'success' | 'failure';
+  actor?: string;
+  target?: string;
+  details?: Record<string, string | number | boolean | null>;
   clientIp?: string;
 }
 
@@ -904,19 +956,23 @@ export async function getBackupSchedule() {
   const { data } = await api.get<{
     enabled: boolean;
     cron: string;
+    vaultBackup: boolean;
+    appBackup: boolean;
     lastBackup: string | null;
     nextBackup: string | null;
   }>('/backup/schedule');
   return data;
 }
 
-export async function updateBackupSchedule(enabled: boolean, cron: string) {
+export async function updateBackupSchedule(enabled: boolean, cron: string, vaultBackup: boolean, appBackup: boolean) {
   const { data } = await api.put<{
     enabled: boolean;
     cron: string;
+    vaultBackup: boolean;
+    appBackup: boolean;
     lastBackup: string | null;
     nextBackup: string | null;
-  }>('/backup/schedule', { enabled, cron });
+  }>('/backup/schedule', { enabled, cron, vaultBackup, appBackup });
   return data;
 }
 

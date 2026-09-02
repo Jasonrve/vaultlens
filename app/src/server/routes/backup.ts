@@ -247,6 +247,9 @@ router.get(
       res.json({
         enabled: schedule?.['enabled'] === 'true',
         cron,
+        // Default vaultBackup to true so schedules created before type selection existed keep working
+        vaultBackup: schedule?.['vaultBackup'] !== 'false',
+        appBackup: schedule?.['appBackup'] === 'true',
         lastBackup: schedule?.['lastBackup'] || null,
         nextBackup: schedule?.['nextBackup'] || null,
       });
@@ -261,7 +264,9 @@ router.put(
   '/schedule',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const { enabled, cron } = req.body as { enabled?: boolean; cron?: string };
+      const { enabled, cron, vaultBackup, appBackup } = req.body as {
+        enabled?: boolean; cron?: string; vaultBackup?: boolean; appBackup?: boolean;
+      };
 
       if (cron !== undefined) {
         if (typeof cron !== 'string' || !getNextCronOccurrence(cron)) {
@@ -274,6 +279,15 @@ router.put(
       const current = await storage.get(BACKUP_SCHEDULE_SECTION) || {};
       if (enabled !== undefined) current['enabled'] = String(enabled);
       if (cron) current['cron'] = cron;
+      if (vaultBackup !== undefined) current['vaultBackup'] = String(vaultBackup);
+      if (appBackup !== undefined) current['appBackup'] = String(appBackup);
+
+      const vaultBackupEnabled = current['vaultBackup'] !== 'false';
+      const appBackupEnabled = current['appBackup'] === 'true';
+      if (current['enabled'] === 'true' && !vaultBackupEnabled && !appBackupEnabled) {
+        res.status(400).json({ error: 'Select at least one backup type (Vault backup or VaultLens backup).' });
+        return;
+      }
 
       // Calculate next backup occurrence from new cron
       if (current['enabled'] === 'true' && current['cron']) {
@@ -289,6 +303,8 @@ router.put(
       res.json({
         enabled: current['enabled'] === 'true',
         cron: current['cron'] || '0 2 * * *',
+        vaultBackup: vaultBackupEnabled,
+        appBackup: appBackupEnabled,
         lastBackup: current['lastBackup'] || null,
         nextBackup: current['nextBackup'] || null,
       });
@@ -381,60 +397,63 @@ function generateKvBackupFilename(): string {
   return `kv-backup-${dateStr}.json`;
 }
 
+/** Dump all KV secrets across all mounted engines to a timestamped JSON file. Used by both the route and the scheduler. */
+async function performKvBackup(token: string): Promise<{ filename: string; size: number; createdAt: string; secretCount: number }> {
+  const mounts = await vaultClient.get<{
+    data: Record<string, { type: string; options: Record<string, string> | null }>;
+  }>('/sys/mounts', token);
+
+  const kvMounts = Object.entries(mounts.data)
+    .filter(([, info]) => info.type === 'kv')
+    .map(([mountPath, info]) => ({
+      mount: mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath,
+      kvVersion: info.options?.version === '2' ? 2 : 1,
+    }));
+
+  const backupData: KvBackupFile = {
+    version: 1,
+    backupType: 'kv',
+    createdAt: new Date().toISOString(),
+    engines: {},
+  };
+
+  for (const { mount, kvVersion } of kvMounts) {
+    const secretPaths = await listKVSecretsRecursive(mount, '', kvVersion, token);
+    const engineBackup: KvEngineBackup = { kvVersion, secrets: {} };
+
+    for (const secretPath of secretPaths) {
+      const data = await readKVSecret(mount, secretPath, kvVersion, token);
+      if (data !== null) {
+        engineBackup.secrets[secretPath] = data;
+      }
+    }
+
+    backupData.engines[mount] = engineBackup;
+  }
+
+  ensureBackupDir();
+  const filename = generateKvBackupFilename();
+  const filePath = path.join(BACKUP_DIR, filename);
+  fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+  const stats = fs.statSync(filePath);
+
+  const secretCount = Object.values(backupData.engines).reduce(
+    (sum, eng) => sum + Object.keys(eng.secrets).length, 0
+  );
+
+  return { filename, size: stats.size, createdAt: backupData.createdAt, secretCount };
+}
+
 // POST /api/backup/kv-create — dump all KV secrets to a JSON file
 router.post(
   '/kv-create',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const token = req.vaultToken!;
-
-      // List all mounts and filter KV engines
-      const mounts = await vaultClient.get<{
-        data: Record<string, { type: string; options: Record<string, string> | null }>;
-      }>('/sys/mounts', token);
-
-      const kvMounts = Object.entries(mounts.data)
-        .filter(([, info]) => info.type === 'kv')
-        .map(([mountPath, info]) => ({
-          mount: mountPath.endsWith('/') ? mountPath.slice(0, -1) : mountPath,
-          kvVersion: info.options?.version === '2' ? 2 : 1,
-        }));
-
-      const backupData: KvBackupFile = {
-        version: 1,
-        backupType: 'kv',
-        createdAt: new Date().toISOString(),
-        engines: {},
-      };
-
-      for (const { mount, kvVersion } of kvMounts) {
-        const secretPaths = await listKVSecretsRecursive(mount, '', kvVersion, token);
-        const engineBackup: KvEngineBackup = { kvVersion, secrets: {} };
-
-        for (const secretPath of secretPaths) {
-          const data = await readKVSecret(mount, secretPath, kvVersion, token);
-          if (data !== null) {
-            engineBackup.secrets[secretPath] = data;
-          }
-        }
-
-        backupData.engines[mount] = engineBackup;
-      }
-
-      ensureBackupDir();
-      const filename = generateKvBackupFilename();
-      const filePath = path.join(BACKUP_DIR, filename);
-      fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
-      const stats = fs.statSync(filePath);
-
-      const secretCount = Object.values(backupData.engines).reduce(
-        (sum, eng) => sum + Object.keys(eng.secrets).length, 0
-      );
-
+      const { filename, size, createdAt, secretCount } = await performKvBackup(req.vaultToken!);
       lastBackupTimestamp.set(Date.now() / 1000);
-      lastBackupSizeBytes.set(stats.size);
+      lastBackupSizeBytes.set(size);
       lastBackupSecretsCount.set(secretCount);
-      res.json({ success: true, filename, size: stats.size, createdAt: backupData.createdAt, secretCount });
+      res.json({ success: true, filename, size, createdAt, secretCount });
     } catch (error) {
       next(error);
     }
@@ -529,57 +548,57 @@ function generateAppBackupFilename(): string {
   return `app-backup-${dateStr}.json`;
 }
 
+/** Dump all VaultLens app settings, blobs, and dev-guide overrides to a timestamped JSON file. Used by both the route and the scheduler. */
+async function performAppBackup(): Promise<{ filename: string; size: number; createdAt: string; sectionCount: number }> {
+  const storage = getConfigStorage();
+
+  const sections = await storage.list();
+  const appConfig: Record<string, Record<string, string>> = {};
+  for (const section of sections) {
+    if (section.startsWith('_blob_')) continue; // Vault backend mixes blobs into list()
+    const data = await storage.get(section);
+    if (data) appConfig[section] = data;
+  }
+
+  const blobKeys = await storage.listBlobs();
+  const blobs: Record<string, { mimeType: string; data: string }> = {};
+  for (const key of blobKeys) {
+    const blob = await storage.getBlob(key);
+    if (blob) blobs[key] = { mimeType: blob.mimeType, data: blob.data.toString('base64') };
+  }
+
+  const devGuides: Record<string, string> = {};
+  for (const authType of getAvailableTemplates()) {
+    const content = getTemplate(authType);
+    if (content !== undefined) devGuides[authType] = content;
+  }
+
+  const backupData: AppBackupFile = {
+    version: 1,
+    backupType: 'app',
+    createdAt: new Date().toISOString(),
+    config: appConfig,
+    blobs,
+    devGuides,
+  };
+
+  ensureBackupDir();
+  const filename = generateAppBackupFilename();
+  const filePath = path.join(BACKUP_DIR, filename);
+  fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
+  const stats = fs.statSync(filePath);
+
+  return { filename, size: stats.size, createdAt: backupData.createdAt, sectionCount: Object.keys(appConfig).length };
+}
+
 // POST /api/backup/app-create — dump all VaultLens app settings (feature flags, branding,
 // webhooks, dev guides, ...) to a JSON file
 router.post(
   '/app-create',
   async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const storage = getConfigStorage();
-
-      const sections = await storage.list();
-      const appConfig: Record<string, Record<string, string>> = {};
-      for (const section of sections) {
-        if (section.startsWith('_blob_')) continue; // Vault backend mixes blobs into list()
-        const data = await storage.get(section);
-        if (data) appConfig[section] = data;
-      }
-
-      const blobKeys = await storage.listBlobs();
-      const blobs: Record<string, { mimeType: string; data: string }> = {};
-      for (const key of blobKeys) {
-        const blob = await storage.getBlob(key);
-        if (blob) blobs[key] = { mimeType: blob.mimeType, data: blob.data.toString('base64') };
-      }
-
-      const devGuides: Record<string, string> = {};
-      for (const authType of getAvailableTemplates()) {
-        const content = getTemplate(authType);
-        if (content !== undefined) devGuides[authType] = content;
-      }
-
-      const backupData: AppBackupFile = {
-        version: 1,
-        backupType: 'app',
-        createdAt: new Date().toISOString(),
-        config: appConfig,
-        blobs,
-        devGuides,
-      };
-
-      ensureBackupDir();
-      const filename = generateAppBackupFilename();
-      const filePath = path.join(BACKUP_DIR, filename);
-      fs.writeFileSync(filePath, JSON.stringify(backupData, null, 2));
-      const stats = fs.statSync(filePath);
-
-      res.json({
-        success: true,
-        filename,
-        size: stats.size,
-        createdAt: backupData.createdAt,
-        sectionCount: Object.keys(appConfig).length,
-      });
+      const result = await performAppBackup();
+      res.json({ success: true, ...result });
     } catch (error) {
       next(error);
     }
@@ -765,10 +784,30 @@ async function runScheduledBackup(): Promise<void> {
     const nextBackup = schedule['nextBackup'];
     if (!nextBackup || new Date(nextBackup).getTime() > Date.now()) return;
 
-    // Use system token to take a Vault Raft snapshot
-    const { getSystemToken } = await import('../lib/systemToken.js');
-    const sysToken = await getSystemToken();
-    const { filename } = await takeSnapshot(sysToken);
+    const vaultBackupEnabled = schedule['vaultBackup'] !== 'false';
+    const appBackupEnabled = schedule['appBackup'] === 'true';
+
+    if (vaultBackupEnabled) {
+      try {
+        // Use system token to take a Vault backup — Raft snapshot when available, KV JSON export otherwise
+        const { getSystemToken } = await import('../lib/systemToken.js');
+        const sysToken = await getSystemToken();
+        const raftAvailable = await checkRaftAvailable(sysToken);
+        const { filename } = raftAvailable ? await takeSnapshot(sysToken) : await performKvBackup(sysToken);
+        console.log(`[Backup] Scheduled Vault backup created: ${filename}`);
+      } catch (err) {
+        console.error('[Backup] Scheduled Vault backup failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (appBackupEnabled) {
+      try {
+        const { filename } = await performAppBackup();
+        console.log(`[Backup] Scheduled application backup created: ${filename}`);
+      } catch (err) {
+        console.error('[Backup] Scheduled application backup failed:', err instanceof Error ? err.message : err);
+      }
+    }
 
     // Compute next occurrence from cron
     const cron = schedule['cron'] || schedule['interval'] || '0 2 * * *';
@@ -776,8 +815,6 @@ async function runScheduledBackup(): Promise<void> {
     schedule['lastBackup'] = new Date().toISOString();
     schedule['nextBackup'] = next ? next.toISOString() : '';
     await storage.set(BACKUP_SCHEDULE_SECTION, schedule);
-
-    console.log(`[Backup] Scheduled snapshot created: ${filename}`);
   } catch (err) {
     console.error('[Backup] Scheduled backup failed:', err instanceof Error ? err.message : err);
   }

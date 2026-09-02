@@ -9,16 +9,51 @@ import { config } from '../config/index.js';
 
 export interface VaultLensAuditEntry {
   timestamp: string;
-  action: 'share_created' | 'share_viewed';
-  shareId: string;
-  shareMode: 'one-time' | 'otp' | 'auth-login';
-  url: string;
-  /** Display name / entity ID of the creator (from Vault token lookup) */
-  creator?: string;
-  /** Display name / entity ID of the viewer */
-  viewer?: string;
+  action: string;
+  status?: 'success' | 'failure';
+  /** Display name, entity ID, or system identity that performed the action. */
+  actor?: string;
+  /** Resource, path, or object affected by the action. */
+  target?: string;
+  /** Additional event-specific values. Never include credentials or secret values. */
+  details?: Record<string, string | number | boolean | null>;
   /** IP address of the client */
   clientIp?: string;
+}
+
+interface LegacyVaultLensAuditEntry {
+  timestamp: string;
+  action: 'share_created' | 'share_viewed' | 'login' | 'logout';
+  result?: 'success' | 'failure';
+  shareId?: string;
+  shareMode?: 'one-time' | 'otp' | 'auth-login';
+  url?: string;
+  creator?: string;
+  viewer?: string;
+  user?: string;
+  clientIp?: string;
+}
+
+function normalizeAuditEntry(entry: VaultLensAuditEntry | LegacyVaultLensAuditEntry): VaultLensAuditEntry {
+  if (!('result' in entry) && !('shareId' in entry) && !('creator' in entry) && !('user' in entry)) {
+    return entry;
+  }
+
+  const legacy = entry as LegacyVaultLensAuditEntry;
+  const isShare = legacy.action.startsWith('share_');
+  return {
+    timestamp: legacy.timestamp,
+    action: isShare ? legacy.action.replace('_', '.') : legacy.action,
+    status: legacy.result,
+    actor: legacy.user || legacy.creator || legacy.viewer,
+    target: legacy.url || legacy.shareId,
+    details: {
+      ...(legacy.shareMode ? { shareMode: legacy.shareMode } : {}),
+      ...(legacy.creator ? { creator: legacy.creator } : {}),
+      ...(legacy.viewer ? { viewer: legacy.viewer } : {}),
+    },
+    clientIp: legacy.clientIp,
+  };
 }
 
 function getDataDir(): string {
@@ -98,8 +133,8 @@ export function readAuditEntries(options?: {
       const lines = content.trim().split('\n').filter(Boolean);
       for (const line of lines) {
         try {
-          const entry = JSON.parse(line) as VaultLensAuditEntry;
-          allEntries.push(entry);
+          const entry = JSON.parse(line) as VaultLensAuditEntry | LegacyVaultLensAuditEntry;
+          allEntries.push(normalizeAuditEntry(entry));
         } catch {
           // Skip malformed lines
         }

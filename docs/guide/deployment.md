@@ -103,6 +103,14 @@ A thin UI-flag policy granting access to admin features in VaultLens (backup, br
 
 Assign this policy to any Vault user who should have access to VaultLens admin features.
 
+## Container runtime security
+
+The VaultLens image runs as the unprivileged `vaultlens` user (UID 1001). The production Compose service and Helm chart also pin the container to UID 1001, disable privilege escalation, and drop Linux capabilities.
+
+Shell commands passed through the image entrypoint are disabled by default. To enable a debugging shell temporarily, set `VAULTLENS_DEBUG_SHELL=true` when creating the container, then recreate it. Remove the variable and recreate the container when debugging is finished.
+
+This protects normal container startup and command overrides. Anyone with permission to access the Docker or Kubernetes runtime can still start a process with the runtime's own exec facilities, so those host or cluster permissions must be restricted separately.
+
 ### `vaultlens-system`
 
 Full permissions for VaultLens background services. **Do not assign to human users.**

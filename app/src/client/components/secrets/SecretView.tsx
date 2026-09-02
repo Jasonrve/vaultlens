@@ -5,6 +5,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
 import Badge from '../common/Badge';
+import MoveSecretsDialog from './MoveSecretsDialog';
 
 interface SecretMetadata {
   created_time?: string;
@@ -109,6 +110,7 @@ export default function SecretView() {
   const [viewMode, setViewMode] = useState<'kv' | 'json'>('kv');
   const [jsonRevealed, setJsonRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showMove, setShowMove] = useState(false);
 
   // Version viewing
   const [viewingSecretVersion, setViewingSecretVersion] = useState<number | null>(null);
@@ -386,6 +388,17 @@ export default function SecretView() {
 
   return (
     <div>
+      {showMove && (
+        <MoveSecretsDialog
+          source={splat}
+          isFolder={false}
+          onClose={() => setShowMove(false)}
+          onSuccess={() => {
+            const parentPath = splat.split('/').slice(0, -1).join('/');
+            navigate(`/secrets/${parentPath ? parentPath + '/' : ''}`);
+          }}
+        />
+      )}
       <div className="mb-4">
         <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
@@ -446,6 +459,12 @@ export default function SecretView() {
                 className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
               >
                 Delete
+              </button>
+              <button
+                onClick={() => setShowMove(true)}
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Move
               </button>
             </>
           )}

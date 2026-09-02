@@ -2,6 +2,35 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "docker-compose-down",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["-f", "docker-compose-development.yml", "down"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker-compose-remove-development-containers",
+      "type": "shell",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-Command", "docker rm -f vaultlens-vault vaultlens-vault-init vaultlens-vault-audit-demo vaultlens-app 2>$null; exit 0"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "continueOnError": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "docker-compose-up",
       "type": "shell",
       "command": "docker-compose",
@@ -13,6 +42,12 @@
         "panel": "shared",
         "showReuseMessage": false
       },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker-compose-refresh",
+      "dependsOn": ["docker-compose-down", "docker-compose-remove-development-containers", "docker-compose-up"],
+      "dependsOrder": "sequence",
       "problemMatcher": []
     },
     {

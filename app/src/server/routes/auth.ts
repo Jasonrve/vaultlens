@@ -5,10 +5,17 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { authLoginsTotal, activeSessions } from '../lib/metrics.js';
+import { writeAuditEntry } from '../lib/vaultlensAudit.js';
 import type { AuthenticatedRequest, VaultTokenInfo } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+function getClientIp(req: AuthenticatedRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') return forwarded.split(',')[0]!.trim();
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
 
 // ── Public: available auth method types (for login page) ─────────────────────
 // Uses the system token so Vault's /sys/auth can be queried without a user session.
@@ -133,8 +140,22 @@ router.post(
       });
       authLoginsTotal.inc({ method: 'token', result: 'success' });
       activeSessions.inc();
+      writeAuditEntry({
+        timestamp: new Date().toISOString(),
+        action: 'login',
+        status: 'success',
+        actor: tokenInfo.display_name || tokenInfo.entity_id || 'authenticated',
+        clientIp: getClientIp(req),
+      });
     } catch (error) {
       authLoginsTotal.inc({ method: 'token', result: 'failure' });
+      writeAuditEntry({
+        timestamp: new Date().toISOString(),
+        action: 'login',
+        status: 'failure',
+        actor: 'anonymous',
+        clientIp: getClientIp(req),
+      });
       next(error);
     }
   }
@@ -308,14 +329,37 @@ router.post(
       });
       authLoginsTotal.inc({ method: 'oidc', result: 'success' });
       activeSessions.inc();
+      writeAuditEntry({
+        timestamp: new Date().toISOString(),
+        action: 'login',
+        status: 'success',
+        actor: tokenInfo.display_name || tokenInfo.entity_id || 'authenticated',
+        clientIp: getClientIp(req),
+      });
     } catch (error) {
       authLoginsTotal.inc({ method: 'oidc', result: 'failure' });
+      writeAuditEntry({
+        timestamp: new Date().toISOString(),
+        action: 'login',
+        status: 'failure',
+        actor: 'anonymous',
+        clientIp: getClientIp(req),
+      });
       next(error);
     }
   }
 );
 
-router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
+router.post('/logout', async (req: AuthenticatedRequest, res: Response) => {
+  let user = 'unknown';
+  const token = req.cookies?.vault_token as string | undefined;
+  if (token) {
+    try {
+      const lookup = await vaultClient.get<{ data: VaultTokenInfo }>('/auth/token/lookup-self', token);
+      user = lookup.data.display_name || lookup.data.entity_id || 'authenticated';
+    } catch {
+    }
+  }
   res.clearCookie('vault_token', {
     httpOnly: true,
     secure: config.nodeEnv === 'production',
@@ -323,6 +367,13 @@ router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
     path: '/',
   });
   activeSessions.dec();
+  writeAuditEntry({
+    timestamp: new Date().toISOString(),
+    action: 'logout',
+    status: 'success',
+    actor: user,
+    clientIp: getClientIp(req),
+  });
   res.json({ success: true });
 });
 

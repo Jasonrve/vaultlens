@@ -16,7 +16,7 @@ RUN npm run build
 FROM node:22-alpine
 
 RUN addgroup -g 1001 -S vaultlens && \
-    adduser -S vaultlens -u 1001 -G vaultlens && \
+  adduser -S vaultlens -u 1001 -G vaultlens -s /sbin/nologin && \
     mkdir -p /app /backups && \
     chown vaultlens:vaultlens /app /backups
 
@@ -33,6 +33,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Copy built application
 COPY --chown=vaultlens:vaultlens --from=builder /build/dist ./dist
 
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/vaultlens-entrypoint
+
 # Create runtime data directories
 RUN mkdir -p /app/data/logos
 
@@ -41,6 +43,8 @@ ENV PORT=3001
 ENV VAULTLENS_BACKUP_PATH=/backups
 
 EXPOSE 3001
+
+ENTRYPOINT ["/usr/local/bin/vaultlens-entrypoint"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://localhost:3001/api/health || exit 1

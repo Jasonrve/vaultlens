@@ -222,11 +222,10 @@ router.post(
       // Audit: share created
       writeAuditEntry({
         timestamp: now.toISOString(),
-        action: 'share_created',
-        shareId: secretId,
-        shareMode: mode,
-        url: shareUrl,
-        creator: creatorName,
+        action: 'share.created',
+        actor: creatorName,
+        target: shareUrl,
+        details: { shareMode: mode, maxViews },
         clientIp: getClientIp(req),
       });
 
@@ -312,12 +311,10 @@ router.get(
         // Audit: share viewed
         writeAuditEntry({
           timestamp: new Date().toISOString(),
-          action: 'share_viewed',
-          shareId: secretId,
-          shareMode: 'one-time',
-          url: `/shared/${secretId}`,
-          creator: stored.creatorName,
-          viewer: 'anonymous',
+          action: 'share.viewed',
+          actor: 'anonymous',
+          target: `/shared/${secretId}`,
+          details: { shareMode: 'one-time', creator: stored.creatorName },
           clientIp: getClientIp(req),
         });
 
@@ -425,12 +422,10 @@ router.post(
 
         writeAuditEntry({
           timestamp: new Date().toISOString(),
-          action: 'share_viewed',
-          shareId: secretId,
-          shareMode: 'otp',
-          url: `/shared/${secretId}`,
-          creator: stored.creatorName,
-          viewer: 'otp-verified',
+          action: 'share.viewed',
+          actor: 'otp-verified',
+          target: `/shared/${secretId}`,
+          details: { shareMode: 'otp', creator: stored.creatorName },
           clientIp: getClientIp(req),
         });
 
@@ -479,12 +474,10 @@ router.post(
 
         writeAuditEntry({
           timestamp: new Date().toISOString(),
-          action: 'share_viewed',
-          shareId: secretId,
-          shareMode: 'auth-login',
-          url: `/shared/${secretId}`,
-          creator: stored.creatorName,
-          viewer: viewerName,
+          action: 'share.viewed',
+          actor: viewerName,
+          target: `/shared/${secretId}`,
+          details: { shareMode: 'auth-login', creator: stored.creatorName },
           clientIp: getClientIp(req),
         });
 

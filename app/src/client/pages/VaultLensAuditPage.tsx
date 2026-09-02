@@ -49,7 +49,7 @@ export default function VaultLensAuditPage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Lens Audits</h1>
         <p className="mt-1 text-sm text-gray-500">
-          View audit trail for all secret sharing activity (creates and views).
+          View audit events from VaultLens features and integrations.
         </p>
       </div>
 
@@ -95,42 +95,41 @@ export default function VaultLensAuditPage() {
                 <tr>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mode</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Creator</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Viewer</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">URL</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actor</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client IP</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {entries.map((entry, idx) => (
-                  <tr key={`${entry.shareId}-${entry.timestamp}-${idx}`} className="hover:bg-gray-50">
+                  <tr key={`${entry.action}-${entry.timestamp}-${idx}`} className="hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-xs text-gray-600 whitespace-nowrap">
                       {new Date(entry.timestamp).toLocaleString()}
                     </td>
                     <td className="px-4 py-2.5">
                       <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        entry.action === 'share_created'
+                        entry.status === 'failure'
+                          ? 'bg-red-100 text-red-800'
+                          : entry.action === 'share.created'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-blue-100 text-blue-800'
                       }`}>
-                        {entry.action === 'share_created' ? 'Created' : 'Viewed'}
+                        {entry.action}
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        entry.shareMode === 'one-time' ? 'bg-gray-100 text-gray-700' :
-                        entry.shareMode === 'otp' ? 'bg-amber-100 text-amber-800' :
-                        'bg-purple-100 text-purple-800'
-                      }`}>
-                        {entry.shareMode === 'one-time' ? 'One-time' :
-                         entry.shareMode === 'otp' ? 'OTP' : 'Auth Login'}
+                      <span className={`text-xs font-medium ${entry.status === 'failure' ? 'text-red-700' : 'text-gray-700'}`}>
+                        {entry.status || '—'}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-xs text-gray-700 font-mono">{entry.creator || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-700 font-mono">{entry.viewer || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-500 font-mono max-w-[200px] truncate" title={entry.url}>
-                      {entry.url}
+                    <td className="px-4 py-2.5 text-xs text-gray-700 font-mono">{entry.actor || '—'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 font-mono max-w-[200px] truncate" title={entry.target || ''}>
+                      {entry.target || '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-500 font-mono max-w-[240px] truncate" title={entry.details ? JSON.stringify(entry.details) : ''}>
+                      {entry.details ? JSON.stringify(entry.details) : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-xs text-gray-500 font-mono">{entry.clientIp || '—'}</td>
                   </tr>
