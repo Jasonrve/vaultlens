@@ -98,6 +98,18 @@ Plain text (no `=` or `:`) is displayed as a standard description paragraph belo
 
 ## Auth Method Detail
 
+## Configurable Auth Actions
+
+Administrators can add shortcut buttons to auth-method screens using the gear icon in the screen header. Buttons can be configured for an individual mount or shared by every mount of an auth type. Mount settings override an action with the same ID from the auth-type settings.
+
+Actions support HTTP GET links and POST form submissions. Each action can stay in the current tab, open a new tab, or show a popup outcome. URLs and form fields can use context placeholders such as `{{MOUNT_PATH}}`, `{{ROLE_NAME}}`, `{{AUTH_TYPE}}`, and `{{VAULT_ADDR}}`; values are resolved for the current backend and role and are encoded for their destination. Missing placeholders are not sent.
+
+The action editor stores a safe icon name rather than custom markup and includes icons from Lucide, Material Design, Font Awesome, and Iconify. Iconify supports the `simple-icons`, `logos`, `devicon`, `vscode-icons`, `skill-icons`, `material-icon-theme`, `mdi`, `material-symbols`, and `tabler` collections. Choose a collection and enter any icon name in the `collection:name` format, such as `mdi:shield` or `simple-icons:hashicorp`. Iconify icon data is loaded from its public API when an icon is first displayed. Vault tokens, Secret IDs, credentials, and secret values are never available as placeholders. Action configuration is included in VaultLens application settings backups.
+
+Actions can be configured as **icon-only** buttons. The button label is then used as its hover tooltip and accessible label, so users can identify the action without displaying text beside the icon.
+
+The icon search is optimized for the large catalog: matching is deferred while typing and the picker renders a bounded set of local results at a time. All local icons remain searchable, and Iconify icons can be entered directly using their collection prefix and name.
+
 Click any auth method to view its details across three tabs:
 
 ### Roles Tab

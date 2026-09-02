@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.js';
 import secretsRoutes from './routes/secrets.js';
 import policiesRoutes from './routes/policies.js';
 import authMethodsRoutes from './routes/authMethods.js';
+import authActionsRoutes from './routes/authActions.js';
 import identityRoutes from './routes/identity.js';
 import graphRoutes from './routes/graph.js';
 import brandingRoutes from './routes/branding.js';
@@ -54,7 +55,7 @@ if (config.nodeEnv === 'production') {
           // Google Fonts stylesheet is loaded from fonts.googleapis.com.
           styleSrc: ["'self'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:'],
-          connectSrc: ["'self'"],
+          connectSrc: ["'self'", 'https://api.iconify.design'],
           // Google Fonts font files are served from fonts.gstatic.com.
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
           objectSrc: ["'none'"],
@@ -183,6 +184,7 @@ app.use('/api/vaultlens-audit', vaultlensAuditRoutes);
 app.use('/api/secrets', secretsRoutes);
 app.use('/api/policies', policiesRoutes);
 app.use('/api/auth-methods', authMethodsRoutes);
+app.use('/api/auth-actions', authActionsRoutes);
 app.use('/api/identity', identityRoutes);
 app.use('/api/graph', graphRoutes);
 app.use('/api/permissions', permissionsRoutes);

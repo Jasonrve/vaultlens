@@ -72,6 +72,12 @@ services:
   vaultlens:
     image: node:22-alpine
     container_name: vaultlens-app
+    user: "1001:1001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/usr/local/bin/vaultlens-entrypoint"]
     working_dir: /app
     depends_on:
       vault:
@@ -88,10 +94,13 @@ services:
       # Vault connects to the vaultlens service by name on the shared Docker network
       VAULT_AUDIT_SOCKET_VAULT_ADDRESS: "vaultlens:9090"
       VAULTLENS_CONFIG_STORAGE: "file"
+      VAULTLENS_DEBUG_SHELL: "${VAULTLENS_DEBUG_SHELL:-false}"
+      npm_config_cache: "/tmp/npm-cache"
     ports:
       - "3001:3001"
     volumes:
       - ./app:/app
+      - ./docker-entrypoint.sh:/usr/local/bin/vaultlens-entrypoint:ro
     command: sh -c "npm install && npm run build && npm start"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health > /dev/null 2>&1 && echo OK || exit 1"]

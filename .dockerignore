@@ -8,5 +8,8 @@ vault
 .env
 .env.*
 !README.md
+# Runtime data (config.ini, backups, uploaded logos) must never enter the build context/layers
+app/data
+data
 app/node_modules
 app/dist
