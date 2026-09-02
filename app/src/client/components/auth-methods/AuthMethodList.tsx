@@ -6,6 +6,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import AuthMethodIcon from './AuthMethodIcon';
 import { AuthMethodMeta } from './AuthMethodMeta';
+import AuthActionBar from './AuthActionBar';
 
 export default function AuthMethodList() {
   const [methods, setMethods] = useState<AuthMethod[]>([]);
@@ -61,6 +62,9 @@ export default function AuthMethodList() {
               <th className="px-4 py-3 text-left text-xs font-semibold tracking-wider text-gray-500 uppercase">
                 Accessor
               </th>
+              <th className="px-4 py-3 text-right text-xs font-semibold tracking-wider text-gray-500 uppercase">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
@@ -84,11 +88,14 @@ export default function AuthMethodList() {
                     : '—'}
                 </td>
                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{m.accessor}</td>
+                <td className="px-4 py-3 text-right">
+                  <AuthActionBar context={{ screen: 'list', mount: m.path, authType: m.type }} />
+                </td>
               </tr>
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-400">
                   {search ? `No auth methods match "${search}"` : 'No auth methods found'}
                 </td>
               </tr>

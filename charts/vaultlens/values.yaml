@@ -69,7 +69,7 @@ configStorage:
   persistence:
     # -- Enable a PersistentVolumeClaim for file-based config storage
     # Required when backend is 'file' and config must survive pod restarts
-    enabled: false
+    enabled: true
     # -- Storage class name (leave empty to use cluster default)
     storageClassName: ""
     # -- Access mode for the PVC

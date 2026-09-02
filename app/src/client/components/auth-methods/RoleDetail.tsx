@@ -5,6 +5,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import DevIntegrationTab from './DevIntegrationTab';
 import FilteredAuditLog from '../common/FilteredAuditLog';
+import AuthActionBar from './AuthActionBar';
 
 // Fields that contain token/security policies — rendered as badges
 const POLICY_FIELDS = new Set(['token_policies', 'policies', 'allowed_policies', 'disallowed_policies']);
@@ -352,13 +353,16 @@ export default function RoleDetail() {
 
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800">{role}</h1>
-        <button
-          onClick={() => { void handleDelete(); }}
-          disabled={deleting}
-          className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-        >
-          {deleting ? 'Deleting…' : 'Delete Role'}
-        </button>
+        <div className="flex items-center gap-2">
+          <AuthActionBar context={{ screen: 'role', mount: method, role, authType }} />
+          <button
+            onClick={() => { void handleDelete(); }}
+            disabled={deleting}
+            className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Delete Role'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}

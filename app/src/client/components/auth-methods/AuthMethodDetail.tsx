@@ -9,6 +9,7 @@ import RoleList from './RoleList';
 import { AuthMethodMeta } from './AuthMethodMeta';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
 import AuditErrorBadge from '../common/AuditErrorBadge';
+import AuthActionBar from './AuthActionBar';
 
 type Tab = 'Configuration' | 'Method Options' | 'Roles';
 const ALL_TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
@@ -97,6 +98,7 @@ export default function AuthMethodDetail() {
           }
         </div>
         <div className="flex items-center gap-2">
+          <AuthActionBar context={{ screen: 'mount', mount: method, authType }} />
           <AuditErrorBadge count={errorCounts?.mountTotal ?? 0} mountPath={method} label={method} />
           <button
             onClick={() => setShowGraph(true)}

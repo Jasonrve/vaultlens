@@ -1,4 +1,39 @@
 {
+  "0.11.0": {
+    "date": "2026-09-02",
+    "highlights": [
+      "Custom auth-method action buttons",
+      "Iconify technology and developer icon collections",
+      "Persistent and faster action configuration"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Auth method action buttons",
+          "description": "Administrators can add icon buttons to auth-method screens for common links and form requests, with mount-specific settings, reusable context placeholders, and configurable tab or popup behavior."
+        },
+        {
+          "title": "Iconify auth action icons",
+          "description": "Choose icons from popular technology, developer, and general-purpose collections when configuring auth-method action buttons."
+        }
+      ],
+      "Improved": [
+        {
+          "title": "Persistent auth action configuration",
+          "description": "Auth action buttons are stored in the same persistent configuration volume as the rest of VaultLens settings, so they survive pod restarts."
+        },
+        {
+          "title": "Faster auth action icon search",
+          "description": "Searching the large auth action icon catalog is now more responsive while you type."
+        },
+        {
+          "title": "Icon-only auth actions",
+          "description": "Auth action buttons can now show only their selected icon while keeping the button label available as a tooltip when users hover over it."
+        }
+      ],
+      "Fixed": []
+    }
+  },
   "0.10.0": {
     "date": "2026-08-21",
     "highlights": [
@@ -27,6 +62,14 @@
         }
       ],
       "Improved": [
+        {
+          "title": "Container runtime hardening",
+          "description": "VaultLens containers now run as an unprivileged user and keep shell commands disabled unless debugging is explicitly enabled."
+        },
+        {
+          "title": "Persisted developer guide overrides",
+          "description": "Custom developer integration guide overrides now live on the same mounted configuration volume as the rest of VaultLens's settings, so they survive container restarts and upgrades instead of resetting."
+        },
         {
           "title": "Audit buffer memory estimate",
           "description": "The Analytics page now shows an estimated memory footprint for the in-memory audit buffer."
