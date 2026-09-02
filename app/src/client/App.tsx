@@ -17,6 +17,7 @@ import MyIdentityPage from './pages/MyIdentityPage';
 import AdminBrandingPage from './pages/AdminBrandingPage';
 import PermissionTesterPage from './pages/PermissionTesterPage';
 import ShareSecretPage from './pages/ShareSecretPage';
+import SecretGeneratorPage from './pages/SecretGeneratorPage';
 import ViewSharedSecretPage from './pages/ViewSharedSecretPage';
 import AuditLogPage from './pages/AuditLogPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -230,6 +231,7 @@ function AppRoutes() {
         <Route path="/admin/changelog" element={<ChangelogPage />} />
         <Route path="/admin/sharing-audit" element={<VaultLensAuditPage />} />
         <Route path="/tools/share" element={<ShareSecretPage />} />
+        <Route path="/tools/generator" element={<SecretGeneratorPage />} />
       </Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>

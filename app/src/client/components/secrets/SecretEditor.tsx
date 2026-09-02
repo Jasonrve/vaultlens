@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 import JsonEditor from '../common/JsonEditor';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
+import SecretValueGenerator from './SecretValueGenerator';
 
 interface KvRow {
   key: string;
@@ -270,8 +271,9 @@ export default function SecretEditor() {
                   placeholder="value"
                   value={row.value}
                   onChange={(e) => updateRow(i, 'value', e.target.value)}
-                  className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
+                  className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
                 />
+                <SecretValueGenerator onInsert={(value) => updateRow(i, 'value', value)} />
                 <button
                   type="button"
                   onClick={() => removeRow(i)}
@@ -344,8 +346,13 @@ export default function SecretEditor() {
                         updated[i] = { ...updated[i]!, value: e.target.value };
                         setMetaRows(updated);
                       }}
-                      className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
+                      className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
                     />
+                    <SecretValueGenerator onInsert={(value) => {
+                      const updated = [...metaRows];
+                      updated[i] = { ...updated[i]!, value };
+                      setMetaRows(updated);
+                    }} />
                     <button
                       type="button"
                       onClick={() => setMetaRows(metaRows.filter((_, j) => j !== i))}

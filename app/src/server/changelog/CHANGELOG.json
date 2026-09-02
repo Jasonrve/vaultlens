@@ -1,4 +1,21 @@
 {
+  "0.11.0": {
+    "date": "2026-09-02",
+    "highlights": [
+      "Browser-based secret generation",
+      "Quick generation from secret fields"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Secret generation tools",
+          "description": "Generate passwords, passphrases, tokens, UUIDs, and encoded values in your browser, with the last selected options remembered for next time. Secret fields also include quick generation actions and a full options popup."
+        }
+      ],
+      "Improved": [],
+      "Fixed": []
+    }
+  },
   "0.10.0": {
     "date": "2026-08-21",
     "highlights": [
