@@ -226,7 +226,7 @@ export default function PolicyDetail() {
   const [paths, setPaths] = useState<PolicyPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState<EditMode>('visual');
+  const [editMode, setEditMode] = useState<EditMode>(readOnly ? 'view' : 'visual');
 
   // Visual editor state
   const [visualRows, setVisualRows] = useState<VisualRow[]>([]);

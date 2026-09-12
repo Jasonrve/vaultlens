@@ -42,8 +42,12 @@ export default [
         // DOM types
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',
+        HTMLButtonElement: 'readonly',
+        PointerEvent: 'readonly',
         HTMLImageElement: 'readonly',
         HTMLDivElement: 'readonly',
+        HTMLDialogElement: 'readonly',
+        Blob: 'readonly',
         HTMLTextAreaElement: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',

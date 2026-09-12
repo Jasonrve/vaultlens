@@ -1,4 +1,5 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
+import { rateLimitDelay, recordRateLimit } from './requestBackoff';
 import type {
   SecretEngine,
   Policy,
@@ -20,6 +21,14 @@ const api = axios.create({
 
 // Read CSRF token from cookie and attach to state-changing requests
 api.interceptors.request.use((reqConfig) => {
+  const wait = rateLimitDelay();
+  if (wait > 0) {
+    throw new AxiosError('Too many requests. Please wait before retrying.', 'ERR_RATE_LIMIT_COOLDOWN', reqConfig, undefined, {
+      status: 429, statusText: 'Too Many Requests', config: reqConfig,
+      headers: { 'retry-after': String(Math.ceil(wait / 1000)) },
+      data: { error: 'Too many requests. Please wait before retrying.' },
+    });
+  }
   const method = (reqConfig.method || '').toUpperCase();
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
     const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
@@ -33,6 +42,7 @@ api.interceptors.request.use((reqConfig) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.status === 429 && error.code !== 'ERR_RATE_LIMIT_COOLDOWN') recordRateLimit(error.response.headers?.['retry-after']);
     if (error.response?.status === 401) {
       // Don't redirect when already on a public page — avoids reload loops
       // during the initial checkAuth call and mid-wizard sessions.
@@ -45,7 +55,7 @@ api.interceptors.response.use(
         path.startsWith('/shared/') ||
         path.startsWith('/oidc-callback/');
       if (!isPublicPage) {
-        window.location.href = '/login';
+        window.location.href = path.startsWith('/security-audit') ? '/login?returnTo=security-audit' : '/login';
       }
     }
     return Promise.reject(error);
@@ -1168,4 +1178,104 @@ export interface ChangelogEntry {
 export async function getChangelog(): Promise<Record<string, ChangelogEntry>> {
   const { data } = await api.get<Record<string, ChangelogEntry>>('/sys/changelog');
   return data;
+}
+
+// Configuration snapshot audit (separate from Vault request audit logs).
+export async function getSecurityAuditRuns() {
+  const {data} = await api.get<{runs: import('../../shared/securityAudit').AuditRun[]}>('/security-audit/runs'); return data.runs;
+}
+export async function getSecurityAuditRun(id: string) {
+  const {data} = await api.get<import('../../shared/securityAudit').AuditDetail>(`/security-audit/runs/${encodeURIComponent(id)}`); return data;
+}
+export async function startSecurityAudit(collectionOptions?: {workers:number;retries:number;requestsPerSecond:number;retryBackoffMs:number;timeoutMs?:number;maxDurationMs?:number;maxObjects?:number;namespaceFilters?:string[];policyFilters?:string[];authMountFilters?:string[];authTypeFilters?:string[];skipIdentity?:boolean;redactPolicySource?:boolean;recursiveNamespaces?:boolean;namespace?:string}, controls?:{baselineYaml:string;exceptionsYaml:string}) {
+  const {data} = await api.post<{id: string}>('/security-audit/runs', {collectionOptions,...controls}); return data;
+}
+
+export async function getAuditRules() {
+  const {data}=await api.get<import('../../shared/auditRules').SettingsView>('/security-audit/rules');return data;
+}
+export async function saveAuditRules(settings: import('../../shared/auditRules').RuleSettings) {
+  const {data}=await api.put<import('../../shared/auditRules').SettingsView>('/security-audit/rules',settings);return data;
+}
+
+export async function getSecurityAuditDiff(oldId: string, newId: string) {
+  const {data}=await api.get<import('../../shared/securityAudit').AuditDiff>('/security-audit/diff', {params:{old:oldId,new:newId}});
+  return data;
+}
+
+export async function downloadSecurityAudit(id: string, format: string, redactPolicySource = false): Promise<Blob> {
+  const response=await api.get<Blob>(`/security-audit/runs/${encodeURIComponent(id)}/export`,{params:{format,redactPolicySource},responseType:'blob'});
+  return response.data;
+}
+
+export async function reanalyzeSecurityAudit(sourceRunId:string,controls?:{baselineYaml:string;exceptionsYaml:string}) {
+  const {data}=await api.post<{id:string}>('/security-audit/runs',{sourceRunId,...controls});return data;
+}
+
+export async function getSecurityAuditBaseline(id:string):Promise<string> {
+  const {data}=await api.get(`/security-audit/runs/${encodeURIComponent(id)}/baseline`);
+  return JSON.stringify(data,null,2);
+}
+
+export async function importPythonAudit(file:File):Promise<{id:string}> {
+  const {data}=await api.post<{id:string}>('/security-audit/imports/python',file,{headers:{'Content-Type':'application/octet-stream'}});
+  return data;
+}
+
+export async function resumeSecurityAudit(resumeRunId:string,checkpointMaxAgeMs:number,controls:{baselineYaml:string;exceptionsYaml:string}) {
+  const {data}=await api.post<{id:string}>('/security-audit/runs',{resumeRunId,checkpointMaxAgeMs,...controls});return data;
+}
+
+export async function refreshSecurityAudit(refreshRunId:string,refreshSources:string[],controls:{baselineYaml:string;exceptionsYaml:string}) {
+  const {data}=await api.post<{id:string}>('/security-audit/runs',{refreshRunId,refreshSources,...controls});return data;
+}
+
+export async function getAuditObjectExceptions() {
+  const {data}=await api.get<import('../../shared/securityAudit').AuditException[]>('/security-audit/exceptions');return data;
+}
+export async function createAuditObjectException(input:{runId:string;findingIndex:number;owner:string;reason:string;expires:string}) {
+  const {data}=await api.post<import('../../shared/securityAudit').AuditException>('/security-audit/exceptions',input);return data;
+}
+export async function removeAuditObjectException(id:string) {
+  await api.delete(`/security-audit/exceptions/${encodeURIComponent(id)}`);
+}
+
+export type AuditExceptionInput = Pick<import('../../shared/securityAudit').AuditException,'rule_id'|'namespace'|'object_path'|'owner'|'reason'|'expires'|'name'|'enabled'|'object_type'|'match'>;
+export async function saveAuditObjectException(input:AuditExceptionInput,id?:string) {
+  const url='/security-audit/exceptions'+(id?`/${encodeURIComponent(id)}`:'');
+  const {data}=id?await api.put(url,input):await api.post(url,input);return data;
+}
+
+export async function deleteSecurityAuditRuns(ids:string[]) {
+  const {data}=await api.delete<{deleted:number}>('/security-audit/runs',{data:{ids}});return data;
+}
+
+export async function getAuditInventory() {
+  const { data } = await api.get<import('../../shared/securityAudit').AuditInventoryView>('/security-audit/inventory');
+  return data;
+}
+export async function updateAuditInventory(collectionOptions: Record<string, unknown>, analyze: boolean) {
+  const { data } = await api.post<{ id: string }>('/security-audit/runs', { collectionOptions, collectOnly: !analyze });
+  return data;
+}
+export async function analyzeAuditSnapshot(sourceSnapshotId: string) {
+  const { data } = await api.post<{ id: string }>('/security-audit/runs', { sourceSnapshotId });
+  return data;
+}
+export async function getSavedAuditSnapshot(id: string) {
+  const { data } = await api.get<{info: import('../../shared/securityAudit').SavedAuditSnapshot; snapshot: import('../../shared/securityAudit').AuditSnapshot}>(`/security-audit/snapshots/${encodeURIComponent(id)}`);
+  return data;
+}
+
+export async function getAuditRetention() {
+  const { data } = await api.get<{enabled: boolean; maxRuns: number}>('/security-audit/retention');
+  return data;
+}
+export async function setAuditRetention(enabled: boolean) {
+  const { data } = await api.put<{enabled: boolean; maxRuns: number; deleted: number}>('/security-audit/retention', { enabled });
+  return data;
+}
+
+export async function toggleAuditException(id: string, enabled: boolean) {
+ const {data}=await api.patch(`/security-audit/exceptions/${encodeURIComponent(id)}/enabled`,{enabled});return data;
 }

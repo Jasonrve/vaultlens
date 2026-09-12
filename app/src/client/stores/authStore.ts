@@ -1,8 +1,11 @@
+import { authenticationFailure } from '../lib/requestBackoff';
 import { create } from 'zustand';
 import * as api from '../lib/api';
 import type { VaultTokenInfo } from '../types';
 
 interface AuthState {
+  authCheckError: string | null;
+  authRetryAt: number;
   tokenInfo: Partial<VaultTokenInfo> | null;
   isAuthenticated: boolean;
   error: string | null;
@@ -15,6 +18,8 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
+  authCheckError: null,
+  authRetryAt: 0,
   tokenInfo: null,
   isAuthenticated: false,
   error: null,
@@ -27,6 +32,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         tokenInfo: result.tokenInfo,
         isAuthenticated: true,
+        authCheckError: null,
+        authRetryAt: 0,
         loading: false,
       });
     } catch (err: unknown) {
@@ -38,7 +45,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loginWithToken: (_token: string, tokenInfo: Partial<VaultTokenInfo>) => {
-    set({ tokenInfo, isAuthenticated: true, error: null, loading: false });
+    set({ tokenInfo, isAuthenticated: true, error: null, loading: false, authCheckError: null, authRetryAt: 0 });
   },
 
   logout: async () => {
@@ -50,6 +57,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         tokenInfo: null,
         isAuthenticated: false,
+        authCheckError: null,
+        authRetryAt: 0,
       });
     }
   },
@@ -63,9 +72,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         tokenInfo: result.tokenInfo,
         isAuthenticated: true,
+        authCheckError: null,
+        authRetryAt: 0,
       });
-    } catch {
-      set({ tokenInfo: null, isAuthenticated: false });
+    } catch (error) {
+      const failure = authenticationFailure(error);
+      if (failure.invalid) set({ tokenInfo: null, isAuthenticated: false, authCheckError: null, authRetryAt: 0 });
+      else set({ authCheckError: failure.message, authRetryAt: failure.retryAt });
     }
   },
 
@@ -75,9 +88,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         tokenInfo: result.tokenInfo,
         isAuthenticated: true,
+        authCheckError: null,
+        authRetryAt: 0,
       });
-    } catch {
-      set({ tokenInfo: null, isAuthenticated: false });
+    } catch (error) {
+      const failure = authenticationFailure(error);
+      if (failure.invalid) set({ tokenInfo: null, isAuthenticated: false, authCheckError: null, authRetryAt: 0 });
+      else set({ authCheckError: failure.message, authRetryAt: failure.retryAt });
     }
   },
 }));

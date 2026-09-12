@@ -47,7 +47,7 @@ async function start(): Promise<void> {
     });
   }
 
-  app.listen(config.port, async () => {
+  app.listen(config.port, process.env['HOST'] || '0.0.0.0', async () => {
     console.log(`VaultLens running on port ${config.port} [${config.nodeEnv}]`);
     console.log(`Vault address: ${config.vaultAddr}`);
 

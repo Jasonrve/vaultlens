@@ -44,10 +44,13 @@ export async function authMiddleware(
     next();
   } catch (error) {
     tokenValidationsTotal.inc({ result: 'failure' });
-    if (error instanceof VaultError) {
+    if (error instanceof VaultError && [401, 403].includes(error.statusCode)) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;
     }
-    res.status(401).json({ error: 'Authentication failed' });
+    // A Vault outage or throttle does not invalidate the browser session.
+    res.setHeader('Retry-After', '15');
+    res.status(error instanceof VaultError && error.statusCode === 429 ? 429 : 503)
+      .json({ error: 'Session verification temporarily unavailable. Please retry.' });
   }
 }
