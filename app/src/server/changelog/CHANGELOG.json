@@ -6,7 +6,8 @@
       "Quick generation from secret fields",
       "Custom auth-method action buttons",
       "Iconify technology and developer icon collections",
-      "Persistent and faster action configuration"
+      "Persistent and faster action configuration",
+      "Vault Secrets Operator resource browser"
     ],
     "sections": {
       "New": [
@@ -19,11 +20,19 @@
           "description": "Administrators can add icon buttons to auth-method screens for common links and form requests, with mount-specific settings, reusable context placeholders, and configurable tab or popup behavior."
         },
         {
+          "title": "Vault Secrets Operator resource browser",
+          "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
+        },
+        {
           "title": "Iconify auth action icons",
           "description": "Choose icons from popular technology, developer, and general-purpose collections when configuring auth-method action buttons."
         }
       ],
       "Improved": [
+        {
+          "title": "VSO resource YAML drawer",
+          "description": "Inspect VSO objects in a right-side drawer with grouped resource rows, resource search, correctly indented YAML, and an optional managed-fields view that is hidden by default. Permission failures now show the configured Kubernetes URL and example cluster RBAC."
+        },
         {
           "title": "Persistent auth action configuration",
           "description": "Auth action buttons are stored in the same persistent configuration volume as the rest of VaultLens settings, so they survive pod restarts."
@@ -37,7 +46,12 @@
           "description": "Auth action buttons can now show only their selected icon while keeping the button label available as a tooltip when users hover over it."
         }
       ],
-      "Fixed": []
+      "Fixed": [
+        {
+          "title": "Login branding logo",
+          "description": "Custom logos and application names now appear on the login screen as well as inside the main interface."
+        }
+      ]
     }
   },
   "0.10.0": {

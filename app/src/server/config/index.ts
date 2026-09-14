@@ -13,6 +13,7 @@ export const config = {
   vaultK8sAuthRole: process.env['VAULT_K8S_AUTH_ROLE'] || '',
   vaultK8sAuthMount: process.env['VAULT_K8S_AUTH_MOUNT'] || 'kubernetes',
   vaultK8sTokenPath: process.env['VAULT_K8S_TOKEN_PATH'] || '/var/run/secrets/kubernetes.io/serviceaccount/token',
+  k8sSkipTlsVerify: process.env['K8S_SKIP_TLS_VERIFY'] === 'true',
   // Rate limiting
   rateLimitMax: parseInt(process.env['RATE_LIMIT_MAX'] || '500', 10),
   rateLimitWindowMs: parseInt(process.env['RATE_LIMIT_WINDOW_MS'] || String(15 * 60 * 1000), 10),

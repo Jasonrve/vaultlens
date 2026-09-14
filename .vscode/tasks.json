@@ -19,7 +19,7 @@
       "label": "docker-compose-remove-development-containers",
       "type": "shell",
       "command": "pwsh",
-      "args": ["-NoProfile", "-Command", "docker rm -f vaultlens-vault vaultlens-vault-init vaultlens-vault-audit-demo vaultlens-app 2>$null; exit 0"],
+      "args": ["-NoProfile", "-Command", "docker rm -f vaultlens-k3s vaultlens-k3s-vso-fixture vaultlens-vault vaultlens-vault-init vaultlens-vault-audit-demo vaultlens-app 2>$null; exit 0"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "continueOnError": true,
@@ -34,7 +34,7 @@
       "label": "docker-compose-up",
       "type": "shell",
       "command": "docker-compose",
-      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault", "vault-init", "vault-audit-demo"],
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "k3s", "k3s-vso-fixture", "vault", "vault-init", "vault-audit-demo", "vaultlens"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "presentation": {

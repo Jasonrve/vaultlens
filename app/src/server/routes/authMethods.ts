@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
+import fs from 'node:fs';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -14,10 +15,41 @@ import {
 } from '../lib/devIntegrationLoader.js';
 import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
 import { readAuthMethodsConfig } from './vaultlens-audit.js';
+import { KubernetesError, VSO_RESOURCES, getVsoResource, listVsoResources } from '../lib/kubernetesClient.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+function readServiceAccountIdentity(): { serviceAccount?: string; namespace?: string; iamRole?: string } {
+  const tokenPath = config.vaultK8sTokenPath;
+  const basePath = tokenPath.replace(/[/\\]token$/, '');
+  const read = (fileName: string): string | undefined => {
+    try {
+      const value = fs.readFileSync(`${basePath}/${fileName}`, 'utf8').trim();
+      return value || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  return {
+    serviceAccount: process.env['K8S_SERVICE_ACCOUNT_NAME'],
+    namespace: process.env['K8S_SERVICE_ACCOUNT_NAMESPACE'] || read('namespace'),
+    iamRole: process.env['K8S_IAM_ROLE_NAME'] || undefined,
+  };
+}
+
+function sendKubernetesError(res: Response, error: KubernetesError, kubernetesHost?: string): Response {
+  if (error.reason === 'access_denied') {
+    return res.status(error.statusCode).json({
+      error: error.message,
+      identity: readServiceAccountIdentity(),
+      kubernetesHost,
+    });
+  }
+  return res.status(error.statusCode).json({ error: error.message, reason: error.reason, kubernetesHost });
+}
 
 router.use(authMiddleware);
 
@@ -75,6 +107,72 @@ router.get(
       next(error);
     }
   }
+);
+
+// List VSO resources for a Kubernetes auth mount. The downstream request is
+// deliberately deferred until this tab is opened by the client.
+router.get(
+  '/:method/vso-resources',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+
+      const resources = await listVsoResources(method, kubernetesHost);
+      return res.json({ resources, supportedKinds: VSO_RESOURCES.map(({ kind, resource }) => ({ kind, resource })) });
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
+);
+
+// Fetch one allowlisted VSO object as YAML.
+router.get(
+  '/:method/vso-resources/:kind/:resource/:namespace/:name',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      const kind = String(req.params['kind']);
+      const resource = String(req.params['resource']);
+      const namespaceValue = String(req.params['namespace']);
+      const name = String(req.params['name']);
+      const namespace = namespaceValue === '_' ? undefined : namespaceValue;
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+
+      const result = await getVsoResource(method, kubernetesHost, kind, resource, namespace, name);
+      return res.json(result);
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
 );
 
 // List roles for a given auth method

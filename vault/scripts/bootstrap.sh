@@ -173,6 +173,36 @@ echo "  ✓ kubernetes-nprd role 'app-role' created"
 vault auth tune -audit-non-hmac-request-keys=role kubernetes-nprd/ 2>/dev/null || true
 echo "  ✓ kubernetes-nprd 'role' field exempted from audit HMAC"
 
+# ── Enable local k3s Kubernetes Auth for VSO browser testing ────────────────
+echo ""
+echo "→ Enabling Kubernetes auth method (local k3s cluster)..."
+vault auth enable \
+  -path=kubernetes-k3s \
+  -description="Local k3s cluster for Vault Secrets Operator browser testing" \
+  kubernetes 2>/dev/null || echo "  (already enabled)"
+
+K3S_ACCESS_TOKEN="${K8S_ACCESS_K3S:-}"
+if [ -z "$K3S_ACCESS_TOKEN" ] && [ -f /shared/token ]; then
+  K3S_ACCESS_TOKEN=$(cat /shared/token)
+fi
+
+if [ -n "$K3S_ACCESS_TOKEN" ]; then
+  vault write auth/kubernetes-k3s/config \
+    kubernetes_host="https://k3s:6443" \
+    token_reviewer_jwt="$K3S_ACCESS_TOKEN" \
+    disable_iss_validation=true \
+    disable_local_ca_jwt=true
+  vault write auth/kubernetes-k3s/role/app-role \
+    bound_service_account_names="vaultlens-vso-reader" \
+    bound_service_account_namespaces="default" \
+    policies="app-specific" \
+    ttl="1h" \
+    max_ttl="4h"
+  echo "  ✓ local k3s Kubernetes auth configured"
+else
+  echo "  ! local k3s token unavailable; set K8S_ACCESS_K3S to configure the auth mount"
+fi
+
 # ── Enable GitHub Auth ────────────────────────────────────────────────────────
 echo ""
 echo "→ Enabling GitHub auth method..."

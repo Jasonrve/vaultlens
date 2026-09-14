@@ -98,6 +98,37 @@ Plain text (no `=` or `:`) is displayed as a standard description paragraph belo
 
 ## Auth Method Detail
 
+### Vault Secrets Operator Resources
+
+Administrators can enable **Vault Secrets Operator resources** from **Settings → Features → Auth Methods**. The setting is global: when enabled, every Kubernetes auth mount gets a **VSO Resources** tab. It is disabled by default for normal installations; the checked-in local development configuration enables it so the k3s fixture can be tested immediately.
+
+The tab is read-only and loads only when opened. It queries the Kubernetes endpoint configured in that auth mount and lists existing resources across all namespaces:
+
+- `VaultConnection`
+- `VaultAuth`
+- `VaultAuthGlobal`
+- `VaultStaticSecret`
+- `VaultDynamicSecret`
+- `VaultPKISecret`
+- `SecretTransformation`
+- `CSISecrets`
+
+The resource list includes the kind, namespace, name, age, and current status. Rows are grouped in this order: `VaultStaticSecret`, `VaultAuth`, then `VaultConnection`; other supported kinds follow afterward. Use the resource search above the table to filter by kind, namespace, name, or status. Select an entry to open an animated YAML drawer from the right and copy the YAML. Kubernetes managed fields are hidden from the default output so internal `f:` bookkeeping does not obscure the object; use **Show Kubernetes managed fields** when you need to inspect them. YAML keys, strings, booleans, numbers, and comments are color formatted for easier scanning. VaultLens never sends Kubernetes credentials to the browser. The VaultLens workload identity needs Kubernetes `get` and `list` permissions for the VSO resources. If access is denied, the tab shows the Kubernetes URL configured on the Vault auth mount, the current ServiceAccount and workload role, and an example `ClusterRole`/`ClusterRoleBinding` granting read-only access across namespaces.
+
+The feature does not browse arbitrary Kubernetes resources and does not modify VSO objects. Missing VSO CRDs are reported as unavailable rather than being shown as an empty inventory.
+
+#### Local k3s testing
+
+The development Compose file includes an optional k3s cluster and VSO fixture. The fixture installs the VSO CRDs, creates read-only access, and seeds sample `VaultConnection`, `VaultAuth`, and `VaultStaticSecret` objects. The normal `docker-compose-refresh` task starts the fixture before Vault bootstrap and VaultLens.
+
+For an explicit local downstream token, set the cluster-specific environment variable before starting Compose:
+
+```env
+K8S_ACCESS_K3S=<kubernetes-bearer-token>
+```
+
+The value is treated only as a bearer token and is never logged or returned. When it is omitted in the development fixture, the generated read-only ServiceAccount token is shared with VaultLens through the local development volume. `K8S_SKIP_TLS_VERIFY=true` is enabled by default for the self-signed k3s API and should not be used for production clusters.
+
 ## Configurable Auth Actions
 
 Administrators can add shortcut buttons to auth-method screens using the gear icon in the screen header. Buttons can be configured for an individual mount or shared by every mount of an auth type. Mount settings override an action with the same ID from the auth-type settings.

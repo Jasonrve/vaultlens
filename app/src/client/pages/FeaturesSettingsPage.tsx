@@ -111,7 +111,7 @@ export default function FeaturesSettingsPage() {
   const [policiesSaved, setPoliciesSaved] = useState(false);
 
   // Auth Methods
-  const [authMethods, setAuthMethods] = useState<AuthMethodsConfig>({ enableDevIntegrationGuides: true });
+  const [authMethods, setAuthMethods] = useState<AuthMethodsConfig>({ enableDevIntegrationGuides: true, enableVsoResources: false });
   const [authMethodsSaving, setAuthMethodsSaving] = useState(false);
   const [authMethodsError, setAuthMethodsError] = useState<string | null>(null);
   const [authMethodsSaved, setAuthMethodsSaved] = useState(false);
@@ -281,6 +281,12 @@ export default function FeaturesSettingsPage() {
           description="Show a ‘Developer Guide’ tab on role detail pages with rendered markdown guides to help developers integrate. Admins can customise guides per auth type. Disabling hides the tab for all users."
           checked={authMethods.enableDevIntegrationGuides}
           onChange={(v) => { const val = { ...authMethods, enableDevIntegrationGuides: v }; setAuthMethods(val); void saveAuthMethods(val); }}
+        />
+        <ToggleRow
+          label="Vault Secrets Operator resources"
+          description="Show a read-only VSO Resources tab on every Kubernetes auth mount. Cluster access is queried only when the tab is opened and requires downstream Kubernetes permissions."
+          checked={authMethods.enableVsoResources}
+          onChange={(v) => { const val = { ...authMethods, enableVsoResources: v }; setAuthMethods(val); void saveAuthMethods(val); }}
         />
       </Section>
 

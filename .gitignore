@@ -1,8 +1,40 @@
+# Dependencies
 node_modules/
+app/node_modules/
+docs/node_modules/
+
+# Build output and caches
 dist/
+app/dist/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+.vite/
+
+# Local configuration and runtime data
 .env
-*.log
-.DS_Store
+.env.*
+!.env.example
 app/data/
-docs/.vitepress/dist
-docs/.vitepress/cache
+vault/audit/*.log
+
+# Logs and local diagnostic output
+*.log
+*.pid
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.temp
+*.bak
+
+# Local exports and session artifacts
+node-registry.json
+plan.md
+*-cookies.txt
+
+# Local assistant and security-review artifacts
+.claude/
+CLAUDE-SECURITY-*/

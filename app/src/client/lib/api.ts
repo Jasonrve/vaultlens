@@ -584,6 +584,7 @@ export async function updatePoliciesConfig(config: PoliciesConfig) {
 // ── Auth Methods Config ─────────────────────────────────
 export interface AuthMethodsConfig {
   enableDevIntegrationGuides: boolean;
+  enableVsoResources: boolean;
 }
 
 export async function getAuthMethodsConfig() {
@@ -593,6 +594,44 @@ export async function getAuthMethodsConfig() {
 
 export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/auth-methods-config', config);
+  return data;
+}
+
+export interface VsoResourceRow {
+  kind: string;
+  resource: string;
+  namespace?: string;
+  name: string;
+  createdAt?: string;
+  status?: string;
+}
+
+export interface VsoResourceList {
+  resources: VsoResourceRow[];
+  supportedKinds: Array<{ kind: string; resource: string }>;
+}
+
+export interface VsoResourceDetail {
+  yaml: string;
+  fullYaml: string;
+  row: VsoResourceRow;
+}
+
+export async function listVsoResources(method: string) {
+  const { data } = await api.get<VsoResourceList>(
+    `/auth-methods/${encodeURIComponent(method)}/vso-resources`,
+  );
+  return data;
+}
+
+export async function getVsoResource(
+  method: string,
+  row: Pick<VsoResourceRow, 'kind' | 'resource' | 'namespace' | 'name'>,
+) {
+  const namespace = row.namespace ? encodeURIComponent(row.namespace) : '_';
+  const { data } = await api.get<VsoResourceDetail>(
+    `/auth-methods/${encodeURIComponent(method)}/vso-resources/${encodeURIComponent(row.kind)}/${encodeURIComponent(row.resource)}/${namespace}/${encodeURIComponent(row.name)}`,
+  );
   return data;
 }
 
