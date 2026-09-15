@@ -412,7 +412,7 @@ export default function SecretView() {
         <div className="flex items-center gap-2">
           {/* Version selector for KV v2 with any version history */}
           {version === 2 && metadata?.versions && Object.keys(metadata.versions).length >= 1 && (
-            <div className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1">
+            <div className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1">
               <svg className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -423,7 +423,7 @@ export default function SecretView() {
                   const v = Number(e.target.value);
                   setViewingSecretVersion(v === metadata?.current_version ? null : v);
                 }}
-                className="border-0 bg-transparent text-sm text-gray-700 focus:outline-none cursor-pointer"
+                className="border-0 bg-white text-sm text-gray-700 focus:outline-none cursor-pointer"
               >
                 {Object.keys(metadata.versions)
                   .map(Number)
