@@ -34,6 +34,7 @@ Thumbs.db
 node-registry.json
 plan.md
 *-cookies.txt
+task/
 
 # Local assistant and security-review artifacts
 .claude/

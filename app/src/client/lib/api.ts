@@ -13,7 +13,7 @@ import type {
   ResolvedAuthAction,
 } from '../types';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api',
   withCredentials: true,
 });

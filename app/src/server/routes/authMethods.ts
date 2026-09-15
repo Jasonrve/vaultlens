@@ -10,7 +10,6 @@ import {
   getTemplate,
   saveTemplateOverride as saveTemplateToDisk,
   substituteTemplate,
-  saveTemplateOverride,
   deleteTemplateOverride,
 } from '../lib/devIntegrationLoader.js';
 import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
@@ -49,6 +48,29 @@ function sendKubernetesError(res: Response, error: KubernetesError, kubernetesHo
     });
   }
   return res.status(error.statusCode).json({ error: error.message, reason: error.reason, kubernetesHost });
+}
+
+/**
+ * VSO resource lookups go through VaultLens's own Kubernetes service-account
+ * credentials, not the caller's Vault token — Kubernetes has no concept of the
+ * caller's Vault ACLs to defer to. So instead of a blanket admin requirement,
+ * gate access on whether the caller's own token can already read this specific
+ * auth mount's config in Vault — the same bar as managing that mount at all.
+ */
+async function canReadAuthMountConfig(token: string, method: string): Promise<boolean> {
+  try {
+    const path = `auth/${method}/config`;
+    const resp = await vaultClient.post<Record<string, unknown>>(
+      '/sys/capabilities-self',
+      token,
+      { paths: [path] },
+    );
+    const caps = (resp as { capabilities?: string[] }).capabilities ?? resp[path];
+    const capList = Array.isArray(caps) ? caps as string[] : [];
+    return capList.includes('root') || capList.includes('read');
+  } catch {
+    return false;
+  }
 }
 
 router.use(authMiddleware);
@@ -120,6 +142,9 @@ router.get(
       if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
 
       const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
       const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
         `/auth/${encodeURIComponent(method)}/config`,
         req.vaultToken!,
@@ -150,6 +175,9 @@ router.get(
       if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
 
       const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
       const kind = String(req.params['kind']);
       const resource = String(req.params['resource']);
       const namespaceValue = String(req.params['namespace']);
@@ -368,7 +396,7 @@ router.post(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       const body = req.body as Record<string, unknown>;
@@ -397,7 +425,7 @@ router.delete(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       await vaultClient.delete(
@@ -420,7 +448,7 @@ router.post(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       const response = await vaultClient.post<{
@@ -450,7 +478,7 @@ router.get(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
 
@@ -521,10 +549,10 @@ router.delete(
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
       const accessor = String(req.params['accessor']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
-      if (!accessor || !/^[0-9a-fA-F\-]{5,100}$/.test(accessor)) {
+      if (!accessor || !/^[0-9a-fA-F-]{5,100}$/.test(accessor)) {
         return res.status(400).json({ error: 'Invalid accessor format' });
       }
       await vaultClient.post(
@@ -601,10 +629,10 @@ router.get(
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.query['role'] ?? '');
 
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
-      if (role && !/^[\w\-]+$/.test(role)) {
+      if (role && !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
 
@@ -659,7 +687,7 @@ router.put(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
 
@@ -694,7 +722,7 @@ router.delete(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
 
@@ -703,8 +731,6 @@ router.delete(
 
       // Delete disk override so built-in default is restored
       await deleteTemplateOverride(authTypeKey);
-
-      return res.json({ success: true, authType });
 
       return res.json({ success: true, authType });
     } catch (error) {

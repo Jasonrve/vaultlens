@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
 import { config } from '../config/index.js';
+import { getEksToken } from './eksAuth.js';
 
 const VSO_GROUP = 'secrets.hashicorp.com';
 const VSO_VERSION = 'v1beta1';
@@ -55,18 +56,51 @@ function validSegment(value: string): boolean {
   return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(value) && !value.includes('..');
 }
 
-function tokenForMount(mount: string): string {
+/** Per-mount env var names to check for a given suffix, e.g. '' or '_EKS_CLUSTER'. */
+export function envNamesForMount(mount: string, suffix: string): string[] {
   const normalized = mount.replace(/\/$/, '').replace(/[^a-zA-Z0-9]+/g, '_').toUpperCase();
-  const candidates = [
-    `K8S_ACCESS_${normalized}`,
+  return [
+    `K8S_ACCESS_${normalized}${suffix}`,
     ...(normalized.startsWith('KUBERNETES_')
-      ? [`K8S_ACCESS_${normalized.slice('KUBERNETES_'.length)}`]
+      ? [`K8S_ACCESS_${normalized.slice('KUBERNETES_'.length)}${suffix}`]
       : []),
   ];
-  for (const name of candidates) {
-    const token = process.env[name];
-    if (token) return token;
+}
+
+function firstEnv(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value) return value;
   }
+  return undefined;
+}
+
+async function tokenForMount(mount: string): Promise<string> {
+  // Opt-in per-mount: use the pod's own IAM role (IRSA or EKS Pod Identity) to sign
+  // an EKS bearer token, instead of a static Kubernetes ServiceAccount token.
+  const eksCluster = firstEnv(envNamesForMount(mount, '_EKS_CLUSTER'));
+  if (eksCluster) {
+    const region = firstEnv(envNamesForMount(mount, '_EKS_REGION'))
+      || process.env['AWS_REGION']
+      || process.env['AWS_DEFAULT_REGION'];
+    if (!region) {
+      throw new KubernetesError(
+        'EKS IAM auth requires an AWS region — set AWS_REGION or K8S_ACCESS_<MOUNT>_EKS_REGION',
+        503,
+      );
+    }
+    try {
+      return await getEksToken(eksCluster, region);
+    } catch (e) {
+      throw new KubernetesError(
+        `Failed to sign an EKS token using the pod's IAM role: ${e instanceof Error ? e.message : 'unknown error'}`,
+        503,
+      );
+    }
+  }
+
+  const token = firstEnv(envNamesForMount(mount, ''));
+  if (token) return token;
 
   try {
     return fs.readFileSync(config.vaultK8sTokenPath, 'utf8').trim();
@@ -121,7 +155,7 @@ function rowFromItem(item: Record<string, unknown>, definition: VsoResourceDefin
 function yamlScalar(value: unknown): string {
   if (value === null) return 'null';
   if (typeof value === 'string') {
-    return value === '' || /[:\[{\]#,&*!|>'"%@`]/.test(value) || /^[-?]\s/.test(value)
+    return value === '' || /[:[{\]#,&*!|>'"%@`]/.test(value) || /^[-?]\s/.test(value)
       ? JSON.stringify(value)
       : value;
   }
@@ -238,9 +272,10 @@ async function requestKubernetes<T>(mount: string, host: string, requestPath: st
   }
 
   try {
+    const token = await tokenForMount(mount);
     const response = await axios.get<T>(requestPath, {
       baseURL: base.origin,
-      headers: { Authorization: `Bearer ${tokenForMount(mount)}` },
+      headers: { Authorization: `Bearer ${token}` },
       timeout: 15000,
       maxContentLength: MAX_RESPONSE_BYTES,
       maxBodyLength: MAX_RESPONSE_BYTES,
@@ -250,6 +285,9 @@ async function requestKubernetes<T>(mount: string, host: string, requestPath: st
     });
     return response.data;
   } catch (error) {
+    // A specific error from tokenForMount (e.g. missing region, EKS signing failure)
+    // should reach the caller as-is, not get flattened into the generic 502 below.
+    if (error instanceof KubernetesError) throw error;
     const status = error instanceof AxiosError ? error.response?.status : undefined;
     if (status === 401 || status === 403) {
       throw new KubernetesError('The current workload identity cannot query the downstream Kubernetes cluster', status, 'access_denied');

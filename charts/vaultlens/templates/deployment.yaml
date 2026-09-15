@@ -99,6 +99,9 @@ spec:
                   key: vault-system-token
                   {{- end }}
             {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -112,8 +115,10 @@ spec:
           {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
           {{- $fileBackend := eq (.Values.configStorage.backend | default "file") "file" }}
           {{- $hasConfigPVC := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
-          {{- if or $hasBackupVol (and $fileBackend) }}
           volumeMounts:
+            # readOnlyRootFilesystem needs somewhere writable for Node's own temp files
+            - name: tmp
+              mountPath: /tmp
             {{- if $hasBackupVol }}
             - name: backups
               mountPath: {{ .Values.backup.path | default "/backups" | quote }}
@@ -122,12 +127,12 @@ spec:
             - name: config-storage
               mountPath: {{ .Values.configStorage.path | default "/config" | quote }}
             {{- end }}
-          {{- end }}
       {{- $hasBackupVol := or .Values.backup.persistence.enabled .Values.backup.persistence.existingClaim }}
       {{- $fileBackend := eq (.Values.configStorage.backend | default "file") "file" }}
       {{- $hasConfigPVC := or .Values.configStorage.persistence.enabled .Values.configStorage.persistence.existingClaim }}
-      {{- if or $hasBackupVol $fileBackend }}
       volumes:
+        - name: tmp
+          emptyDir: {}
         {{- if $hasBackupVol }}
         - name: backups
           persistentVolumeClaim:
@@ -142,7 +147,6 @@ spec:
           emptyDir: {}
           {{- end }}
         {{- end }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

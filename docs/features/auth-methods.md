@@ -117,6 +117,18 @@ The resource list includes the kind, namespace, name, age, and current status. R
 
 The feature does not browse arbitrary Kubernetes resources and does not modify VSO objects. Missing VSO CRDs are reported as unavailable rather than being shown as an empty inventory.
 
+#### Downstream cluster access
+
+Access to a Kubernetes auth mount's own cluster is resolved per mount, in this order:
+
+1. **EKS IAM role** — set `K8S_ACCESS_<MOUNT>_EKS_CLUSTER=<eks-cluster-name>` to have VaultLens sign a short-lived EKS bearer token using the IAM role attached to its own pod (via IRSA or EKS Pod Identity), instead of a static Kubernetes token. Optionally set `K8S_ACCESS_<MOUNT>_EKS_REGION` if the downstream cluster's region differs from `AWS_REGION`/`AWS_DEFAULT_REGION`. The pod's IAM role must be allowed (via the target EKS cluster's `aws-auth` ConfigMap or access entries) to authenticate, and the resulting Kubernetes identity needs `get`/`list` on the VSO resources. No token is stored anywhere — it's signed fresh for each request.
+2. **Static bearer token** — `K8S_ACCESS_<MOUNT>=<kubernetes-bearer-token>`, used as-is.
+3. **Local ServiceAccount token** — if neither of the above is set, VaultLens falls back to its own pod's mounted ServiceAccount token (`VAULT_K8S_TOKEN_PATH`), which only makes sense when the Kubernetes auth mount's cluster *is* the cluster VaultLens itself runs in.
+
+`<MOUNT>` is the auth mount path, uppercased with non-alphanumeric characters replaced by `_` (e.g. `kubernetes-prod` → `KUBERNETES_PROD`). A mount name that already starts with `kubernetes` also accepts the same suffix with that prefix stripped (e.g. `K8S_ACCESS_PROD_EKS_CLUSTER` for a mount named `kubernetes-prod`).
+
+Access to VSO resources for a mount is gated on the caller's *own* Vault token having `read` capability on that mount's `auth/<mount>/config` path — not on being a VaultLens admin — since the downstream Kubernetes call itself always uses VaultLens's own workload identity rather than the caller's.
+
 #### Local k3s testing
 
 The development Compose file includes an optional k3s cluster and VSO fixture. The fixture installs the VSO CRDs, creates read-only access, and seeds sample `VaultConnection`, `VaultAuth`, and `VaultStaticSecret` objects. The normal `docker-compose-refresh` task starts the fixture before Vault bootstrap and VaultLens.

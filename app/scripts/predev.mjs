@@ -34,8 +34,14 @@ try {
   }
 
   if (pids.length > 0) {
-    console.log(`[predev] Port ${port} in use by PID(s) ${pids.join(', ')} — killing...`);
     for (const pid of pids) {
+      let name = 'unknown process';
+      try {
+        name = process.platform === 'win32'
+          ? execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf8' }).split(',')[0]?.replaceAll('"', '').trim() || name
+          : execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8' }).trim() || name;
+      } catch { /* best-effort only */ }
+      console.log(`[predev] Port ${port} in use by PID ${pid} (${name}) — killing...`);
       try {
         if (process.platform === 'win32') {
           execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' });

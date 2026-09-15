@@ -1,31 +1,65 @@
 /**
  * Config encryption utility for securing sensitive credentials in config storage.
- * 
+ *
  * Uses AES-256-GCM for authenticated encryption with authenticated data (AEAD).
- * The encryption key is derived from VAULT_ADDR to ensure consistency across
- * container instances that share the same Vault instance.
- * 
+ * The encryption key comes from VAULTLENS_ENCRYPTION_KEY if set; otherwise a random
+ * key is generated on first use and persisted next to config.ini so it survives
+ * restarts. The key is never derived from VAULT_ADDR or any other non-secret value —
+ * anyone who can read config.ini could otherwise recompute it.
+ *
  * Format in storage: "v1:base64(iv):base64(encryptedData):base64(authTag)"
  * This supports versioning for future key rotation strategies.
  */
 
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../config/index.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
 const AUTH_TAG_LENGTH = 16; // 128 bits
 const ENCRYPTION_VERSION = 'v1';
-const APP_SALT = 'vaultlens-config-encryption-key-v1';
+
+let cachedKey: Buffer | null = null;
 
 /**
- * Derives the encryption key from VAULT_ADDR.
- * All containers pointing to the same Vault instance will derive the same key,
- * enabling decryption across multiple instances and restarts.
+ * Returns the persisted (or freshly generated) local encryption key file path,
+ * co-located with config.ini so both survive the same volume mount / backup.
+ */
+function keyFilePath(): string {
+  const configDir = config.configStoragePath || path.resolve(process.cwd(), 'data');
+  if (!fs.existsSync(configDir)) fs.mkdirSync(configDir, { recursive: true });
+  return path.join(configDir, '.encryption-key');
+}
+
+function loadOrCreateLocalKey(): Buffer {
+  const file = keyFilePath();
+  try {
+    if (fs.existsSync(file)) {
+      const raw = fs.readFileSync(file, 'utf-8').trim();
+      const key = Buffer.from(raw, 'hex');
+      if (key.length === 32) return key;
+    }
+  } catch {
+    // fall through and regenerate
+  }
+  const key = crypto.randomBytes(32);
+  fs.writeFileSync(file, key.toString('hex'), { encoding: 'utf-8', mode: 0o600 });
+  return key;
+}
+
+/**
+ * Derives/loads the encryption key. Explicit VAULTLENS_ENCRYPTION_KEY (any length
+ * string) takes precedence and is hashed to 32 bytes; otherwise a random key is
+ * generated once and persisted locally.
  */
 function deriveKey(): Buffer {
-  const keyMaterial = `${config.vaultAddr}:${APP_SALT}`;
-  return crypto.createHash('sha256').update(keyMaterial).digest();
+  if (cachedKey) return cachedKey;
+  cachedKey = config.configEncryptionKey
+    ? crypto.createHash('sha256').update(config.configEncryptionKey).digest()
+    : loadOrCreateLocalKey();
+  return cachedKey;
 }
 
 /**

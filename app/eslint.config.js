@@ -83,4 +83,42 @@ export default [
       },
     },
   },
+  {
+    files: ['src/server/**/*.ts', 'src/shared/**/*.ts'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      parser: parser,
+      parserOptions: {
+        project: null,
+      },
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearTimeout: 'readonly',
+        clearInterval: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        require: 'readonly',
+        module: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tsPlugin,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...tsPlugin.configs.recommended.rules,
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // TypeScript's own compiler already catches real undefined identifiers; without
+      // type-aware linting, no-undef can't see ambient/global types (e.g. NodeJS.*)
+      // and produces false positives for them.
+      'no-undef': 'off',
+    },
+  },
 ];

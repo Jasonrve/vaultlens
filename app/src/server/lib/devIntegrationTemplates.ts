@@ -414,7 +414,7 @@ curl -s --request POST \\
   "{{VAULT_ADDR}}/v1/auth/{{MOUNT_PATH}}/login" \\
   --data "{
     \\"role\\": \\"{{ROLE_NAME}}\\",
-    \\"jwt\\": \\"\${JWT}\"
+    \\"jwt\\": \\"\${JWT}\\"
   }"
 \`\`\`
 

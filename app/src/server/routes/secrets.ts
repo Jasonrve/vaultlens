@@ -1,20 +1,27 @@
 import { Router, Response, NextFunction } from 'express';
 import { config } from '../config/index.js';
-import { VaultClient } from '../lib/vaultClient.js';
+import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { getSystemToken } from '../lib/systemToken.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { secretOperationsTotal } from '../lib/metrics.js';
 import { readSecretsAuditConfig } from './vaultlens-audit.js';
+import { concurrentMap } from '../lib/concurrency.js';
 import type { AuthenticatedRequest, SecretEngine } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+const MOVE_CONCURRENT_LIMIT = 10;
 
 router.use(authMiddleware);
 
-/** Reject paths containing traversal sequences or null bytes */
+/**
+ * Reject paths containing traversal sequences, null bytes, or characters that are
+ * meaningful in a URL (?, #, %) — the path is concatenated straight into the Vault
+ * request URL, so any of those could inject/override query parameters or truncate
+ * at a fragment instead of being treated as literal path text.
+ */
 function isValidSecretPath(p: string): boolean {
-  if (p.includes('\0')) return false;
+  if (p.includes('\0') || /[?#%]/.test(p)) return false;
   const segments = p.split('/');
   return segments.every(s => s !== '..' && s !== '.');
 }
@@ -650,15 +657,19 @@ router.post(
         };
       });
 
-      const resolved = await Promise.all(items.map(async (item) => ({
-        item,
-        sourceInfo: await getEngineInfo(req.vaultToken!, item.source),
-        destinationInfo: await getEngineInfo(req.vaultToken!, item.destination),
-      })));
+      type EngineInfo = Awaited<ReturnType<typeof getEngineInfo>>;
+      const resolved: Array<{ item: MoveItem; sourceInfo: EngineInfo; destinationInfo: EngineInfo }> = [];
+      await concurrentMap(items, MOVE_CONCURRENT_LIMIT, async (item) => {
+        resolved.push({
+          item,
+          sourceInfo: await getEngineInfo(req.vaultToken!, item.source),
+          destinationInfo: await getEngineInfo(req.vaultToken!, item.destination),
+        });
+      });
       const conflicts: MoveItem[] = [];
-      for (const entry of resolved) {
+      await concurrentMap(resolved, MOVE_CONCURRENT_LIMIT, async (entry) => {
         if (await moveDestinationExists(entry.destinationInfo, req.vaultToken!)) conflicts.push(entry.item);
-      }
+      });
       if (conflicts.length > 0 && conflict === 'fail') {
         res.status(409).json({ success: false, conflicts });
         return;
@@ -666,11 +677,11 @@ router.post(
 
       const skipped: Array<MoveItem & { reason: string }> = [];
       let moved = 0;
-      for (const entry of resolved) {
+      await concurrentMap(resolved, MOVE_CONCURRENT_LIMIT, async (entry) => {
         const isConflict = conflicts.some((item) => item.destination === entry.item.destination);
         if (isConflict && conflict === 'skip') {
           skipped.push({ ...entry.item, reason: 'Destination already exists' });
-          continue;
+          return;
         }
         try {
           const data = await readMoveSecret(entry.sourceInfo, req.vaultToken!);
@@ -701,7 +712,7 @@ router.post(
               : statusCode === 403 ? 'Source read permission denied' : 'Source read failed',
           });
         }
-      }
+      });
       res.json({ success: true, moved, skipped, conflicts });
     } catch (error) {
       next(error);
@@ -754,15 +765,21 @@ router.post(
 
       // Read existing secret with system token (never exposed to user)
       let existingData: Record<string, unknown> = {};
+      let currentVersion = 0; // 0 = secret doesn't exist yet (KV v2 cas semantics)
       try {
         const existing = await vaultClient.get<{
-          data: { data: Record<string, unknown> } | Record<string, unknown>;
+          data:
+            | { data: Record<string, unknown>; metadata: { version: number } }
+            | Record<string, unknown>;
         }>(readPath, sysToken);
 
-        existingData =
-          engineInfo.version === 2
-            ? (existing.data as { data: Record<string, unknown> }).data
-            : (existing.data as Record<string, unknown>);
+        if (engineInfo.version === 2) {
+          const versioned = existing.data as { data: Record<string, unknown>; metadata: { version: number } };
+          existingData = versioned.data;
+          currentVersion = versioned.metadata.version;
+        } else {
+          existingData = existing.data as Record<string, unknown>;
+        }
       } catch {
         // Secret may not exist yet, start with empty
       }
@@ -777,12 +794,29 @@ router.post(
         'data'
       );
 
+      // KV v2 only: pin the write to the version we just read, so a write that lands
+      // between our read and write (last-writer-wins) is rejected instead of silently
+      // discarding the concurrent change.
       const writeData =
         engineInfo.version === 2
-          ? { data: mergedData }
+          ? { data: mergedData, options: { cas: currentVersion } }
           : mergedData;
 
-      await vaultClient.post(writePath, req.vaultToken!, writeData);
+      try {
+        await vaultClient.post(writePath, req.vaultToken!, writeData);
+      } catch (error) {
+        if (
+          engineInfo.version === 2 &&
+          error instanceof VaultError &&
+          error.errors.some((e) => e.includes('check-and-set'))
+        ) {
+          res.status(409).json({
+            error: 'Secret was modified by someone else while this update was in progress. Reload and try again.',
+          });
+          return;
+        }
+        throw error;
+      }
 
       // Return only confirmation with the keys that were updated (never existing values)
       await stampAuditMetadata(req, engineInfo);
@@ -1043,7 +1077,8 @@ router.get(
 
       const paths: string[] = [];
 
-      async function walkKv(mount: string, version: number, prefix: string): Promise<void> {
+      async function walkKv(mount: string, version: number, prefix: string, depth = 0): Promise<void> {
+        if (depth > 20) return; // matches listMoveSecrets' depth cap — avoid unbounded recursion
         const listPath = version === 2
           ? (prefix ? `/${mount}/metadata/${prefix}` : `/${mount}/metadata`)
           : (prefix ? `/${mount}/${prefix}` : `/${mount}`);
@@ -1052,7 +1087,7 @@ router.get(
           for (const key of resp.data.keys ?? []) {
             const fullKey = prefix ? `${prefix}${key}` : key;
             if (key.endsWith('/')) {
-              await walkKv(mount, version, fullKey);
+              await walkKv(mount, version, fullKey, depth + 1);
             } else {
               paths.push(`${mount}/${fullKey}`);
             }

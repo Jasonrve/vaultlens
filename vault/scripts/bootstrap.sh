@@ -187,6 +187,8 @@ if [ -z "$K3S_ACCESS_TOKEN" ] && [ -f /shared/token ]; then
 fi
 
 if [ -n "$K3S_ACCESS_TOKEN" ]; then
+  # dev-only: local k3s has no stable OIDC issuer / accessible CA, unlike a real
+  # cluster — never disable these two checks outside this local fixture.
   vault write auth/kubernetes-k3s/config \
     kubernetes_host="https://k3s:6443" \
     token_reviewer_jwt="$K3S_ACCESS_TOKEN" \

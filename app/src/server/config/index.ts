@@ -30,9 +30,12 @@ export const config = {
   // On Docker Desktop (Windows/macOS): host.docker.internal:9090
   // On Linux Docker: 172.17.0.1:9090  (or set VAULT_AUDIT_SOCKET_VAULT_ADDRESS explicitly)
   auditSocketVaultAddress: process.env['VAULT_AUDIT_SOCKET_VAULT_ADDRESS'] || 'host.docker.internal:9090',
-  // Configuration storage: always 'file' — pluggable backend retained for future extension
-  configStorage: 'file' as const,
   configStoragePath: process.env['VAULTLENS_CONFIG_PATH'] || '',
+  // Key used to encrypt sensitive values (e.g. the system AppRole secret_id) at rest in
+  // config.ini. If unset, a random key is generated and persisted alongside config.ini —
+  // see lib/configEncryption.ts. Set this explicitly when multiple instances must share
+  // decryptable config (e.g. behind a load balancer) without relying on shared disk.
+  configEncryptionKey: process.env['VAULTLENS_ENCRYPTION_KEY'] || '',
   // Backup storage directory
   backupStoragePath: process.env['VAULTLENS_BACKUP_PATH'] || '',
 } as const;
