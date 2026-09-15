@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import https from 'node:https';
 import path from 'node:path';
 import { config } from '../config/index.js';
-import { getEksToken } from './eksAuth.js';
+import { getEksToken, resolveEksCluster } from './eksAuth.js';
 
 const VSO_GROUP = 'secrets.hashicorp.com';
 const VSO_VERSION = 'v1beta1';
@@ -75,9 +75,11 @@ function firstEnv(names: string[]): string | undefined {
   return undefined;
 }
 
-async function tokenForMount(mount: string): Promise<string> {
-  // Opt-in per-mount: use the pod's own IAM role (IRSA or EKS Pod Identity) to sign
-  // an EKS bearer token, instead of a static Kubernetes ServiceAccount token.
+async function tokenForMount(mount: string, kubernetesHost: string): Promise<string> {
+  // Explicit per-mount override: use the pod's own IAM role (IRSA or EKS Pod Identity)
+  // to sign an EKS bearer token for a specific cluster/region, instead of a static
+  // Kubernetes ServiceAccount token. Needed only when the mount's host isn't a
+  // standard AWS-generated EKS endpoint (see resolveEksCluster below).
   const eksCluster = firstEnv(envNamesForMount(mount, '_EKS_CLUSTER'));
   if (eksCluster) {
     const region = firstEnv(envNamesForMount(mount, '_EKS_REGION'))
@@ -91,6 +93,20 @@ async function tokenForMount(mount: string): Promise<string> {
     }
     try {
       return await getEksToken(eksCluster, region);
+    } catch (e) {
+      throw new KubernetesError(
+        `Failed to sign an EKS token using the pod's IAM role: ${e instanceof Error ? e.message : 'unknown error'}`,
+        503,
+      );
+    }
+  }
+
+  // Default: recognize a standard EKS endpoint from the mount's own configured
+  // host and sign a token for it with the pod's IAM role — no per-mount config.
+  const autoDetected = await resolveEksCluster(kubernetesHost);
+  if (autoDetected) {
+    try {
+      return await getEksToken(autoDetected.cluster, autoDetected.region);
     } catch (e) {
       throw new KubernetesError(
         `Failed to sign an EKS token using the pod's IAM role: ${e instanceof Error ? e.message : 'unknown error'}`,
@@ -272,7 +288,7 @@ async function requestKubernetes<T>(mount: string, host: string, requestPath: st
   }
 
   try {
-    const token = await tokenForMount(mount);
+    const token = await tokenForMount(mount, host);
     const response = await axios.get<T>(requestPath, {
       baseURL: base.origin,
       headers: { Authorization: `Bearer ${token}` },
