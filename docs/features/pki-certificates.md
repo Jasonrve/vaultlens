@@ -91,6 +91,50 @@ Restore into a new destination, stop writers before switching databases, and
 retain the matching application build for rollback. Do not copy only the main
 SQLite file while writers are active. Allow space for the database, WAL and backups.
 
+## Architecture
+
+| Decision | Implementation and reason |
+| --- | --- |
+| Separate catalog and live engine paths | `/api/pki` serves collected inventory and jobs; `/api/pki-engine` performs live engine operations. Shared types and operation definitions connect the UI and server without depending on Security Audit. |
+| Durable local storage | Built-in Node SQLite stores sources, certificates, queue items and jobs. WAL supports reads during collection; queries, filtering and pagination stay server-side. Deployment assumes one host/shared database, not a distributed queue. |
+| Worker outside the HTTP process | `runtime.ts` forks `worker.ts`, with one active collection, configurable concurrency and request rate. Queue checkpoints survive process loss. Heartbeats identify interrupted runs; attempt numbers fence stale writers. Pause stops at a safe boundary and resume uses a fresh session. |
+| Current-session authorization | The API verifies the Vault token, discovers mounts and intersects source selection with current capabilities. Workers receive tokens through IPC, not persisted job records. Live mutations use the caller's session; local deletion requires root or `vaultlens-admin`. |
+| Stable source identity | Source IDs hash cluster ID, namespace and mount accessor. The path and access are rechecked so a remounted engine cannot silently inherit another source's catalog. Certificate identity conflicts preserve the original record and record evidence. |
+| Explicit observation quality | Coverage, failed items and revocation evidence remain visible. Partial reads do not prove absence, and local-only records are not automatically deleted. |
+| Lightweight comparison | Compare normalized serial sets from `LIST <mount>/certs` with SQLite, then revalidate the source. The UI checks two sources concurrently and reuses successful results for two minutes. This avoids downloading every certificate, but still transfers the full serial list; it is not a constant-size count endpoint. |
+| Certificate evidence | Signing chains are assembled with signature verification and deduplication. Ambiguous/incomplete chains remain explicit; signature verification alone is not a trust, expiry or revocation verdict. |
+
+The catalog cannot discover `no_store` certificates. Matching serial sets do not establish current revocation metadata. Node.js 22.13+ and persistent writable storage are required; SQLite-aware backup/restore includes committed WAL data. See the feature documentation for deployment settings.
+
+
+## Screenshots
+
+Captured from a synthetic local Vault lab. Names and certificates are test data.
+
+### Inventory
+
+![Inventory](/images/pki/inventory.png)
+
+### Source comparison
+
+![Source comparison](/images/pki/sources.png)
+
+### Collection history
+
+![Collection history](/images/pki/collection-jobs.png)
+
+### Per-source job details
+
+![Per-source job details](/images/pki/collection-details.png)
+
+### PKI engine overview
+
+![PKI engine overview](/images/pki/engine-overview.png)
+
+### Live certificate details
+
+![Live certificate details](/images/pki/certificate-details.png)
+
 ## Development verification
 
 ```sh
