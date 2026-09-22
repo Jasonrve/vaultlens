@@ -1,0 +1,11 @@
+.pki-pem-actions { display: flex; position: relative; gap: 8px; }
+.pki-pem-actions > button { display: inline-flex; align-items: center; gap: 7px; }
+.pki-pem-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 5; width: min(390px, calc(100vw - 90px)); padding: 5px; background: white; color: #25272b; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 6px 24px rgb(16 24 40 / 14%); }
+.pki-pem-menu-heading { padding: 7px 10px; font-size: 12px; color: #64748b; }
+.pki-certificate-dialog .pki-pem-menu button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left; border: 0; border-radius: 4px; padding: 9px 10px; background: white; font-size: 13px; }
+.pki-certificate-dialog .pki-pem-menu button:hover:not(:disabled), .pki-certificate-dialog .pki-pem-menu button:focus-visible { background: #eef3fa; }
+.pki-pem-menu small { display: block; font-size: 11px; color: #64748b; margin-top: 3px; overflow-wrap: anywhere; }
+.pki-pem-menu .pki-pem-count { white-space: nowrap; margin: 0; }
+.pki-certificate-dialog .pki-pem-menu button.pki-pem-menu-divider { border-top: 1px solid #e5e7eb; border-radius: 0; margin-top: 4px; }
+.pki-certificate-dialog .pki-pem-menu button:disabled { opacity: .65; }
+@media (max-width: 540px) { .pki-pem-actions { flex-wrap: wrap; } }
