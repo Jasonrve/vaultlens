@@ -143,6 +143,8 @@ Access to a Kubernetes auth mount's own cluster is resolved per mount, in this o
 
 For both EKS IAM role paths, the pod's IAM role must be allowed (via the target EKS cluster's `aws-auth` ConfigMap or access entries) to authenticate, and the resulting Kubernetes identity needs `get`/`list` on the VSO resources. No token is stored anywhere — it's signed fresh for each request. Auto-detection additionally requires the pod's IAM role to have the read-only `eks:ListClusters` and `eks:DescribeCluster` permissions in that region.
 
+When a VSO request fails, the tab's **Request diagnostics** section shows the exact Kubernetes API path, HTTP or network error code, TLS verification mode, and whether a CA certificate was loaded. HTTPS verification uses `K8S_CA_CERT_PATH` when set, otherwise the ServiceAccount `ca.crt` beside `VAULT_K8S_TOKEN_PATH`; if neither exists, the diagnostic identifies the missing CA. The server logs the same request and failure details, but never logs the bearer token.
+
 `<MOUNT>` is the auth mount path, uppercased with non-alphanumeric characters replaced by `_` (e.g. `kubernetes-prod` → `KUBERNETES_PROD`). A mount name that already starts with `kubernetes` also accepts the same suffix with that prefix stripped (e.g. `K8S_ACCESS_PROD_EKS_CLUSTER` for a mount named `kubernetes-prod`).
 
 Access to VSO resources for a mount is gated on the caller's *own* Vault token having `read` capability on that mount's `auth/<mount>/config` path — not on being a VaultLens admin — since the downstream Kubernetes call itself always uses VaultLens's own workload identity rather than the caller's.

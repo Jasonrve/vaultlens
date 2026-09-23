@@ -73,11 +73,26 @@ export interface VsoOperatorPod {
   startedAt?: string;
 }
 
+export interface KubernetesRequestDiagnostics {
+  method: 'GET';
+  host: string;
+  path: string;
+  tls?: {
+    verification: 'enabled' | 'disabled';
+    caCertificate: 'configured' | 'not-configured';
+    caPath?: string;
+  };
+  status?: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export class KubernetesError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly reason: 'access_denied' | 'not_installed' | 'unavailable' | 'invalid' = 'unavailable',
+    public diagnostics?: KubernetesRequestDiagnostics,
   ) {
     super(message);
     this.name = 'KubernetesError';
@@ -168,12 +183,12 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<str
   }
 }
 
-function caForCluster(): Buffer | undefined {
+function caForCluster(): { certificate?: Buffer; path: string } {
   const caPath = process.env['K8S_CA_CERT_PATH'] || path.join(path.dirname(config.vaultK8sTokenPath), 'ca.crt');
   try {
-    return fs.readFileSync(caPath);
+    return { certificate: fs.readFileSync(caPath), path: caPath };
   } catch {
-    return undefined;
+    return { path: caPath };
   }
 }
 
@@ -519,16 +534,47 @@ export async function getPodLogs(
   );
 }
 
+// The Kubernetes API returns a Status object with the actual reason (RBAC denial,
+// not-found detail, etc.) in its body — axios's own error.message is just the
+// generic "Request failed with status code NNN" and hides that.
+function apiErrorMessage(data: unknown): string | undefined {
+  if (typeof data === 'string') return data.slice(0, 4000);
+  if (data && typeof data === 'object') {
+    const message = (data as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+    try { return JSON.stringify(data).slice(0, 4000); } catch { return undefined; }
+  }
+  return undefined;
+}
+
 async function kubernetesGet<T>(mount: string, host: string, requestPath: string, responseType: 'json' | 'text'): Promise<T> {
+  const diagnostics: KubernetesRequestDiagnostics = { method: 'GET', host, path: requestPath };
   let base: URL;
   try {
     base = new URL(host);
   } catch {
-    throw new KubernetesError('Kubernetes endpoint is not configured correctly', 502);
+    diagnostics.errorMessage = 'The configured endpoint is not a valid URL';
+    console.warn('[Kubernetes] Invalid downstream endpoint', diagnostics);
+    throw new KubernetesError('Kubernetes endpoint is not configured correctly', 502, 'invalid', diagnostics);
   }
   if (!['http:', 'https:'].includes(base.protocol)) {
-    throw new KubernetesError('Kubernetes endpoint protocol is not supported', 502);
+    diagnostics.errorMessage = `Unsupported protocol: ${base.protocol}`;
+    console.warn('[Kubernetes] Unsupported downstream endpoint protocol', diagnostics);
+    throw new KubernetesError('Kubernetes endpoint protocol is not supported', 502, 'invalid', diagnostics);
   }
+
+  const ca = base.protocol === 'https:' ? caForCluster() : undefined;
+  diagnostics.tls = {
+    verification: config.k8sSkipTlsVerify ? 'disabled' : 'enabled',
+    caCertificate: ca?.certificate ? 'configured' : 'not-configured',
+    ...(ca ? { caPath: ca.path } : {}),
+  };
+  console.info('[Kubernetes] Requesting downstream endpoint', {
+    method: diagnostics.method,
+    host: diagnostics.host,
+    path: diagnostics.path,
+    tls: diagnostics.tls,
+  });
 
   try {
     const token = await tokenForMount(mount, host);
@@ -539,23 +585,49 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
       responseType,
       maxContentLength: MAX_RESPONSE_BYTES,
       maxBodyLength: MAX_RESPONSE_BYTES,
-      ...(base.protocol === 'https:' && (config.k8sSkipTlsVerify || caForCluster())
-        ? { httpsAgent: new https.Agent(config.k8sSkipTlsVerify ? { rejectUnauthorized: false } : { ca: caForCluster() }) }
+      ...(base.protocol === 'https:' && (config.k8sSkipTlsVerify || ca?.certificate)
+        ? { httpsAgent: new https.Agent(config.k8sSkipTlsVerify ? { rejectUnauthorized: false } : { ca: ca?.certificate }) }
         : {}),
+    });
+    console.info('[Kubernetes] Downstream request succeeded', {
+      method: diagnostics.method,
+      host: diagnostics.host,
+      path: diagnostics.path,
+      status: response.status,
     });
     return response.data;
   } catch (error) {
     // A specific error from tokenForMount (e.g. missing region, EKS signing failure)
     // should reach the caller as-is, not get flattened into the generic 502 below.
-    if (error instanceof KubernetesError) throw error;
-    const status = error instanceof AxiosError ? error.response?.status : undefined;
+    if (error instanceof KubernetesError) {
+      error.diagnostics = diagnostics;
+      console.warn('[Kubernetes] Downstream request failed before HTTP response', diagnostics);
+      throw error;
+    }
+    const axiosError = error instanceof AxiosError ? error : undefined;
+    const status = axiosError?.response?.status;
+    diagnostics.status = status;
+    diagnostics.errorCode = axiosError?.code;
+    diagnostics.errorMessage = apiErrorMessage(axiosError?.response?.data)
+      ?? (error instanceof Error ? error.message : String(error));
+    console.warn('[Kubernetes] Downstream request failed', diagnostics);
     if (status === 401 || status === 403) {
-      throw new KubernetesError('The current workload identity cannot query the downstream Kubernetes cluster', status, 'access_denied');
+      throw new KubernetesError('The current workload identity cannot query the downstream Kubernetes cluster', status, 'access_denied', diagnostics);
     }
     if (status === 404) {
-      throw new KubernetesError('Vault Secrets Operator is not installed or its API is unavailable', 404, 'not_installed');
+      throw new KubernetesError('Vault Secrets Operator is not installed or its API is unavailable', 404, 'not_installed', diagnostics);
     }
-    throw new KubernetesError('The downstream Kubernetes cluster could not be queried', 502);
+    if (axiosError?.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' || axiosError?.code === 'SELF_SIGNED_CERT_IN_CHAIN' || axiosError?.code === 'DEPTH_ZERO_SELF_SIGNED_CERT') {
+      throw new KubernetesError(
+        diagnostics.tls?.caCertificate === 'not-configured'
+          ? 'TLS certificate verification failed because no trusted CA certificate is configured for the downstream Kubernetes cluster'
+          : 'TLS certificate verification failed for the downstream Kubernetes cluster',
+        502,
+        'unavailable',
+        diagnostics,
+      );
+    }
+    throw new KubernetesError('The downstream Kubernetes cluster could not be queried', 502, 'unavailable', diagnostics);
   }
 }
 

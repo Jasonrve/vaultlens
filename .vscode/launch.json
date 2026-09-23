@@ -2,13 +2,13 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug App + Docker",
+      "name": "Debug App + Local Stack",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "cwd": "${workspaceFolder}/app",
-      "preLaunchTask": "docker-compose-refresh",
+      "preLaunchTask": "docker-compose-start-audit-demo",
       "console": "integratedTerminal",
       "autoAttachChildProcesses": true,
       "sourceMaps": true,

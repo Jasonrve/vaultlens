@@ -30,6 +30,10 @@
       ],
       "Improved": [
         {
+          "title": "VSO connection diagnostics",
+          "description": "When VaultLens cannot reach a downstream Kubernetes cluster, the VSO tabs now show the exact API request, TLS verification state, CA certificate status, and upstream error details. The same information is recorded in the server logs without exposing credentials."
+        },
+        {
           "title": "Reduced VSO Kubernetes permissions",
           "description": "The VSO Resources tab no longer needs access to Kubernetes Secret objects. Destination Secret checks are omitted when that information cannot be read, while resource health and authentication checks continue to work."
         },

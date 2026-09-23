@@ -50,11 +50,13 @@ function sendKubernetesError(res: Response, error: KubernetesError, kubernetesHo
   if (error.reason === 'access_denied') {
     return res.status(403).json({
       error: error.message,
+      reason: error.reason,
       identity: readServiceAccountIdentity(),
       kubernetesHost,
+      diagnostics: error.diagnostics,
     });
   }
-  return res.status(error.statusCode).json({ error: error.message, reason: error.reason, kubernetesHost });
+  return res.status(error.statusCode).json({ error: error.message, reason: error.reason, kubernetesHost, diagnostics: error.diagnostics });
 }
 
 /**
@@ -386,6 +388,12 @@ router.post(
       authMethodOperationsTotal.inc({ operation: 'configure' });
       return res.json({ success: true });
     } catch (error) {
+      // Vault 400s on this endpoint are always configuration mistakes (bad
+      // kubernetes_host URL, malformed PEM, etc.), never security-sensitive —
+      // surface the real reason instead of the generic "Vault request failed".
+      if (error instanceof VaultError && error.statusCode === 400) {
+        return res.status(400).json({ error: error.message || 'Invalid configuration' });
+      }
       return next(error);
     }
   }

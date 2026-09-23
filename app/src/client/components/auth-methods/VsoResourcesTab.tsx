@@ -4,15 +4,18 @@ import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import Table from '../common/Table';
 import { FiCheckCircle, FiAlertTriangle, FiXCircle, FiHelpCircle } from 'react-icons/fi';
+import { VsoRequestDiagnostics, type VsoDiagnostics, type VsoErrorReason } from '../common/VsoRequestDiagnostics';
 
 interface VsoErrorDetails {
   message: string;
   kubernetesHost?: string;
   identity?: { serviceAccount?: string; namespace?: string; iamRole?: string };
+  reason?: VsoErrorReason;
+  diagnostics?: VsoDiagnostics;
 }
 
 function errorDetails(error: unknown): VsoErrorDetails {
-  if (axios.isAxiosError<{ error?: string; kubernetesHost?: string; identity?: VsoErrorDetails['identity'] }>(error)) {
+  if (axios.isAxiosError<{ error?: string; kubernetesHost?: string; identity?: VsoErrorDetails['identity']; reason?: VsoErrorReason; diagnostics?: VsoDiagnostics }>(error)) {
     const data = error.response?.data;
     if (error.response?.status === 401 || error.response?.status === 403) {
       const identity = data?.identity;
@@ -20,9 +23,9 @@ function errorDetails(error: unknown): VsoErrorDetails {
         ? `ServiceAccount ${identity.namespace ? `${identity.namespace}/` : ''}${identity.serviceAccount}`
         : 'The current pod identity';
       const role = identity?.iamRole ? ` (IAM role ${identity.iamRole})` : '';
-      return { message: `${name}${role} needs permission to query the downstream Kubernetes cluster.`, kubernetesHost: data?.kubernetesHost, identity };
+      return { message: `${name}${role} needs permission to query the downstream Kubernetes cluster.`, kubernetesHost: data?.kubernetesHost, identity, reason: data?.reason, diagnostics: data?.diagnostics };
     }
-    return { message: data?.error || 'Unable to query the downstream Kubernetes cluster.', kubernetesHost: data?.kubernetesHost };
+    return { message: data?.error || 'Unable to query the downstream Kubernetes cluster.', kubernetesHost: data?.kubernetesHost, reason: data?.reason, diagnostics: data?.diagnostics };
   }
   return { message: 'Unable to query the downstream Kubernetes cluster.' };
 }
@@ -292,6 +295,7 @@ export default function VsoResourcesTab({ method, role }: { method: string; role
           <p className="mt-1">{error}</p>
           <p className="mt-3">VaultLens uses the Kubernetes URL configured on this Vault auth mount:</p>
           <code className="mt-1 block overflow-x-auto rounded bg-amber-100 px-3 py-2 text-xs">{errorInfo?.kubernetesHost || 'No Kubernetes URL is configured on this auth mount.'}</code>
+          <VsoRequestDiagnostics reason={errorInfo?.reason} diagnostics={errorInfo?.diagnostics} />
           <p className="mt-4 font-medium">The VaultLens workload identity needs read access to the VSO API resources in the downstream cluster.</p>
           <p className="mt-1 text-xs">Current identity: {errorInfo?.identity?.serviceAccount ? `ServiceAccount ${errorInfo.identity.namespace ? `${errorInfo.identity.namespace}/` : ''}${errorInfo.identity.serviceAccount}` : 'the pod ServiceAccount'}{errorInfo?.identity?.iamRole ? ` (IAM role ${errorInfo.identity.iamRole})` : ''}</p>
           <pre className="mt-3 overflow-x-auto rounded bg-slate-900 p-3 text-xs leading-5 text-slate-100">{`apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: vaultlens-vso-reader\nrules:\n  - apiGroups: ["secrets.hashicorp.com"]\n    resources:\n      - vaultstaticsecrets\n      - vaultauths\n      - vaultauthglobals\n      - vaultconnections\n      - vaultdynamicsecrets\n      - vaultpkisecrets\n      - secrettransformations\n      - csisecrets\n    verbs: ["get", "list"]\n  - apiGroups: [""]\n    resources:\n      - serviceaccounts\n    verbs: ["get", "list"]\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: vaultlens-vso-reader\nroleRef:\n  apiGroup: rbac.authorization.k8s.io\n  kind: ClusterRole\n  name: vaultlens-vso-reader\nsubjects:\n  - kind: ServiceAccount\n    name: ${errorInfo?.identity?.serviceAccount || 'vaultlens'}\n    namespace: ${errorInfo?.identity?.namespace || 'default'}`}</pre>
