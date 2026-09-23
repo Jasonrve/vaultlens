@@ -73,6 +73,13 @@ export interface VsoOperatorPod {
   startedAt?: string;
 }
 
+export interface KubernetesIdentityDiagnostics {
+  source: 'eks-explicit-override' | 'eks-auto-detected' | 'eks-auto-detect-failed' | 'static-token' | 'local-serviceaccount';
+  eksCluster?: string;
+  eksRegion?: string;
+  detail?: string;
+}
+
 export interface KubernetesRequestDiagnostics {
   method: 'GET';
   host: string;
@@ -83,6 +90,7 @@ export interface KubernetesRequestDiagnostics {
     caSource?: 'local-file' | 'auth-mount-config';
     caPath?: string;
   };
+  identity?: KubernetesIdentityDiagnostics;
   status?: number;
   errorCode?: string;
   errorMessage?: string;
@@ -134,7 +142,7 @@ function firstEnv(names: string[]): string | undefined {
   return undefined;
 }
 
-async function tokenForMount(mount: string, kubernetesHost: string): Promise<string> {
+async function tokenForMount(mount: string, kubernetesHost: string): Promise<{ token: string; identity: KubernetesIdentityDiagnostics }> {
   // Explicit per-mount override: use the pod's own IAM role (IRSA or EKS Pod Identity)
   // to sign an EKS bearer token for a specific cluster/region, instead of a static
   // Kubernetes ServiceAccount token. Needed only when the mount's host isn't a
@@ -151,7 +159,8 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<str
       );
     }
     try {
-      return await getEksToken(eksCluster, region);
+      const token = await getEksToken(eksCluster, region);
+      return { token, identity: { source: 'eks-explicit-override', eksCluster, eksRegion: region } };
     } catch (e) {
       throw new KubernetesError(
         `Failed to sign an EKS token using the pod's IAM role: ${e instanceof Error ? e.message : 'unknown error'}`,
@@ -163,9 +172,10 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<str
   // Default: recognize a standard EKS endpoint from the mount's own configured
   // host and sign a token for it with the pod's IAM role — no per-mount config.
   const autoDetected = await resolveEksCluster(kubernetesHost);
-  if (autoDetected) {
+  if (autoDetected.attempted && autoDetected.matched) {
     try {
-      return await getEksToken(autoDetected.cluster, autoDetected.region);
+      const token = await getEksToken(autoDetected.cluster, autoDetected.region);
+      return { token, identity: { source: 'eks-auto-detected', eksCluster: autoDetected.cluster, eksRegion: autoDetected.region } };
     } catch (e) {
       throw new KubernetesError(
         `Failed to sign an EKS token using the pod's IAM role: ${e instanceof Error ? e.message : 'unknown error'}`,
@@ -173,12 +183,26 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<str
       );
     }
   }
+  // Auto-detection was attempted (the host matched a standard EKS endpoint) but
+  // found no cluster the pod's IAM role could see — falling through to a static
+  // token or the local ServiceAccount token below almost certainly sends the
+  // wrong cluster's identity, so this failure needs to reach the caller.
+  const autoDetectFailure: KubernetesIdentityDiagnostics | undefined = autoDetected.attempted
+    ? {
+      source: 'eks-auto-detect-failed',
+      eksRegion: autoDetected.region,
+      detail: autoDetected.error
+        ? `Could not list/describe EKS clusters in ${autoDetected.region}: ${autoDetected.error}`
+        : `No EKS cluster in ${autoDetected.region} visible to the pod's IAM role matches this endpoint — check that role has eks:ListClusters/DescribeCluster and an access entry on the target cluster.`,
+    }
+    : undefined;
 
   const token = firstEnv(envNamesForMount(mount, ''));
-  if (token) return token;
+  if (token) return { token, identity: autoDetectFailure ?? { source: 'static-token' } };
 
   try {
-    return fs.readFileSync(config.vaultK8sTokenPath, 'utf8').trim();
+    const saToken = fs.readFileSync(config.vaultK8sTokenPath, 'utf8').trim();
+    return { token: saToken, identity: autoDetectFailure ?? { source: 'local-serviceaccount' } };
   } catch {
     throw new KubernetesError('No downstream Kubernetes access token is configured', 503);
   }
@@ -592,7 +616,11 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
   });
 
   try {
-    const token = await tokenForMount(mount, host);
+    const { token, identity } = await tokenForMount(mount, host);
+    diagnostics.identity = identity;
+    if (identity.source === 'eks-auto-detect-failed') {
+      console.warn('[Kubernetes] EKS auto-detection failed — falling back to a token that likely belongs to the wrong cluster', { host, identity });
+    }
     const response = await axios.get<T>(requestPath, {
       baseURL: base.origin,
       headers: { Authorization: `Bearer ${token}` },
@@ -608,6 +636,7 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
       method: diagnostics.method,
       host: diagnostics.host,
       path: diagnostics.path,
+      identity: diagnostics.identity,
       status: response.status,
     });
     return response.data;

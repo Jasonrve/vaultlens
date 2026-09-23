@@ -8,7 +8,7 @@
  * identity — no network call happens here beyond what credential resolution needs.
  */
 
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import type { AwsCredentialIdentityProvider } from '@aws-sdk/types';
 import { SignatureV4 } from '@smithy/signature-v4';
@@ -114,6 +114,19 @@ function originOf(url: string): string | undefined {
 
 interface EksClusterSummary { name: string; endpoint: string }
 
+// AWS's JSON error body names the exact denied action (e.g. "... is not
+// authorized to perform: eks:ListClusters ...") — axios's own error.message is
+// just "Request failed with status code 403" and throws that away.
+function awsErrorMessage(data: unknown): string | undefined {
+  if (typeof data === 'string') return data.slice(0, 2000);
+  if (data && typeof data === 'object') {
+    const message = (data as { message?: unknown; Message?: unknown }).message ?? (data as { Message?: unknown }).Message;
+    if (typeof message === 'string') return message;
+    try { return JSON.stringify(data).slice(0, 2000); } catch { return undefined; }
+  }
+  return undefined;
+}
+
 async function signedEksGet(region: string, path: string, query?: Record<string, string>): Promise<unknown> {
   const host = `eks.${region}.amazonaws.com`;
   const signer = new SignatureV4({
@@ -131,12 +144,21 @@ async function signedEksGet(region: string, path: string, query?: Record<string,
     headers: { host },
   });
   const signed = await signer.sign(request);
-  const response = await axios.get(`https://${host}${path}`, {
-    params: query,
-    headers: signed.headers as Record<string, string>,
-    timeout: 10000,
-  });
-  return response.data;
+  try {
+    const response = await axios.get(`https://${host}${path}`, {
+      params: query,
+      headers: signed.headers as Record<string, string>,
+      timeout: 10000,
+    });
+    return response.data;
+  } catch (e) {
+    if (e instanceof AxiosError) {
+      const errorType = e.response?.headers?.['x-amzn-errortype'] as string | undefined;
+      const message = awsErrorMessage(e.response?.data) ?? e.message;
+      throw new Error(errorType ? `${errorType}: ${message}` : message);
+    }
+    throw e;
+  }
 }
 
 // ponytail: fixed 5-minute TTL, no invalidation when a cluster is added/removed
@@ -153,16 +175,24 @@ async function listClustersInRegion(region: string): Promise<EksClusterSummary[]
   do {
     const query: Record<string, string> = {};
     if (nextToken) query['nextToken'] = nextToken;
-    const data = await signedEksGet(region, '/clusters', query) as
-      { clusters?: unknown; nextToken?: unknown };
+    let data: { clusters?: unknown; nextToken?: unknown };
+    try {
+      data = await signedEksGet(region, '/clusters', query) as { clusters?: unknown; nextToken?: unknown };
+    } catch (e) {
+      throw new Error(`eks:ListClusters — ${e instanceof Error ? e.message : String(e)}`);
+    }
     if (Array.isArray(data.clusters)) names.push(...data.clusters.filter((n): n is string => typeof n === 'string'));
     nextToken = typeof data.nextToken === 'string' ? data.nextToken : undefined;
   } while (nextToken);
 
   const clusters: EksClusterSummary[] = [];
   await concurrentMap(names, 5, async (name) => {
-    const data = await signedEksGet(region, `/clusters/${encodeURIComponent(name)}`) as
-      { cluster?: { endpoint?: unknown } };
+    let data: { cluster?: { endpoint?: unknown } };
+    try {
+      data = await signedEksGet(region, `/clusters/${encodeURIComponent(name)}`) as { cluster?: { endpoint?: unknown } };
+    } catch (e) {
+      throw new Error(`eks:DescribeCluster on "${name}" — ${e instanceof Error ? e.message : String(e)}`);
+    }
     const endpoint = data.cluster?.endpoint;
     if (typeof endpoint === 'string') clusters.push({ name, endpoint });
   });
@@ -171,29 +201,38 @@ async function listClustersInRegion(region: string): Promise<EksClusterSummary[]
   return clusters;
 }
 
+export type EksAutoDetectResult =
+  // Host doesn't look like a standard EKS endpoint — auto-detection was never attempted.
+  | { attempted: false }
+  // Host matched the EKS hostname pattern, but no cluster in that region (visible to
+  // the pod's IAM role) had a matching endpoint — either the role can't list/describe
+  // clusters, or the target genuinely isn't in this account/region.
+  | { attempted: true; matched: false; region: string; error?: string }
+  | { attempted: true; matched: true; cluster: string; region: string };
+
 /**
  * Finds the EKS cluster (in the account/region reachable via the pod's own IAM
  * role) whose API server endpoint matches `kubernetesHost` — the same host
  * already configured on the Vault Kubernetes auth mount. Lets VaultLens use the
  * pod's IAM role against any EKS cluster it has an access entry for, without a
- * per-mount cluster-name mapping. Best-effort: returns undefined (never throws)
- * so a non-EKS host, or a pod role without `eks:ListClusters`/`DescribeCluster`,
- * falls straight through to the existing static-token/ServiceAccount chain.
+ * per-mount cluster-name mapping. Never throws — a non-EKS host, or a pod role
+ * without `eks:ListClusters`/`DescribeCluster`, falls straight through to the
+ * existing static-token/ServiceAccount chain — but the result says which case
+ * happened, since a silent miss here means the caller sends the wrong cluster's
+ * token instead.
  */
-export async function resolveEksCluster(kubernetesHost: string): Promise<{ cluster: string; region: string } | undefined> {
+export async function resolveEksCluster(kubernetesHost: string): Promise<EksAutoDetectResult> {
   const region = regionFromHost(kubernetesHost);
   const targetOrigin = originOf(kubernetesHost);
-  if (!region || !targetOrigin) return undefined;
+  if (!region || !targetOrigin) return { attempted: false };
 
   try {
     const clusters = await listClustersInRegion(region);
     const match = clusters.find((c) => originOf(c.endpoint) === targetOrigin);
-    return match ? { cluster: match.name, region } : undefined;
+    return match ? { attempted: true, matched: true, cluster: match.name, region } : { attempted: true, matched: false, region };
   } catch (e) {
-    console.warn(
-      `[EKS Auto-Detect] Could not list/describe EKS clusters in ${region} using the pod's IAM role:`,
-      e instanceof Error ? e.message : e,
-    );
-    return undefined;
+    const error = e instanceof Error ? e.message : String(e);
+    console.warn(`[EKS Auto-Detect] Could not list/describe EKS clusters in ${region} using the pod's IAM role:`, error);
+    return { attempted: true, matched: false, region, error };
   }
 }
