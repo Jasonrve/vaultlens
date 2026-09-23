@@ -206,8 +206,12 @@ export type EksAutoDetectResult =
   | { attempted: false }
   // Host matched the EKS hostname pattern, but no cluster in that region (visible to
   // the pod's IAM role) had a matching endpoint — either the role can't list/describe
-  // clusters, or the target genuinely isn't in this account/region.
-  | { attempted: true; matched: false; region: string; error?: string }
+  // clusters, or the target genuinely isn't in this account/region. `visibleClusters`
+  // lists what WAS found (ListClusters/DescribeCluster only ever return clusters in the
+  // caller's own AWS account — never across accounts, no matter the IAM permissions or
+  // access entries) so an empty list points at a permissions/region problem, while a
+  // non-empty list that just doesn't include the target points at a cross-account cluster.
+  | { attempted: true; matched: false; region: string; visibleClusters: string[]; error?: string }
   | { attempted: true; matched: true; cluster: string; region: string };
 
 /**
@@ -229,10 +233,11 @@ export async function resolveEksCluster(kubernetesHost: string): Promise<EksAuto
   try {
     const clusters = await listClustersInRegion(region);
     const match = clusters.find((c) => originOf(c.endpoint) === targetOrigin);
-    return match ? { attempted: true, matched: true, cluster: match.name, region } : { attempted: true, matched: false, region };
+    if (match) return { attempted: true, matched: true, cluster: match.name, region };
+    return { attempted: true, matched: false, region, visibleClusters: clusters.map((c) => c.name) };
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e);
     console.warn(`[EKS Auto-Detect] Could not list/describe EKS clusters in ${region} using the pod's IAM role:`, error);
-    return { attempted: true, matched: false, region, error };
+    return { attempted: true, matched: false, region, visibleClusters: [], error };
   }
 }

@@ -74,7 +74,7 @@ export interface VsoOperatorPod {
 }
 
 export interface KubernetesIdentityDiagnostics {
-  source: 'eks-explicit-override' | 'eks-auto-detected' | 'eks-auto-detect-failed' | 'static-token' | 'local-serviceaccount';
+  source: 'eks-explicit-override' | 'eks-auto-detected' | 'eks-mount-name-guess' | 'static-token' | 'local-serviceaccount';
   eksCluster?: string;
   eksRegion?: string;
   detail?: string;
@@ -183,26 +183,45 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<{ t
       );
     }
   }
-  // Auto-detection was attempted (the host matched a standard EKS endpoint) but
-  // found no cluster the pod's IAM role could see — falling through to a static
-  // token or the local ServiceAccount token below almost certainly sends the
-  // wrong cluster's identity, so this failure needs to reach the caller.
-  const autoDetectFailure: KubernetesIdentityDiagnostics | undefined = autoDetected.attempted
-    ? {
-      source: 'eks-auto-detect-failed',
-      eksRegion: autoDetected.region,
-      detail: autoDetected.error
-        ? `Could not list/describe EKS clusters in ${autoDetected.region}: ${autoDetected.error}`
-        : `No EKS cluster in ${autoDetected.region} visible to the pod's IAM role matches this endpoint — check that role has eks:ListClusters/DescribeCluster and an access entry on the target cluster.`,
-    }
-    : undefined;
-
+  // A static token, if this mount has one configured, is a deliberate per-mount
+  // choice and outranks a guess below.
   const token = firstEnv(envNamesForMount(mount, ''));
-  if (token) return { token, identity: autoDetectFailure ?? { source: 'static-token' } };
+  if (token) return { token, identity: { source: 'static-token' } };
+
+  // Auto-detection was attempted (the host matched a standard EKS endpoint) but
+  // found no cluster the pod's IAM role could see — most often because the target
+  // cluster is in a different AWS account (ListClusters/DescribeCluster never see
+  // across accounts, no matter the IAM permissions or access entry). Many
+  // deployments name the Vault auth mount after the cluster it points at, so try
+  // signing a token for that name directly — this needs no EKS discovery
+  // permissions and works cross-account, since the token goes straight to the
+  // already-configured host with no AWS control-plane call in between.
+  if (autoDetected.attempted) {
+    try {
+      const guessedName = mount.replace(/\/$/, '');
+      const guessedToken = await getEksToken(guessedName, autoDetected.region);
+      return {
+        token: guessedToken,
+        identity: {
+          source: 'eks-mount-name-guess',
+          eksCluster: guessedName,
+          eksRegion: autoDetected.region,
+          detail: autoDetected.error
+            ? `Could not list/describe EKS clusters in ${autoDetected.region} (${autoDetected.error}); assumed the cluster name equals the auth mount name ("${guessedName}") instead. If that's wrong, set K8S_ACCESS_<MOUNT>_EKS_CLUSTER=<cluster-name> to override it.`
+            : autoDetected.visibleClusters.length === 0
+              ? `No EKS clusters are visible to the pod's IAM role in ${autoDetected.region} — likely a different AWS account, or a permissions/region problem. Assumed the cluster name equals the auth mount name ("${guessedName}") instead. If that's wrong, set K8S_ACCESS_<MOUNT>_EKS_CLUSTER=<cluster-name> to override it.`
+              : `The pod's IAM role can see ${autoDetected.visibleClusters.length} EKS cluster(s) in ${autoDetected.region} (${autoDetected.visibleClusters.slice(0, 10).join(', ')}${autoDetected.visibleClusters.length > 10 ? ', …' : ''}), but none match this endpoint — likely a different AWS account. Assumed the cluster name equals the auth mount name ("${guessedName}") instead. If that's wrong, set K8S_ACCESS_<MOUNT>_EKS_CLUSTER=<cluster-name> to override it.`,
+        },
+      };
+    } catch {
+      // Signing itself failed (e.g. credential resolution) — fall through to the
+      // local ServiceAccount token below rather than failing the whole request.
+    }
+  }
 
   try {
     const saToken = fs.readFileSync(config.vaultK8sTokenPath, 'utf8').trim();
-    return { token: saToken, identity: autoDetectFailure ?? { source: 'local-serviceaccount' } };
+    return { token: saToken, identity: { source: 'local-serviceaccount' } };
   } catch {
     throw new KubernetesError('No downstream Kubernetes access token is configured', 503);
   }
@@ -618,8 +637,8 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
   try {
     const { token, identity } = await tokenForMount(mount, host);
     diagnostics.identity = identity;
-    if (identity.source === 'eks-auto-detect-failed') {
-      console.warn('[Kubernetes] EKS auto-detection failed — falling back to a token that likely belongs to the wrong cluster', { host, identity });
+    if (identity.source === 'eks-mount-name-guess') {
+      console.warn('[Kubernetes] EKS auto-detection found no match — guessed the cluster name from the auth mount name instead', { host, identity });
     }
     const response = await axios.get<T>(requestPath, {
       baseURL: base.origin,

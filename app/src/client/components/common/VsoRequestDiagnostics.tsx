@@ -8,7 +8,7 @@ export interface VsoDiagnostics {
   errorMessage?: string;
   tls?: { verification: string; caCertificate: string; caSource?: 'local-file' | 'auth-mount-config'; caPath?: string };
   identity?: {
-    source: 'eks-explicit-override' | 'eks-auto-detected' | 'eks-auto-detect-failed' | 'static-token' | 'local-serviceaccount';
+    source: 'eks-explicit-override' | 'eks-auto-detected' | 'eks-mount-name-guess' | 'static-token' | 'local-serviceaccount';
     eksCluster?: string;
     eksRegion?: string;
     detail?: string;
@@ -72,7 +72,7 @@ export function VsoRequestDiagnostics({ reason, diagnostics }: { reason?: VsoErr
   const identityLabel =
     identity?.source === 'eks-explicit-override' ? `EKS token signed for cluster "${identity.eksCluster}" (explicit override)`
       : identity?.source === 'eks-auto-detected' ? `EKS token auto-detected for cluster "${identity.eksCluster}" in ${identity.eksRegion}`
-        : identity?.source === 'eks-auto-detect-failed' ? `EKS auto-detection failed${identity.eksRegion ? ` in ${identity.eksRegion}` : ''} — fell back to a token that almost certainly belongs to the wrong cluster`
+        : identity?.source === 'eks-mount-name-guess' ? `EKS token guessed for cluster "${identity.eksCluster}" (assumed from the auth mount name) in ${identity.eksRegion}`
           : identity?.source === 'static-token' ? 'a statically configured bearer token'
             : identity?.source === 'local-serviceaccount' ? "VaultLens's own local pod ServiceAccount token"
               : undefined;
@@ -85,8 +85,8 @@ export function VsoRequestDiagnostics({ reason, diagnostics }: { reason?: VsoErr
             : 'unknown';
   const authorizedDetail =
     reached !== 'ok' ? 'Not attempted.'
-      : reason === 'access_denied' && identity?.source === 'eks-auto-detect-failed'
-        ? `Rejected (HTTP ${diagnostics.status}) — this used ${identityLabel}, not the target cluster's identity. ${identity.detail ?? ''}`
+      : reason === 'access_denied' && identity?.source === 'eks-mount-name-guess'
+        ? `Rejected (HTTP ${diagnostics.status}) — ${identity.detail ?? identityLabel}`
         : reason === 'access_denied' ? `Rejected (HTTP ${diagnostics.status}) — the workload identity does not have permission.${identityLabel ? ` Sent ${identityLabel}.` : ''}`
           : reason === 'not_installed' ? `The API responded with HTTP ${diagnostics.status} — the Vault Secrets Operator API is not installed, or the path is wrong.`
             : authorized === 'ok' ? `Access allowed.${identityLabel ? ` Used ${identityLabel}.` : ''}`
