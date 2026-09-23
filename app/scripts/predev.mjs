@@ -1,7 +1,8 @@
 /**
  * predev.mjs — runs before `npm run dev`
  * 1. Creates .env from .env.example if missing
- * 2. Kills any process already listening on PORT (default 3001)
+ * 2. Refreshes the local k3s fixture token when Docker is running
+ * 3. Kills any process already listening on PORT (default 3001)
  *    so `tsx watch` never crashes with EADDRINUSE.
  */
 import fs from 'fs';
@@ -13,7 +14,29 @@ if (!fs.existsSync('.env')) {
   console.log('[predev] Created .env from .env.example');
 }
 
-// ── 2. Free the port ─────────────────────────────────────────────────────────
+// ── 2. Refresh the local k3s fixture token ───────────────────────────────────
+try {
+  const token = execSync('docker exec vaultlens-k3s cat /shared/token', {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+  if (token) {
+    const envPath = '.env';
+    const envText = fs.readFileSync(envPath, 'utf8');
+    const line = `K8S_ACCESS_K3S=${token}`;
+    const updated = /^K8S_ACCESS_K3S=.*$/m.test(envText)
+      ? envText.replace(/^K8S_ACCESS_K3S=.*$/m, line)
+      : `${envText.trimEnd()}\n${line}\n`;
+    if (updated !== envText) {
+      fs.writeFileSync(envPath, updated);
+      console.log('[predev] Refreshed K8S_ACCESS_K3S from the local k3s fixture');
+    }
+  }
+} catch {
+  // Docker is optional for host-only development.
+}
+
+// ── 3. Free the port ─────────────────────────────────────────────────────────
 const port = parseInt(process.env.PORT ?? '3001', 10);
 
 try {
@@ -33,6 +56,11 @@ try {
     pids = out.trim().split('\n').filter(Boolean);
   }
 
+  // Never kill Docker Desktop's own processes — they proxy ports for every
+  // running container, not just the one we're trying to free, and killing
+  // them takes down the whole Docker network stack (Vault included).
+  const DOCKER_PROCESS_NAMES = ['docker desktop.exe', 'com.docker.backend.exe', 'com.docker.proxy.exe', 'host-switch.exe', 'wslrelay.exe', 'wsl.exe', 'wslhost.exe', 'dockerd', 'docker'];
+
   if (pids.length > 0) {
     for (const pid of pids) {
       let name = 'unknown process';
@@ -41,6 +69,12 @@ try {
           ? execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf8' }).split(',')[0]?.replaceAll('"', '').trim() || name
           : execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8' }).trim() || name;
       } catch { /* best-effort only */ }
+
+      if (DOCKER_PROCESS_NAMES.includes(name.toLowerCase())) {
+        console.warn(`[predev] Port ${port} is held by ${name} (PID ${pid}), which looks like a Docker/WSL process. Refusing to kill it — this usually means a Docker container is publishing port ${port}. Stop that container (e.g. "docker compose down") instead.`);
+        continue;
+      }
+
       console.log(`[predev] Port ${port} in use by PID ${pid} (${name}) — killing...`);
       try {
         if (process.platform === 'win32') {

@@ -34,7 +34,7 @@
       "label": "docker-compose-up",
       "type": "shell",
       "command": "docker-compose",
-      "args": ["-f", "docker-compose-development.yml", "up", "-d", "k3s", "k3s-vso-fixture", "vault", "vault-init", "vault-audit-demo", "vaultlens"],
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "k3s", "k3s-vso-fixture", "vault", "vault-init", "vault-audit-demo"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "presentation": {

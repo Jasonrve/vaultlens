@@ -213,9 +213,12 @@ vault auth enable \
   github 2>/dev/null || echo "  (already enabled)"
 
 # Configure with organization
+# ponytail: GitHub's org-id lookup can 403 (rate limit) from shared/corporate
+# IPs; don't let that abort the rest of the seed script.
 vault write auth/github/config \
-  organization="example-org"
-echo "  ✓ GitHub auth configured for organization 'example-org'"
+  organization="example-org" \
+  && echo "  ✓ GitHub auth configured for organization 'example-org'" \
+  || echo "  ! GitHub auth config failed (likely GitHub API rate limit) — continuing"
 
 # Map teams to policies
 vault write auth/github/map/teams/engineering \

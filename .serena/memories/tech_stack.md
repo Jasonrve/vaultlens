@@ -1,0 +1,5 @@
+- Runtime: Node.js 22 (pinned in CI), TypeScript throughout, ESM (`"type": "module"` in `app/package.json`).
+- Backend: Express 4, served from `app/src/server/server.ts` (entry) / `app/src/server/app.ts` (app + middleware wiring). Talks to HashiCorp Vault's HTTP API directly (no official Vault SDK), and to Kubernetes/EKS for k8s auth mounts (`@aws-sdk/credential-providers`, `@smithy/*` used for hand-rolled SigV4 EKS token signing — see `eksAuth.ts`).
+- Frontend: React 19 + Vite 8 + Tailwind 4, state via `zustand`, data fetching via `@tanstack/react-query`, graphs/visualizations via `@xyflow/react` (React Flow) + `dagre` for layout.
+- Build: `vite build` (client) + `tsc` (server) into `app/dist`, then static asset copy steps (templates/policies/changelog) — see `mem:suggested_commands`.
+- No test framework (no jest/vitest/mocha). Correctness for tricky standalone logic is covered by hand-written `*.selfcheck.ts` files run directly with `tsx` — see `mem:task_completion`.

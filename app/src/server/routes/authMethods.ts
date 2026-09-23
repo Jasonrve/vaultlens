@@ -14,7 +14,14 @@ import {
 } from '../lib/devIntegrationLoader.js';
 import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
 import { readAuthMethodsConfig } from './vaultlens-audit.js';
-import { KubernetesError, VSO_RESOURCES, getVsoResource, listVsoResources } from '../lib/kubernetesClient.js';
+import {
+  KubernetesError,
+  VSO_RESOURCES,
+  getVsoResource,
+  listVsoResources,
+  listOperatorPods,
+  getPodLogs,
+} from '../lib/kubernetesClient.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
@@ -41,7 +48,7 @@ function readServiceAccountIdentity(): { serviceAccount?: string; namespace?: st
 
 function sendKubernetesError(res: Response, error: KubernetesError, kubernetesHost?: string): Response {
   if (error.reason === 'access_denied') {
-    return res.status(error.statusCode).json({
+    return res.status(403).json({
       error: error.message,
       identity: readServiceAccountIdentity(),
       kubernetesHost,
@@ -156,8 +163,70 @@ router.get(
         throw new KubernetesError('Kubernetes endpoint is not configured', 503);
       }
 
-      const resources = await listVsoResources(method, kubernetesHost);
+      const roleFilter = typeof req.query['role'] === 'string' && req.query['role'] ? req.query['role'] : undefined;
+
+      // Best-effort — if listing roles fails (permissions, etc.) we simply skip
+      // the "this VaultAuth's role no longer exists in Vault" check below.
+      let vaultRoleNames: string[] | undefined;
+      try {
+        const roleList = await vaultClient.list<{ data: { keys: string[] } }>(
+          getRoleListPath(authType, method),
+          req.vaultToken!,
+        );
+        vaultRoleNames = roleList.data.keys;
+      } catch {
+        vaultRoleNames = undefined;
+      }
+
+      const resources = await listVsoResources(method, kubernetesHost, { role: roleFilter, vaultRoleNames });
       return res.json({ resources, supportedKinds: VSO_RESOURCES.map(({ kind, resource }) => ({ kind, resource })) });
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
+);
+
+// List and tail Vault Secrets Operator pod logs for a Kubernetes auth mount's cluster.
+router.get(
+  '/:method/vso-logs',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoLogs) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+
+      const pods = await listOperatorPods(method, kubernetesHost);
+      if (pods.length === 0) {
+        return res.json({ pods: [], selectedPod: null, lines: [] });
+      }
+
+      const requestedPod = typeof req.query['pod'] === 'string' ? req.query['pod'] : undefined;
+      const selected = pods.find((p) => p.name === requestedPod) ?? pods[0];
+      const parsedTailLines = Number.parseInt(String(req.query['tailLines'] ?? '500'), 10);
+      const tailLines = Number.isFinite(parsedTailLines) ? parsedTailLines : 500;
+
+      const text = await getPodLogs(method, kubernetesHost, selected.namespace, selected.name, {
+        container: 'manager',
+        tailLines,
+      });
+
+      return res.json({ pods, selectedPod: selected.name, lines: text.split('\n') });
     } catch (error) {
       if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
       return next(error);

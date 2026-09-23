@@ -8,11 +8,16 @@ import { getEksToken, resolveEksCluster } from './eksAuth.js';
 const VSO_GROUP = 'secrets.hashicorp.com';
 const VSO_VERSION = 'v1beta1';
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_VSO_NAMESPACE = 'vault-secrets-operator-system';
 
 export interface VsoResourceDefinition {
   kind: string;
   resource: string;
   clusterScoped: boolean;
+}
+
+interface KubernetesApiResourceList {
+  resources?: Array<{ name?: unknown; kind?: unknown; namespaced?: unknown }>;
 }
 
 export const VSO_RESOURCES: readonly VsoResourceDefinition[] = [
@@ -26,6 +31,21 @@ export const VSO_RESOURCES: readonly VsoResourceDefinition[] = [
   { kind: 'CSISecrets', resource: 'csisecrets', clusterScoped: false },
 ];
 
+export type VsoHealth = 'healthy' | 'warning' | 'error' | 'unknown';
+
+export interface VsoCondition {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+}
+
+export interface VsoIssue {
+  severity: 'error' | 'warning';
+  message: string;
+}
+
 export interface VsoResourceRow {
   kind: string;
   resource: string;
@@ -33,6 +53,24 @@ export interface VsoResourceRow {
   name: string;
   createdAt?: string;
   status?: string;
+  health: VsoHealth;
+  conditions?: VsoCondition[];
+  // Relational fields — only the ones relevant to a given kind are populated.
+  vaultAuthRef?: { name: string; namespace?: string };
+  vaultConnectionRef?: { name: string; namespace?: string };
+  authMount?: string;        // VaultAuth.spec.mount — the Vault auth mount this identity authenticates against
+  role?: string;             // VaultAuth.spec.kubernetes.role
+  serviceAccount?: string;   // VaultAuth.spec.kubernetes.serviceAccount
+  secretMount?: string;      // secret kinds' spec.mount — the Vault secrets-engine mount
+  path?: string;             // secret kinds' spec.path (static) or spec.role (dynamic)
+  destinationSecret?: { name: string; namespace?: string; create?: boolean };
+  issues?: VsoIssue[];
+}
+
+export interface VsoOperatorPod {
+  name: string;
+  namespace: string;
+  startedAt?: string;
 }
 
 export class KubernetesError extends Error {
@@ -46,10 +84,15 @@ export class KubernetesError extends Error {
   }
 }
 
-function resourceFor(kind: string): VsoResourceDefinition {
-  const definition = VSO_RESOURCES.find((item) => item.kind === kind);
-  if (!definition) throw new KubernetesError('Unsupported VSO resource', 400, 'invalid');
-  return definition;
+async function discoverVsoResources(mount: string, host: string): Promise<VsoResourceDefinition[]> {
+  const data = await requestKubernetes<KubernetesApiResourceList>(mount, host, `/apis/${VSO_GROUP}/${VSO_VERSION}`);
+  return (data.resources ?? [])
+    .filter((resource) => typeof resource.name === 'string' && !resource.name.includes('/') && typeof resource.kind === 'string')
+    .map((resource) => ({
+      kind: resource.kind as string,
+      resource: resource.name as string,
+      clusterScoped: resource.namespaced !== true,
+    }));
 }
 
 function validSegment(value: string): boolean {
@@ -134,22 +177,80 @@ function caForCluster(): Buffer | undefined {
   }
 }
 
-function statusText(item: Record<string, unknown>): string | undefined {
+function extractConditions(item: Record<string, unknown>): VsoCondition[] {
   const status = item['status'];
-  if (!status || typeof status !== 'object') return undefined;
+  if (!status || typeof status !== 'object') return [];
   const conditions = (status as Record<string, unknown>)['conditions'];
-  if (Array.isArray(conditions)) {
-    const ready = conditions.find((condition) => (
-      condition && typeof condition === 'object' &&
-      ((condition as Record<string, unknown>)['type'] === 'Ready' ||
-        (condition as Record<string, unknown>)['type'] === 'Synced')
-    ));
-    if (ready && typeof ready === 'object') {
-      const condition = ready as Record<string, unknown>;
-      return `${String(condition['type'])}: ${String(condition['status'])}`;
-    }
+  if (!Array.isArray(conditions)) return [];
+  return conditions
+    .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+    .map((c) => ({
+      type: typeof c['type'] === 'string' ? c['type'] : '',
+      status: typeof c['status'] === 'string' ? c['status'] : '',
+      reason: typeof c['reason'] === 'string' ? c['reason'] : undefined,
+      message: typeof c['message'] === 'string' ? c['message'] : undefined,
+      lastTransitionTime: typeof c['lastTransitionTime'] === 'string' ? c['lastTransitionTime'] : undefined,
+    }));
+}
+
+function readyCondition(conditions: VsoCondition[]): VsoCondition | undefined {
+  return conditions.find((c) => c.type === 'Ready' || c.type === 'Synced');
+}
+
+function statusText(conditions: VsoCondition[]): string | undefined {
+  const ready = readyCondition(conditions);
+  return ready ? `${ready.type}: ${ready.status}` : undefined;
+}
+
+function computeHealth(conditions: VsoCondition[], issues: VsoIssue[]): VsoHealth {
+  if (issues.some((issue) => issue.severity === 'error')) return 'error';
+  const ready = readyCondition(conditions);
+  if (ready?.status === 'False') return 'error';
+  if (issues.some((issue) => issue.severity === 'warning')) return 'warning';
+  if (ready?.status === 'Unknown') return 'warning';
+  if (ready?.status === 'True') return 'healthy';
+  return 'unknown';
+}
+
+function stringField(obj: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = obj?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+type RelationFields = Pick<VsoResourceRow,
+  'vaultAuthRef' | 'vaultConnectionRef' | 'authMount' | 'role' | 'serviceAccount' | 'secretMount' | 'path' | 'destinationSecret'>;
+
+/** Pulls the relational fields this redesign cares about out of each VSO kind's `spec` — every kind has a different shape. */
+function extractRelations(item: Record<string, unknown>, definition: VsoResourceDefinition, namespace: string | undefined): RelationFields {
+  const spec = item['spec'];
+  if (!spec || typeof spec !== 'object') return {};
+  const s = spec as Record<string, unknown>;
+
+  if (definition.kind === 'VaultAuth' || definition.kind === 'VaultAuthGlobal') {
+    const kubernetesField = s['kubernetes'];
+    const k8s = kubernetesField && typeof kubernetesField === 'object' ? kubernetesField as Record<string, unknown> : undefined;
+    const connectionRefName = stringField(s, 'vaultConnectionRef');
+    return {
+      authMount: stringField(s, 'mount'),
+      role: stringField(k8s, 'role'),
+      serviceAccount: stringField(k8s, 'serviceAccount'),
+      vaultConnectionRef: connectionRefName ? { name: connectionRefName, namespace } : undefined,
+    };
   }
-  return undefined;
+
+  if (definition.kind === 'VaultConnection') return {};
+
+  // VaultStaticSecret, VaultDynamicSecret, VaultPKISecret, SecretTransformation, CSISecrets
+  const authRefName = stringField(s, 'vaultAuthRef');
+  const destinationField = s['destination'];
+  const destination = destinationField && typeof destinationField === 'object' ? destinationField as Record<string, unknown> : undefined;
+  const destinationName = stringField(destination, 'name');
+  return {
+    vaultAuthRef: authRefName ? { name: authRefName, namespace } : undefined,
+    secretMount: stringField(s, 'mount'),
+    path: stringField(s, 'path') ?? stringField(s, 'role'),
+    destinationSecret: destinationName ? { name: destinationName, namespace, create: destination?.['create'] === true } : undefined,
+  };
 }
 
 function rowFromItem(item: Record<string, unknown>, definition: VsoResourceDefinition): VsoResourceRow | null {
@@ -158,13 +259,18 @@ function rowFromItem(item: Record<string, unknown>, definition: VsoResourceDefin
   const values = metadata as Record<string, unknown>;
   const name = typeof values['name'] === 'string' ? values['name'] : '';
   if (!name) return null;
+  const namespace = typeof values['namespace'] === 'string' ? values['namespace'] : undefined;
+  const conditions = extractConditions(item);
   return {
     kind: definition.kind,
     resource: definition.resource,
-    namespace: typeof values['namespace'] === 'string' ? values['namespace'] : undefined,
+    namespace,
     name,
     createdAt: typeof values['creationTimestamp'] === 'string' ? values['creationTimestamp'] : undefined,
-    status: statusText(item),
+    status: statusText(conditions),
+    health: computeHealth(conditions, []),
+    conditions: conditions.length > 0 ? conditions : undefined,
+    ...extractRelations(item, definition, namespace),
   };
 }
 
@@ -217,17 +323,85 @@ function withManagedFields(value: Record<string, unknown>, includeManagedFields:
   return { ...value, metadata: cleanMetadata };
 }
 
-export function findVsoResource(kind: string, resource: string): VsoResourceDefinition {
-  const definition = resourceFor(kind);
+export function findVsoResource(kind: string, resource: string, definitions: VsoResourceDefinition[] = [...VSO_RESOURCES]): VsoResourceDefinition {
+  const definition = definitions.find((item) => item.kind === kind);
+  if (!definition) throw new KubernetesError('Unsupported VSO resource', 400, 'invalid');
   if (definition.resource !== resource) {
     throw new KubernetesError('Unsupported VSO resource', 400, 'invalid');
   }
   return definition;
 }
 
-export async function listVsoResources(mount: string, host: string): Promise<VsoResourceRow[]> {
+/**
+ * Best-effort existence check against the core Kubernetes API. A 403 means we
+ * can't tell (missing RBAC beyond the VSO CRD read scope) and must not be
+ * treated as "missing" — only a confirmed 404 counts as an actual issue.
+ */
+async function checkExists(mount: string, host: string, requestPath: string): Promise<'found' | 'missing' | 'unknown'> {
+  try {
+    await requestKubernetes<unknown>(mount, host, requestPath);
+    return 'found';
+  } catch (error) {
+    if (error instanceof KubernetesError && error.statusCode === 404) return 'missing';
+    return 'unknown';
+  }
+}
+
+function serviceAccountExists(mount: string, host: string, namespace: string, name: string) {
+  return checkExists(mount, host, `/api/v1/namespaces/${encodeURIComponent(namespace)}/serviceaccounts/${encodeURIComponent(name)}`);
+}
+
+/**
+ * Adds best-effort relation issues (missing ServiceAccount/VaultAuth, a
+ * Vault role that no longer exists) to each row and recomputes its health.
+ * # ponytail: one Promise.all pass over the given rows — fine for the handful
+ * of VSO objects a typical mount has; batch/cache if a cluster has hundreds.
+ */
+async function enrichRelations(
+  rows: VsoResourceRow[],
+  mount: string,
+  host: string,
+  vaultRoleNames: Set<string> | undefined,
+): Promise<VsoResourceRow[]> {
+  const authKeys = new Set(
+    rows
+      .filter((row) => row.kind === 'VaultAuth' || row.kind === 'VaultAuthGlobal')
+      .map((row) => `${row.namespace ?? ''}/${row.name}`),
+  );
+
+  return Promise.all(rows.map(async (row) => {
+    const issues: VsoIssue[] = [];
+
+    if (row.kind === 'VaultAuth' || row.kind === 'VaultAuthGlobal') {
+      if (vaultRoleNames && row.role && !vaultRoleNames.has(row.role)) {
+        issues.push({ severity: 'error', message: `Vault role "${row.role}" was not found on auth mount "${row.authMount ?? mount}".` });
+      }
+      if (row.serviceAccount && row.namespace) {
+        const exists = await serviceAccountExists(mount, host, row.namespace, row.serviceAccount);
+        if (exists === 'missing') {
+          issues.push({ severity: 'error', message: `ServiceAccount "${row.namespace}/${row.serviceAccount}" does not exist in the cluster.` });
+        }
+      }
+    } else if (row.vaultAuthRef) {
+      const authKey = `${row.vaultAuthRef.namespace ?? row.namespace ?? ''}/${row.vaultAuthRef.name}`;
+      if (!authKeys.has(authKey)) {
+        issues.push({ severity: 'error', message: `Referenced VaultAuth "${row.vaultAuthRef.name}" was not found in namespace "${row.vaultAuthRef.namespace ?? row.namespace ?? ''}".` });
+      }
+    }
+
+    if (issues.length === 0) return row;
+    return { ...row, issues, health: computeHealth(row.conditions ?? [], issues) };
+  }));
+}
+
+export async function listVsoResources(
+  mount: string,
+  host: string,
+  options?: { role?: string; vaultRoleNames?: string[] },
+): Promise<VsoResourceRow[]> {
   const rows: VsoResourceRow[] = [];
-  for (const definition of VSO_RESOURCES) {
+  const definitions = await discoverVsoResources(mount, host);
+  for (const definition of definitions) {
     const data = await requestKubernetes<Record<string, unknown>>(mount, host, buildListPath(definition));
     const items = Array.isArray(data['items']) ? data['items'] : [];
     for (const item of items) {
@@ -237,7 +411,28 @@ export async function listVsoResources(mount: string, host: string): Promise<Vso
       }
     }
   }
-  return rows;
+
+  const vaultRoleNames = options?.vaultRoleNames ? new Set(options.vaultRoleNames) : undefined;
+
+  if (!options?.role) {
+    return enrichRelations(rows, mount, host, vaultRoleNames);
+  }
+
+  const matchedAuthKeys = new Set(
+    rows
+      .filter((row) => (row.kind === 'VaultAuth' || row.kind === 'VaultAuthGlobal') && row.authMount === mount && row.role === options.role)
+      .map((row) => `${row.namespace ?? ''}/${row.name}`),
+  );
+  const filtered = rows.filter((row) => {
+    if (row.kind === 'VaultAuth' || row.kind === 'VaultAuthGlobal') {
+      return matchedAuthKeys.has(`${row.namespace ?? ''}/${row.name}`);
+    }
+    if (row.vaultAuthRef) {
+      return matchedAuthKeys.has(`${row.vaultAuthRef.namespace ?? row.namespace ?? ''}/${row.vaultAuthRef.name}`);
+    }
+    return false;
+  });
+  return enrichRelations(filtered, mount, host, vaultRoleNames);
 }
 
 export async function getVsoResource(
@@ -251,7 +446,8 @@ export async function getVsoResource(
   if (!validSegment(name) || (namespace !== undefined && !validSegment(namespace))) {
     throw new KubernetesError('Invalid Kubernetes resource name', 400, 'invalid');
   }
-  const definition = findVsoResource(kind, resource);
+  const definitions = await discoverVsoResources(mount, host);
+  const definition = findVsoResource(kind, resource, definitions);
   if (!definition.clusterScoped && !namespace) {
     throw new KubernetesError('Namespace is required for this VSO resource', 400, 'invalid');
   }
@@ -276,7 +472,54 @@ function buildObjectPath(definition: VsoResourceDefinition, namespace: string | 
     : `${base}/namespaces/${encodeURIComponent(namespace!)}/${definition.resource}/${encodeURIComponent(name)}`;
 }
 
-async function requestKubernetes<T>(mount: string, host: string, requestPath: string): Promise<T> {
+/** Per-mount override for where the VSO operator itself runs (its Helm chart's default namespace otherwise). */
+function vsoNamespaceForMount(mount: string): string {
+  return firstEnv(envNamesForMount(mount, '_VSO_NAMESPACE')) || DEFAULT_VSO_NAMESPACE;
+}
+
+export async function listOperatorPods(mount: string, host: string, namespaceOverride?: string): Promise<VsoOperatorPod[]> {
+  const namespace = namespaceOverride || vsoNamespaceForMount(mount);
+  const labelSelector = encodeURIComponent('app.kubernetes.io/name=vault-secrets-operator');
+  const data = await requestKubernetes<Record<string, unknown>>(
+    mount,
+    host,
+    `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods?labelSelector=${labelSelector}`,
+  );
+  const items = Array.isArray(data['items']) ? data['items'] : [];
+  const pods: VsoOperatorPod[] = [];
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const metadata = (item as Record<string, unknown>)['metadata'];
+    const name = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>)['name'] : undefined;
+    if (typeof name !== 'string') continue;
+    const status = (item as Record<string, unknown>)['status'];
+    const startTime = status && typeof status === 'object' ? (status as Record<string, unknown>)['startTime'] : undefined;
+    pods.push({ name, namespace, startedAt: typeof startTime === 'string' ? startTime : undefined });
+  }
+  return pods;
+}
+
+export async function getPodLogs(
+  mount: string,
+  host: string,
+  namespace: string,
+  pod: string,
+  options: { container?: string; tailLines?: number } = {},
+): Promise<string> {
+  if (!validSegment(namespace) || !validSegment(pod)) {
+    throw new KubernetesError('Invalid Kubernetes resource name', 400, 'invalid');
+  }
+  const tailLines = Math.min(Math.max(options.tailLines ?? 500, 1), 2000);
+  const params = new URLSearchParams({ tailLines: String(tailLines) });
+  if (options.container) params.set('container', options.container);
+  return requestKubernetesText(
+    mount,
+    host,
+    `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(pod)}/log?${params.toString()}`,
+  );
+}
+
+async function kubernetesGet<T>(mount: string, host: string, requestPath: string, responseType: 'json' | 'text'): Promise<T> {
   let base: URL;
   try {
     base = new URL(host);
@@ -293,6 +536,7 @@ async function requestKubernetes<T>(mount: string, host: string, requestPath: st
       baseURL: base.origin,
       headers: { Authorization: `Bearer ${token}` },
       timeout: 15000,
+      responseType,
       maxContentLength: MAX_RESPONSE_BYTES,
       maxBodyLength: MAX_RESPONSE_BYTES,
       ...(base.protocol === 'https:' && (config.k8sSkipTlsVerify || caForCluster())
@@ -313,4 +557,12 @@ async function requestKubernetes<T>(mount: string, host: string, requestPath: st
     }
     throw new KubernetesError('The downstream Kubernetes cluster could not be queried', 502);
   }
+}
+
+async function requestKubernetes<T>(mount: string, host: string, requestPath: string): Promise<T> {
+  return kubernetesGet<T>(mount, host, requestPath, 'json');
+}
+
+async function requestKubernetesText(mount: string, host: string, requestPath: string): Promise<string> {
+  return kubernetesGet<string>(mount, host, requestPath, 'text');
 }

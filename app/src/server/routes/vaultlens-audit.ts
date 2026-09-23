@@ -87,11 +87,13 @@ const AUTH_METHODS_CONFIG_SECTION = 'auth_methods';
 export interface AuthMethodsConfig {
   enableDevIntegrationGuides: boolean;
   enableVsoResources: boolean;
+  enableVsoLogs: boolean;
 }
 
 const DEFAULT_AUTH_METHODS_CONFIG: AuthMethodsConfig = {
   enableDevIntegrationGuides: true,
   enableVsoResources: false,
+  enableVsoLogs: false,
 };
 
 export async function readAuthMethodsConfig(): Promise<AuthMethodsConfig> {
@@ -102,6 +104,7 @@ export async function readAuthMethodsConfig(): Promise<AuthMethodsConfig> {
       return {
         enableDevIntegrationGuides: data['enableDevIntegrationGuides'] !== 'false',
         enableVsoResources: data['enableVsoResources'] === 'true',
+        enableVsoLogs: data['enableVsoLogs'] === 'true',
       };
     }
   } catch {
@@ -131,12 +134,13 @@ router.put(
   requireAdmin,
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const { enableDevIntegrationGuides, enableVsoResources } = req.body as Partial<AuthMethodsConfig>;
+      const { enableDevIntegrationGuides, enableVsoResources, enableVsoLogs } = req.body as Partial<AuthMethodsConfig>;
 
       const storage = getConfigStorage();
       await storage.set(AUTH_METHODS_CONFIG_SECTION, {
         enableDevIntegrationGuides: String(enableDevIntegrationGuides !== false),
         enableVsoResources: String(enableVsoResources === true),
+        enableVsoLogs: String(enableVsoLogs === true),
       });
 
       res.json({ success: true });

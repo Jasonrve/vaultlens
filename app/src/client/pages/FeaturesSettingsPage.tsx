@@ -111,7 +111,7 @@ export default function FeaturesSettingsPage() {
   const [policiesSaved, setPoliciesSaved] = useState(false);
 
   // Auth Methods
-  const [authMethods, setAuthMethods] = useState<AuthMethodsConfig>({ enableDevIntegrationGuides: true, enableVsoResources: false });
+  const [authMethods, setAuthMethods] = useState<AuthMethodsConfig>({ enableDevIntegrationGuides: true, enableVsoResources: false, enableVsoLogs: false });
   const [authMethodsSaving, setAuthMethodsSaving] = useState(false);
   const [authMethodsError, setAuthMethodsError] = useState<string | null>(null);
   const [authMethodsSaved, setAuthMethodsSaved] = useState(false);
@@ -284,9 +284,15 @@ export default function FeaturesSettingsPage() {
         />
         <ToggleRow
           label="Vault Secrets Operator resources"
-          description="Show a read-only VSO Resources tab on every Kubernetes auth mount. Cluster access is queried only when the tab is opened and requires downstream Kubernetes permissions."
+          description="Show a read-only VSO Resources tab on every Kubernetes auth mount, with health status and relationship checks (missing ServiceAccounts, Secrets, or Vault roles). Cluster access is queried only when the tab is opened and requires downstream Kubernetes permissions."
           checked={authMethods.enableVsoResources}
           onChange={(v) => { const val = { ...authMethods, enableVsoResources: v }; setAuthMethods(val); void saveAuthMethods(val); }}
+        />
+        <ToggleRow
+          label="Vault Secrets Operator logs"
+          description="Show a VSO Logs tab that tails the Vault Secrets Operator's own pod logs for a Kubernetes auth mount's cluster. Requires additional Kubernetes permissions (pods, pods/log) beyond the VSO Resources tab."
+          checked={authMethods.enableVsoLogs}
+          onChange={(v) => { const val = { ...authMethods, enableVsoLogs: v }; setAuthMethods(val); void saveAuthMethods(val); }}
         />
       </Section>
 

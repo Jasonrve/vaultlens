@@ -100,9 +100,9 @@ Plain text (no `=` or `:`) is displayed as a standard description paragraph belo
 
 ### Vault Secrets Operator Resources
 
-Administrators can enable **Vault Secrets Operator resources** from **Settings → Features → Auth Methods**. The setting is global: when enabled, every Kubernetes auth mount gets a **VSO Resources** tab. It is disabled by default for normal installations; the checked-in local development configuration enables it so the k3s fixture can be tested immediately.
+Administrators can enable **Vault Secrets Operator resources** from **Settings → Features → Auth Methods**. The setting is global: when enabled, every Kubernetes auth mount gets a **VSO Resources** tab, and each of that mount's roles gets a role-scoped **🔗 VSO Resources** tab filtered to just the resources tied to that role. It is disabled by default for normal installations.
 
-The tab is read-only and loads only when opened. It queries the Kubernetes endpoint configured in that auth mount and lists existing resources across all namespaces:
+The tab is read-only and loads only when opened. It queries the Kubernetes endpoint configured in that auth mount and discovers every resource type exposed by the `secrets.hashicorp.com` API group, so newer VSO CRDs are included automatically. It then lists existing resources across all namespaces:
 
 - `VaultConnection`
 - `VaultAuth`
@@ -113,9 +113,24 @@ The tab is read-only and loads only when opened. It queries the Kubernetes endpo
 - `SecretTransformation`
 - `CSISecrets`
 
-The resource list includes the kind, namespace, name, age, and current status. Rows are grouped in this order: `VaultStaticSecret`, `VaultAuth`, then `VaultConnection`; other supported kinds follow afterward. Use the resource search above the table to filter by kind, namespace, name, or status. Select an entry to open an animated YAML drawer from the right and copy the YAML. Kubernetes managed fields are hidden from the default output so internal `f:` bookkeeping does not obscure the object; use **Show Kubernetes managed fields** when you need to inspect them. YAML keys, strings, booleans, numbers, and comments are color formatted for easier scanning. VaultLens never sends Kubernetes credentials to the browser. The VaultLens workload identity needs Kubernetes `get` and `list` permissions for the VSO resources. If access is denied, the tab shows the Kubernetes URL configured on the Vault auth mount, the current ServiceAccount and workload role, and an example `ClusterRole`/`ClusterRoleBinding` granting read-only access across namespaces.
+Each row shows a **Health** status (Healthy / Warning / Error / Unknown) derived from the object's own `status.conditions` (`Ready`/`Synced`) plus a set of relationship checks VaultLens performs on your behalf:
+
+- A `VaultAuth`'s Vault role (`spec.kubernetes.role`) still exists on the auth mount.
+- A `VaultAuth`'s bound ServiceAccount exists in the cluster.
+- A secret resource's `vaultAuthRef` resolves to an actual `VaultAuth`/`VaultAuthGlobal` object.
+- A secret resource's destination Secret exists, when it isn't configured to create one (`destination.create: false`).
+
+Rows with issues show the specific problem inline (e.g. *"ServiceAccount default/foo does not exist in the cluster."*), and a **Related** column links each resource to what it depends on — click a chip to jump straight to that related object's own YAML drawer, or see it flagged in red when the reference is broken. Filter chips above the table narrow the list to just errors, warnings, healthy, or unknown resources. These relationship checks are best-effort: a permission error on any individual check (see RBAC below) is silently skipped rather than failing the whole tab, so existing installations keep working exactly as before.
+
+Rows are sorted by health first (errors, then warnings, then unknown, then healthy), then grouped by kind (`VaultStaticSecret`, `VaultDynamicSecret`, `VaultAuth`, `VaultConnection`, others). Use the resource search above the table to filter by kind, namespace, name, or status. Select an entry to open an animated YAML drawer from the right — it now also shows the parsed conditions and issues before the raw YAML — and copy the YAML. Kubernetes managed fields are hidden from the default output so internal `f:` bookkeeping does not obscure the object; use **Show Kubernetes managed fields** when you need to inspect them. YAML keys, strings, booleans, numbers, and comments are color formatted for easier scanning. VaultLens never sends Kubernetes credentials to the browser. The VaultLens workload identity needs Kubernetes `get` and `list` permissions for the VSO resources (plus `serviceaccounts`/`secrets` for the relationship checks). If access is denied, the tab shows the Kubernetes URL configured on the Vault auth mount, the current ServiceAccount and workload role, and an example `ClusterRole`/`ClusterRoleBinding` granting read-only access across namespaces.
 
 The feature does not browse arbitrary Kubernetes resources and does not modify VSO objects. Missing VSO CRDs are reported as unavailable rather than being shown as an empty inventory.
+
+### Vault Secrets Operator Logs
+
+Administrators can separately enable **Vault Secrets Operator logs** from **Settings → Features → Auth Methods**. When enabled, every Kubernetes auth mount gets a **VSO Logs** tab that tails the operator's own pod logs — useful for reconcile errors, permission failures, or operator-wide issues (leader election, webhook failures) that aren't tied to any single resource and so never show up as a condition on a VSO object.
+
+This is a separate toggle from VSO Resources because it needs broader RBAC — `get`/`list` on `pods` and `pods/log` in the operator's namespace, in addition to the VSO CRD read scope. VaultLens looks for a pod labeled `app.kubernetes.io/name=vault-secrets-operator` in the operator's namespace, which defaults to `vault-secrets-operator-system` (the Helm chart default) and can be overridden per mount with `K8S_ACCESS_<MOUNT>_VSO_NAMESPACE`. The tab lets you pick a tail length (100–2000 lines), refresh manually, or turn on **Live tail** to poll every 5 seconds.
 
 #### Downstream cluster access
 
@@ -156,7 +171,7 @@ Actions can be configured as **icon-only** buttons. The button label is then use
 
 The icon search is optimized for the large catalog: matching is deferred while typing and the picker renders a bounded set of local results at a time. All local icons remain searchable, and Iconify icons can be entered directly using their collection prefix and name.
 
-Click any auth method to view its details across three tabs:
+Click any auth method to view its details across tabs (Configuration, Method Options, Roles, and — for Kubernetes mounts with the features enabled — VSO Resources and VSO Logs):
 
 ### Roles Tab
 
@@ -198,6 +213,7 @@ Each role opens a detail page with the following tabs (some are type-specific):
 |-----|-------------|---------|
 | **Role Details** | Always | Displays all role configuration fields grouped into General and Token sections |
 | **Secret IDs** | AppRole only | Generate and revoke Secret IDs for the role (see below) |
+| **🔗 VSO Resources** | Kubernetes only, when VSO Resources is enabled | VSO resources whose chain (`VaultAuth` → secrets) traces back to this role, with health and relationship checks |
 | **Developer Guide** | When a template exists or you are an admin | Integration guide with code snippets |
 | **Audits** | Always | Recent Vault audit log entries for this auth mount |
 
