@@ -164,6 +164,7 @@ router.get(
       if (!kubernetesHost) {
         throw new KubernetesError('Kubernetes endpoint is not configured', 503);
       }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
 
       const roleFilter = typeof req.query['role'] === 'string' && req.query['role'] ? req.query['role'] : undefined;
 
@@ -180,7 +181,7 @@ router.get(
         vaultRoleNames = undefined;
       }
 
-      const resources = await listVsoResources(method, kubernetesHost, { role: roleFilter, vaultRoleNames });
+      const resources = await listVsoResources(method, kubernetesHost, { role: roleFilter, vaultRoleNames }, kubernetesCaCert);
       return res.json({ resources, supportedKinds: VSO_RESOURCES.map(({ kind, resource }) => ({ kind, resource })) });
     } catch (error) {
       if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
@@ -212,8 +213,9 @@ router.get(
       if (!kubernetesHost) {
         throw new KubernetesError('Kubernetes endpoint is not configured', 503);
       }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
 
-      const pods = await listOperatorPods(method, kubernetesHost);
+      const pods = await listOperatorPods(method, kubernetesHost, undefined, kubernetesCaCert);
       if (pods.length === 0) {
         return res.json({ pods: [], selectedPod: null, lines: [] });
       }
@@ -226,7 +228,7 @@ router.get(
       const text = await getPodLogs(method, kubernetesHost, selected.namespace, selected.name, {
         container: 'manager',
         tailLines,
-      });
+      }, kubernetesCaCert);
 
       return res.json({ pods, selectedPod: selected.name, lines: text.split('\n') });
     } catch (error) {
@@ -264,8 +266,9 @@ router.get(
       if (!kubernetesHost) {
         throw new KubernetesError('Kubernetes endpoint is not configured', 503);
       }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
 
-      const result = await getVsoResource(method, kubernetesHost, kind, resource, namespace, name);
+      const result = await getVsoResource(method, kubernetesHost, kind, resource, namespace, name, kubernetesCaCert);
       return res.json(result);
     } catch (error) {
       if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);

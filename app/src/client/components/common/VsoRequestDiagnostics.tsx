@@ -6,7 +6,7 @@ export interface VsoDiagnostics {
   status?: number;
   errorCode?: string;
   errorMessage?: string;
-  tls?: { verification: string; caCertificate: string; caPath?: string };
+  tls?: { verification: string; caCertificate: string; caSource?: 'local-file' | 'auth-mount-config'; caPath?: string };
 }
 
 export type VsoErrorReason = 'access_denied' | 'not_installed' | 'unavailable' | 'invalid';
@@ -52,12 +52,15 @@ export function VsoRequestDiagnostics({ reason, diagnostics }: { reason?: VsoErr
           : 'Could not determine whether the endpoint was reachable.';
 
   const tlsSkipped = diagnostics.tls?.verification === 'disabled';
+  const caSourceLabel = diagnostics.tls?.caSource === 'auth-mount-config'
+    ? "the auth mount's kubernetes_ca_cert"
+    : diagnostics.tls?.caSource === 'local-file' ? 'a local CA file' : undefined;
   const tls: StepStatus = reached !== 'ok' ? 'unknown' : isTlsError ? 'fail' : 'ok';
   const tlsDetail =
     reached !== 'ok' ? 'Not attempted.'
       : tlsSkipped ? 'Skipped — TLS verification is disabled for this connection.'
-        : isTlsError ? `Certificate verification failed${diagnostics.tls?.caCertificate === 'not-configured' ? ' — no CA certificate is configured' : ''}.`
-          : 'Certificate verified successfully.';
+        : isTlsError ? `Certificate verification failed${diagnostics.tls?.caCertificate === 'not-configured' ? ' — no CA certificate is configured (checked K8S_CA_CERT_PATH, the local ServiceAccount CA, and the auth mount\'s kubernetes_ca_cert)' : caSourceLabel ? ` using ${caSourceLabel}` : ''}.`
+          : `Certificate verified successfully${caSourceLabel ? ` using ${caSourceLabel}` : ''}.`;
 
   const authorized: StepStatus =
     reached !== 'ok' ? 'unknown'

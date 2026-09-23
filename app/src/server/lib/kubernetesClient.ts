@@ -80,6 +80,7 @@ export interface KubernetesRequestDiagnostics {
   tls?: {
     verification: 'enabled' | 'disabled';
     caCertificate: 'configured' | 'not-configured';
+    caSource?: 'local-file' | 'auth-mount-config';
     caPath?: string;
   };
   status?: number;
@@ -99,8 +100,8 @@ export class KubernetesError extends Error {
   }
 }
 
-async function discoverVsoResources(mount: string, host: string): Promise<VsoResourceDefinition[]> {
-  const data = await requestKubernetes<KubernetesApiResourceList>(mount, host, `/apis/${VSO_GROUP}/${VSO_VERSION}`);
+async function discoverVsoResources(mount: string, host: string, fallbackCaCertPem?: string): Promise<VsoResourceDefinition[]> {
+  const data = await requestKubernetes<KubernetesApiResourceList>(mount, host, `/apis/${VSO_GROUP}/${VSO_VERSION}`, fallbackCaCertPem);
   return (data.resources ?? [])
     .filter((resource) => typeof resource.name === 'string' && !resource.name.includes('/') && typeof resource.kind === 'string')
     .map((resource) => ({
@@ -183,11 +184,17 @@ async function tokenForMount(mount: string, kubernetesHost: string): Promise<str
   }
 }
 
-function caForCluster(): { certificate?: Buffer; path: string } {
+// Falls back to the CA cert already configured on the Vault auth mount (`kubernetes_ca_cert`)
+// when no local override is set — that cert is the trust the admin already established for
+// this cluster, so a request with no local CA config shouldn't need a second copy of it.
+function caForCluster(fallbackCaCertPem?: string): { certificate?: Buffer; path: string; source?: 'local-file' | 'auth-mount-config' } {
   const caPath = process.env['K8S_CA_CERT_PATH'] || path.join(path.dirname(config.vaultK8sTokenPath), 'ca.crt');
   try {
-    return { certificate: fs.readFileSync(caPath), path: caPath };
+    return { certificate: fs.readFileSync(caPath), path: caPath, source: 'local-file' };
   } catch {
+    if (fallbackCaCertPem) {
+      return { certificate: Buffer.from(fallbackCaCertPem), path: caPath, source: 'auth-mount-config' };
+    }
     return { path: caPath };
   }
 }
@@ -352,9 +359,9 @@ export function findVsoResource(kind: string, resource: string, definitions: Vso
  * can't tell (missing RBAC beyond the VSO CRD read scope) and must not be
  * treated as "missing" — only a confirmed 404 counts as an actual issue.
  */
-async function checkExists(mount: string, host: string, requestPath: string): Promise<'found' | 'missing' | 'unknown'> {
+async function checkExists(mount: string, host: string, requestPath: string, fallbackCaCertPem?: string): Promise<'found' | 'missing' | 'unknown'> {
   try {
-    await requestKubernetes<unknown>(mount, host, requestPath);
+    await requestKubernetes<unknown>(mount, host, requestPath, fallbackCaCertPem);
     return 'found';
   } catch (error) {
     if (error instanceof KubernetesError && error.statusCode === 404) return 'missing';
@@ -362,8 +369,8 @@ async function checkExists(mount: string, host: string, requestPath: string): Pr
   }
 }
 
-function serviceAccountExists(mount: string, host: string, namespace: string, name: string) {
-  return checkExists(mount, host, `/api/v1/namespaces/${encodeURIComponent(namespace)}/serviceaccounts/${encodeURIComponent(name)}`);
+function serviceAccountExists(mount: string, host: string, namespace: string, name: string, fallbackCaCertPem?: string) {
+  return checkExists(mount, host, `/api/v1/namespaces/${encodeURIComponent(namespace)}/serviceaccounts/${encodeURIComponent(name)}`, fallbackCaCertPem);
 }
 
 /**
@@ -377,6 +384,7 @@ async function enrichRelations(
   mount: string,
   host: string,
   vaultRoleNames: Set<string> | undefined,
+  fallbackCaCertPem?: string,
 ): Promise<VsoResourceRow[]> {
   const authKeys = new Set(
     rows
@@ -392,7 +400,7 @@ async function enrichRelations(
         issues.push({ severity: 'error', message: `Vault role "${row.role}" was not found on auth mount "${row.authMount ?? mount}".` });
       }
       if (row.serviceAccount && row.namespace) {
-        const exists = await serviceAccountExists(mount, host, row.namespace, row.serviceAccount);
+        const exists = await serviceAccountExists(mount, host, row.namespace, row.serviceAccount, fallbackCaCertPem);
         if (exists === 'missing') {
           issues.push({ severity: 'error', message: `ServiceAccount "${row.namespace}/${row.serviceAccount}" does not exist in the cluster.` });
         }
@@ -413,11 +421,12 @@ export async function listVsoResources(
   mount: string,
   host: string,
   options?: { role?: string; vaultRoleNames?: string[] },
+  fallbackCaCertPem?: string,
 ): Promise<VsoResourceRow[]> {
   const rows: VsoResourceRow[] = [];
-  const definitions = await discoverVsoResources(mount, host);
+  const definitions = await discoverVsoResources(mount, host, fallbackCaCertPem);
   for (const definition of definitions) {
-    const data = await requestKubernetes<Record<string, unknown>>(mount, host, buildListPath(definition));
+    const data = await requestKubernetes<Record<string, unknown>>(mount, host, buildListPath(definition), fallbackCaCertPem);
     const items = Array.isArray(data['items']) ? data['items'] : [];
     for (const item of items) {
       if (item && typeof item === 'object') {
@@ -430,7 +439,7 @@ export async function listVsoResources(
   const vaultRoleNames = options?.vaultRoleNames ? new Set(options.vaultRoleNames) : undefined;
 
   if (!options?.role) {
-    return enrichRelations(rows, mount, host, vaultRoleNames);
+    return enrichRelations(rows, mount, host, vaultRoleNames, fallbackCaCertPem);
   }
 
   const matchedAuthKeys = new Set(
@@ -447,7 +456,7 @@ export async function listVsoResources(
     }
     return false;
   });
-  return enrichRelations(filtered, mount, host, vaultRoleNames);
+  return enrichRelations(filtered, mount, host, vaultRoleNames, fallbackCaCertPem);
 }
 
 export async function getVsoResource(
@@ -457,11 +466,12 @@ export async function getVsoResource(
   resource: string,
   namespace: string | undefined,
   name: string,
+  fallbackCaCertPem?: string,
 ): Promise<{ yaml: string; fullYaml: string; row: VsoResourceRow }> {
   if (!validSegment(name) || (namespace !== undefined && !validSegment(namespace))) {
     throw new KubernetesError('Invalid Kubernetes resource name', 400, 'invalid');
   }
-  const definitions = await discoverVsoResources(mount, host);
+  const definitions = await discoverVsoResources(mount, host, fallbackCaCertPem);
   const definition = findVsoResource(kind, resource, definitions);
   if (!definition.clusterScoped && !namespace) {
     throw new KubernetesError('Namespace is required for this VSO resource', 400, 'invalid');
@@ -470,6 +480,7 @@ export async function getVsoResource(
     mount,
     host,
     buildObjectPath(definition, namespace, name),
+    fallbackCaCertPem,
   );
   const row = rowFromItem(data, definition);
   if (!row) throw new KubernetesError('Kubernetes object has no valid metadata', 502);
@@ -492,13 +503,14 @@ function vsoNamespaceForMount(mount: string): string {
   return firstEnv(envNamesForMount(mount, '_VSO_NAMESPACE')) || DEFAULT_VSO_NAMESPACE;
 }
 
-export async function listOperatorPods(mount: string, host: string, namespaceOverride?: string): Promise<VsoOperatorPod[]> {
+export async function listOperatorPods(mount: string, host: string, namespaceOverride?: string, fallbackCaCertPem?: string): Promise<VsoOperatorPod[]> {
   const namespace = namespaceOverride || vsoNamespaceForMount(mount);
   const labelSelector = encodeURIComponent('app.kubernetes.io/name=vault-secrets-operator');
   const data = await requestKubernetes<Record<string, unknown>>(
     mount,
     host,
     `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods?labelSelector=${labelSelector}`,
+    fallbackCaCertPem,
   );
   const items = Array.isArray(data['items']) ? data['items'] : [];
   const pods: VsoOperatorPod[] = [];
@@ -520,6 +532,7 @@ export async function getPodLogs(
   namespace: string,
   pod: string,
   options: { container?: string; tailLines?: number } = {},
+  fallbackCaCertPem?: string,
 ): Promise<string> {
   if (!validSegment(namespace) || !validSegment(pod)) {
     throw new KubernetesError('Invalid Kubernetes resource name', 400, 'invalid');
@@ -531,6 +544,7 @@ export async function getPodLogs(
     mount,
     host,
     `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods/${encodeURIComponent(pod)}/log?${params.toString()}`,
+    fallbackCaCertPem,
   );
 }
 
@@ -547,7 +561,7 @@ function apiErrorMessage(data: unknown): string | undefined {
   return undefined;
 }
 
-async function kubernetesGet<T>(mount: string, host: string, requestPath: string, responseType: 'json' | 'text'): Promise<T> {
+async function kubernetesGet<T>(mount: string, host: string, requestPath: string, responseType: 'json' | 'text', fallbackCaCertPem?: string): Promise<T> {
   const diagnostics: KubernetesRequestDiagnostics = { method: 'GET', host, path: requestPath };
   let base: URL;
   try {
@@ -563,10 +577,11 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
     throw new KubernetesError('Kubernetes endpoint protocol is not supported', 502, 'invalid', diagnostics);
   }
 
-  const ca = base.protocol === 'https:' ? caForCluster() : undefined;
+  const ca = base.protocol === 'https:' ? caForCluster(fallbackCaCertPem) : undefined;
   diagnostics.tls = {
     verification: config.k8sSkipTlsVerify ? 'disabled' : 'enabled',
     caCertificate: ca?.certificate ? 'configured' : 'not-configured',
+    ...(ca?.source ? { caSource: ca.source } : {}),
     ...(ca ? { caPath: ca.path } : {}),
   };
   console.info('[Kubernetes] Requesting downstream endpoint', {
@@ -631,10 +646,10 @@ async function kubernetesGet<T>(mount: string, host: string, requestPath: string
   }
 }
 
-async function requestKubernetes<T>(mount: string, host: string, requestPath: string): Promise<T> {
-  return kubernetesGet<T>(mount, host, requestPath, 'json');
+async function requestKubernetes<T>(mount: string, host: string, requestPath: string, fallbackCaCertPem?: string): Promise<T> {
+  return kubernetesGet<T>(mount, host, requestPath, 'json', fallbackCaCertPem);
 }
 
-async function requestKubernetesText(mount: string, host: string, requestPath: string): Promise<string> {
-  return kubernetesGet<string>(mount, host, requestPath, 'text');
+async function requestKubernetesText(mount: string, host: string, requestPath: string, fallbackCaCertPem?: string): Promise<string> {
+  return kubernetesGet<string>(mount, host, requestPath, 'text', fallbackCaCertPem);
 }
