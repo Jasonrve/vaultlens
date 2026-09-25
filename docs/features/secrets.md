@@ -93,6 +93,34 @@ Click **Edit** to modify a secret. The editor supports:
 - Editing values inline
 - Updating custom metadata (for KV v2)
 
+## Importing Configuration Files
+
+When creating a secret, click **Bulk import** to paste configuration text or load one application configuration file into the normal VaultLens editor. Supported formats are JSON (including `appsettings.json`), `.env`, YAML, INI, TOML, and Java `.properties` files.
+
+Pasted text and uploaded files are parsed in your browser. File contents are not uploaded to VaultLens while you are choosing or previewing them. You can review and edit the imported values before clicking **Save**.
+
+Nested configuration is converted to flat keys using `__`. The **Include parent/header in keys** toggle keeps the section or parent names, or removes them to keep only the final setting name. Keeping parent names is recommended because two sections can otherwise contain the same setting name.
+
+```json
+{
+	"ConnectionStrings": {
+		"Default": "Server=db01"
+	},
+	"FeatureFlags": {
+		"NewCheckout": true
+	}
+}
+```
+
+becomes:
+
+```text
+ConnectionStrings__Default = Server=db01
+FeatureFlags__NewCheckout = true
+```
+
+Arrays use numeric key segments, such as `Servers__0__Host`. Numbers and booleans are converted to text, and null values become empty values. The editor currently imports one file at a time and does not split an oversized file into multiple secrets. Imports are limited to 1,000 keys and a 900 KiB serialized payload, with the same key and value limits used by normal secret writes.
+
 ## Agent Import Links
 
 Claude, Codex, and other tools can prepare a new secret draft for review in VaultLens with a client-only import link:

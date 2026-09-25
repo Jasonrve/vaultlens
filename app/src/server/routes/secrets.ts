@@ -7,6 +7,7 @@ import { secretOperationsTotal } from '../lib/metrics.js';
 import { readSecretsAuditConfig } from './vaultlens-audit.js';
 import { concurrentMap } from '../lib/concurrency.js';
 import type { AuthenticatedRequest, SecretEngine } from '../types/index.js';
+import { validateFlatSecretData } from '../../shared/secretValidation.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
@@ -24,33 +25,6 @@ function isValidSecretPath(p: string): boolean {
   if (p.includes('\0') || /[?#%]/.test(p)) return false;
   const segments = p.split('/');
   return segments.every(s => s !== '..' && s !== '.');
-}
-
-const MAX_SECRET_KEYS = 100;
-const MAX_KEY_LENGTH = 512;
-const MAX_VALUE_LENGTH = 1024 * 1024; // 1 MB per value
-
-/** Validate that secret data meets size/structure constraints */
-function validateSecretData(data: unknown): string | null {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return 'Request body must be a plain object';
-  }
-  const entries = Object.entries(data as Record<string, unknown>);
-  if (entries.length > MAX_SECRET_KEYS) {
-    return `Too many keys (max ${MAX_SECRET_KEYS})`;
-  }
-  for (const [key, value] of entries) {
-    if (key.length > MAX_KEY_LENGTH) {
-      return `Key "${key.slice(0, 50)}…" exceeds max length (${MAX_KEY_LENGTH})`;
-    }
-    if (typeof value === 'string' && value.length > MAX_VALUE_LENGTH) {
-      return `Value for key "${key.slice(0, 50)}" exceeds max length (1 MB)`;
-    }
-    if (value !== null && typeof value === 'object') {
-      return 'Nested objects/arrays are not allowed in secret data';
-    }
-  }
-  return null;
 }
 
 interface MountsResponse {
@@ -574,7 +548,7 @@ router.post(
         'data'
       );
 
-      const validationError = validateSecretData(req.body);
+      const validationError = validateFlatSecretData(req.body);
       if (validationError) {
         res.status(400).json({ error: validationError });
         return;
@@ -737,7 +711,7 @@ router.post(
         return;
       }
 
-      const validationError = validateSecretData(userFields);
+      const validationError = validateFlatSecretData(userFields);
       if (validationError) {
         res.status(400).json({ error: validationError });
         return;

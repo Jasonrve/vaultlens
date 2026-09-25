@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Modal from '../common/Modal';
 import {
   DEFAULT_SECRET_OPTIONS,
@@ -20,11 +20,23 @@ const quickModes: Array<{ mode: SecretGenerationMode; label: string }> = [
 ];
 
 export default function SecretValueGenerator({ onInsert }: SecretValueGeneratorProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [options, setOptions] = useState(DEFAULT_SECRET_OPTIONS);
   const [value, setValue] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [menuOpen]);
 
   function update(partial: Partial<SecretGenerationOptions>) {
     setOptions((current) => ({ ...current, ...partial }));
@@ -49,7 +61,7 @@ export default function SecretValueGenerator({ onInsert }: SecretValueGeneratorP
 
   return (
     <>
-      <div className="relative shrink-0">
+      <div ref={menuRef} className="relative shrink-0">
         <button
           type="button"
           onClick={() => setMenuOpen((current) => !current)}

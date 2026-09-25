@@ -1,13 +1,45 @@
 {
+  "0.12.0": {
+    "date": "2026-09-03",
+    "highlights": [
+      "Bulk configuration imports",
+      "Browser-based paste and file parsing",
+      "Merged imports for existing secrets",
+      "Improved secret generator menus"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Bulk configuration imports",
+          "description": "Create a secret from JSON, ENV, YAML, INI, TOML, or Properties configuration by pasting text or uploading a file. Values are previewed in the browser before you save them."
+        },
+        {
+          "title": "Parent key mapping",
+          "description": "Choose whether section and parent names are included in imported keys, such as RESTAPI__username or username."
+        }
+      ],
+      "Improved": [
+        {
+          "title": "Merged configuration imports",
+          "description": "Importing into an existing secret now preserves keys that are not in the import while imported values replace matching keys."
+        }
+      ],
+      "Fixed": [
+        {
+          "title": "Secret generator menu dismissal",
+          "description": "The quick secret generator menu now closes when you click outside it."
+        }
+      ]
+    }
+  },
   "0.11.0": {
     "date": "2026-09-02",
     "highlights": [
       "Browser-based secret generation",
-      "Quick generation from secret fields",
       "Custom auth-method action buttons",
       "Iconify technology and developer icon collections",
-      "Persistent and faster action configuration",
-      "Vault Secrets Operator resource browser"
+      "Vault Secrets Operator resource browser",
+      "Persistent and faster action configuration"
     ],
     "sections": {
       "New": [

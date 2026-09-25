@@ -1,11 +1,13 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import * as api from '../../lib/api';
 import JsonEditor from '../common/JsonEditor';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
 import SecretValueGenerator from './SecretValueGenerator';
 import { decodeSecretImport, type SecretImportPayload } from '../../lib/crypto';
+import { importConfig, type ConfigFormat, type ParsedConfig } from '../../lib/config-import';
 
 interface KvRow {
   key: string;
@@ -31,6 +33,13 @@ export default function SecretEditor() {
   const [metaRows, setMetaRows] = useState<KvRow[]>([]);
   const [showMeta, setShowMeta] = useState(false);
   const [isKvV2, setIsKvV2] = useState<boolean | null>(null);
+  const [showConfigImport, setShowConfigImport] = useState(false);
+  const [configImport, setConfigImport] = useState<ParsedConfig | null>(null);
+  const [configInput, setConfigInput] = useState<{ content: string; filename: string; format?: ConfigFormat }>({ content: '', filename: '' });
+  const [importingFile, setImportingFile] = useState(false);
+  const [pastedConfig, setPastedConfig] = useState('');
+  const [pasteFormat, setPasteFormat] = useState<ConfigFormat | 'auto'>('auto');
+  const [includeParentPath, setIncludeParentPath] = useState(true);
 
   useEffect(() => {
     if (!isImport) return;
@@ -100,6 +109,17 @@ export default function SecretEditor() {
     }
   }, [showPaths, accessiblePaths.length]);
 
+  useEffect(() => {
+    if (!configInput.content) return;
+    try {
+      setConfigImport(importConfig(configInput.content, configInput.filename, configInput.format, includeParentPath));
+      setError(null);
+    } catch (err) {
+      setConfigImport(null);
+      setError(err instanceof Error ? err.message : 'Could not update imported configuration');
+    }
+  }, [configInput, includeParentPath]);
+
   function addRow() {
     setRows([...rows, { key: '', value: '' }]);
   }
@@ -112,6 +132,66 @@ export default function SecretEditor() {
     const updated = [...rows];
     updated[index] = { ...updated[index], [field]: val };
     setRows(updated);
+  }
+
+  async function handleConfigFile(file: File) {
+    setImportingFile(true);
+    setError(null);
+    try {
+      const content = await file.text();
+      setConfigInput({ content, filename: file.name });
+      const result = importConfig(content, file.name, undefined, includeParentPath);
+      setConfigImport(result);
+    } catch (err) {
+      setConfigImport(null);
+      setError(err instanceof Error ? err.message : 'Could not import configuration file');
+    } finally {
+      setImportingFile(false);
+    }
+  }
+
+  function handlePastedConfig() {
+    setError(null);
+    try {
+      const format = pasteFormat === 'auto' ? undefined : pasteFormat;
+      setConfigInput({ content: pastedConfig, filename: 'pasted.config', format });
+      setConfigImport(importConfig(pastedConfig, 'pasted.config', format, includeParentPath));
+    } catch (err) {
+      setConfigImport(null);
+      setError(err instanceof Error ? err.message : 'Could not import pasted configuration');
+    }
+  }
+
+  function handleParentPathChange(enabled: boolean) {
+    setIncludeParentPath(enabled);
+  }
+
+  async function applyConfigImport() {
+    if (!configImport) return;
+    setImportingFile(true);
+    setError(null);
+    try {
+      const writePath = `${splat}${path}`;
+      let existingData: Record<string, unknown> = {};
+      try {
+        const existing = await api.readSecretValues(writePath);
+        existingData = existing.data ?? {};
+      } catch (err) {
+        if (!axios.isAxiosError(err) || err.response?.status !== 404) throw err;
+      }
+      const mergedData = { ...existingData, ...configImport.data };
+      const importedRows = Object.entries(mergedData).map(([key, value]) => ({
+        key,
+        value: typeof value === 'string' ? value : JSON.stringify(value),
+      }));
+      setRows(importedRows);
+      setJson(JSON.stringify(mergedData, null, 2));
+      setShowConfigImport(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not merge imported configuration');
+    } finally {
+      setImportingFile(false);
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -185,9 +265,107 @@ export default function SecretEditor() {
           Review this imported draft{importPayload.source ? ` from ${importPayload.source}` : ''} before saving. The link is a bearer secret until it is removed from your history.
         </div>
       )}
-      <h1 className="mb-6 text-2xl font-bold text-gray-800">
-        {isImport ? 'Import Secret Draft' : isNew ? 'Create Secret' : 'Edit Secret'}
-      </h1>
+      <div className="mb-6 flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-gray-800">
+          {isImport ? 'Import Secret Draft' : isNew ? 'Create Secret' : 'Edit Secret'}
+        </h1>
+        {isNew && !isImport && (
+          <button
+            type="button"
+            onClick={() => setShowConfigImport(!showConfigImport)}
+            aria-label={showConfigImport ? 'Close bulk import' : 'Open bulk import'}
+            title={showConfigImport ? 'Close bulk import' : 'Bulk import'}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-300 text-[#1563ff] hover:bg-blue-50 focus:border-[#1563ff] focus:outline-none focus:ring-1 focus:ring-[#1563ff]"
+          >
+            <svg className={`h-4 w-4 ${showConfigImport ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0L8 8m4-4 4 4M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {isNew && !isImport && showConfigImport && (
+        <section className="mb-6 space-y-4 rounded-md border border-gray-200 bg-gray-50 p-4" aria-labelledby="config-import-heading">
+          <div>
+            <h2 id="config-import-heading" className="text-sm font-semibold text-gray-800">Bulk import secret values</h2>
+            <p className="mt-1 text-xs text-gray-500">Paste a large configuration or upload a file. JSON, ENV, YAML, INI, TOML, and Properties values are parsed in your browser and flattened using <span className="font-mono">__</span>.</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <label htmlFor="config-paste" className="block text-xs font-medium text-gray-700">Paste configuration text</label>
+              <textarea
+                id="config-paste"
+                value={pastedConfig}
+                onChange={(event) => setPastedConfig(event.target.value)}
+                placeholder={'Paste JSON, YAML, ENV, INI, TOML, or Properties text here'}
+                className="min-h-56 w-full resize-y rounded-md border border-gray-300 bg-white px-3 py-2 font-mono text-xs focus:border-[#1563ff] focus:outline-none"
+              />
+              <div className="flex items-center gap-2">
+                <label htmlFor="paste-format" className="text-xs text-gray-600">Format</label>
+                <select id="paste-format" value={pasteFormat} onChange={(event) => setPasteFormat(event.target.value as ConfigFormat)} className="rounded border border-gray-300 bg-white px-2 py-1 text-xs">
+                  <option value="auto">Auto-detect</option>
+                  <option value="json">JSON</option>
+                  <option value="env">ENV</option>
+                  <option value="yaml">YAML</option>
+                  <option value="ini">INI</option>
+                  <option value="toml">TOML</option>
+                  <option value="properties">Properties</option>
+                </select>
+                <button type="button" disabled={!pastedConfig.trim() || importingFile} onClick={handlePastedConfig} className="rounded-md bg-[#1563ff] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1250d4] disabled:opacity-50">
+                  Parse pasted text
+                </button>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" checked={includeParentPath} onChange={(event) => handleParentPathChange(event.target.checked)} />
+                Include parent/header in keys
+              </label>
+            </div>
+            <div className="space-y-2">
+              <span className="block text-xs font-medium text-gray-700">Upload configuration file</span>
+              <label className="flex min-h-56 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-gray-300 bg-white px-4 py-8 text-center hover:border-[#1563ff]">
+                <span className="text-sm font-medium text-gray-700">Choose a file</span>
+                <span className="mt-1 text-xs text-gray-500">The file stays in your browser until Save.</span>
+                <input
+                  type="file"
+                  accept=".json,.env,.yaml,.yml,.ini,.cfg,.toml,.properties"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) void handleConfigFile(file);
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+          {importingFile && <p className="text-sm text-gray-500">Reading configuration…</p>}
+          {configImport && (
+            <div className="space-y-3 rounded-md border border-gray-200 bg-white p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="font-medium text-gray-800">Detected {configImport.label}</span>
+                <span className="text-gray-500">{configImport.keyCount} keys · {configImport.payloadSize.toLocaleString()} bytes</span>
+              </div>
+              <div className="max-h-64 overflow-auto rounded border border-gray-100">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-gray-50 text-gray-500">
+                    <tr><th className="px-3 py-2 font-medium">Key</th><th className="px-3 py-2 font-medium">Value</th></tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(configImport.data).map(([key, value]) => (
+                      <tr key={key} className="border-t border-gray-100">
+                        <td className="break-all px-3 py-2 font-mono text-gray-700">{key}</td>
+                        <td className="break-all px-3 py-2 text-gray-600">{value || <span className="text-gray-400">(empty)</span>}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button type="button" onClick={() => { void applyConfigImport(); }} disabled={importingFile} className="rounded-md bg-[#1563ff] px-3 py-2 text-sm font-medium text-white hover:bg-[#1250d4] disabled:opacity-50">
+                Import into editor
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       <form onSubmit={(e) => { void handleSubmit(e); }} className="space-y-6">
         {isNew && (
