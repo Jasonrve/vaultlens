@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
+import fs from 'node:fs';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -9,15 +10,77 @@ import {
   getTemplate,
   saveTemplateOverride as saveTemplateToDisk,
   substituteTemplate,
-  saveTemplateOverride,
   deleteTemplateOverride,
 } from '../lib/devIntegrationLoader.js';
 import { defaultTemplates } from '../lib/devIntegrationTemplates.js';
 import { readAuthMethodsConfig } from './vaultlens-audit.js';
+import {
+  KubernetesError,
+  VSO_RESOURCES,
+  getVsoResource,
+  listVsoResources,
+  listOperatorPods,
+  getPodLogs,
+} from '../lib/kubernetesClient.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+
+function readServiceAccountIdentity(): { serviceAccount?: string; namespace?: string; iamRole?: string } {
+  const tokenPath = config.vaultK8sTokenPath;
+  const basePath = tokenPath.replace(/[/\\]token$/, '');
+  const read = (fileName: string): string | undefined => {
+    try {
+      const value = fs.readFileSync(`${basePath}/${fileName}`, 'utf8').trim();
+      return value || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  return {
+    serviceAccount: process.env['K8S_SERVICE_ACCOUNT_NAME'],
+    namespace: process.env['K8S_SERVICE_ACCOUNT_NAMESPACE'] || read('namespace'),
+    iamRole: process.env['K8S_IAM_ROLE_NAME'] || undefined,
+  };
+}
+
+function sendKubernetesError(res: Response, error: KubernetesError, kubernetesHost?: string): Response {
+  if (error.reason === 'access_denied') {
+    return res.status(403).json({
+      error: error.message,
+      reason: error.reason,
+      identity: readServiceAccountIdentity(),
+      kubernetesHost,
+      diagnostics: error.diagnostics,
+    });
+  }
+  return res.status(error.statusCode).json({ error: error.message, reason: error.reason, kubernetesHost, diagnostics: error.diagnostics });
+}
+
+/**
+ * VSO resource lookups go through VaultLens's own Kubernetes service-account
+ * credentials, not the caller's Vault token — Kubernetes has no concept of the
+ * caller's Vault ACLs to defer to. So instead of a blanket admin requirement,
+ * gate access on whether the caller's own token can already read this specific
+ * auth mount's config in Vault — the same bar as managing that mount at all.
+ */
+async function canReadAuthMountConfig(token: string, method: string): Promise<boolean> {
+  try {
+    const path = `auth/${method}/config`;
+    const resp = await vaultClient.post<Record<string, unknown>>(
+      '/sys/capabilities-self',
+      token,
+      { paths: [path] },
+    );
+    const caps = (resp as { capabilities?: string[] }).capabilities ?? resp[path];
+    const capList = Array.isArray(caps) ? caps as string[] : [];
+    return capList.includes('root') || capList.includes('read');
+  } catch {
+    return false;
+  }
+}
 
 router.use(authMiddleware);
 
@@ -75,6 +138,143 @@ router.get(
       next(error);
     }
   }
+);
+
+// List VSO resources for a Kubernetes auth mount. The downstream request is
+// deliberately deferred until this tab is opened by the client.
+router.get(
+  '/:method/vso-resources',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
+
+      const roleFilter = typeof req.query['role'] === 'string' && req.query['role'] ? req.query['role'] : undefined;
+
+      // Best-effort — if listing roles fails (permissions, etc.) we simply skip
+      // the "this VaultAuth's role no longer exists in Vault" check below.
+      let vaultRoleNames: string[] | undefined;
+      try {
+        const roleList = await vaultClient.list<{ data: { keys: string[] } }>(
+          getRoleListPath(authType, method),
+          req.vaultToken!,
+        );
+        vaultRoleNames = roleList.data.keys;
+      } catch {
+        vaultRoleNames = undefined;
+      }
+
+      const resources = await listVsoResources(method, kubernetesHost, { role: roleFilter, vaultRoleNames }, kubernetesCaCert);
+      return res.json({ resources, supportedKinds: VSO_RESOURCES.map(({ kind, resource }) => ({ kind, resource })) });
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
+);
+
+// List and tail Vault Secrets Operator pod logs for a Kubernetes auth mount's cluster.
+router.get(
+  '/:method/vso-logs',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoLogs) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
+
+      const pods = await listOperatorPods(method, kubernetesHost, undefined, kubernetesCaCert);
+      if (pods.length === 0) {
+        return res.json({ pods: [], selectedPod: null, lines: [] });
+      }
+
+      const requestedPod = typeof req.query['pod'] === 'string' ? req.query['pod'] : undefined;
+      const selected = pods.find((p) => p.name === requestedPod) ?? pods[0];
+      const parsedTailLines = Number.parseInt(String(req.query['tailLines'] ?? '500'), 10);
+      const tailLines = Number.isFinite(parsedTailLines) ? parsedTailLines : 500;
+
+      const text = await getPodLogs(method, kubernetesHost, selected.namespace, selected.name, {
+        container: 'manager',
+        tailLines,
+      }, kubernetesCaCert);
+
+      return res.json({ pods, selectedPod: selected.name, lines: text.split('\n') });
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
+);
+
+// Fetch one allowlisted VSO object as YAML.
+router.get(
+  '/:method/vso-resources/:kind/:resource/:namespace/:name',
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    let kubernetesHost: string | undefined;
+    try {
+      const featureConfig = await readAuthMethodsConfig();
+      if (!featureConfig.enableVsoResources) return res.status(404).json({ error: 'Not found' });
+
+      const method = String(req.params['method']).replace(/\/$/, '');
+      if (!(await canReadAuthMountConfig(req.vaultToken!, method))) {
+        return res.status(403).json({ error: 'You do not have read access to this auth mount' });
+      }
+      const kind = String(req.params['kind']);
+      const resource = String(req.params['resource']);
+      const namespaceValue = String(req.params['namespace']);
+      const name = String(req.params['name']);
+      const namespace = namespaceValue === '_' ? undefined : namespaceValue;
+      const authConfig = await vaultClient.get<{ data: Record<string, unknown> }>(
+        `/auth/${encodeURIComponent(method)}/config`,
+        req.vaultToken!,
+      );
+      const authType = await getAuthTypeForMount(method, req.vaultToken!);
+      if (authType !== 'kubernetes') return res.status(404).json({ error: 'Not found' });
+      kubernetesHost = authConfig.data?.['kubernetes_host'] as string | undefined;
+      if (!kubernetesHost) {
+        throw new KubernetesError('Kubernetes endpoint is not configured', 503);
+      }
+      const kubernetesCaCert = authConfig.data?.['kubernetes_ca_cert'] as string | undefined;
+
+      const result = await getVsoResource(method, kubernetesHost, kind, resource, namespace, name, kubernetesCaCert);
+      return res.json(result);
+    } catch (error) {
+      if (error instanceof KubernetesError) return sendKubernetesError(res, error, kubernetesHost);
+      return next(error);
+    }
+  },
 );
 
 // List roles for a given auth method
@@ -191,6 +391,12 @@ router.post(
       authMethodOperationsTotal.inc({ operation: 'configure' });
       return res.json({ success: true });
     } catch (error) {
+      // Vault 400s on this endpoint are always configuration mistakes (bad
+      // kubernetes_host URL, malformed PEM, etc.), never security-sensitive —
+      // surface the real reason instead of the generic "Vault request failed".
+      if (error instanceof VaultError && error.statusCode === 400) {
+        return res.status(400).json({ error: error.message || 'Invalid configuration' });
+      }
       return next(error);
     }
   }
@@ -270,7 +476,7 @@ router.post(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       const body = req.body as Record<string, unknown>;
@@ -299,7 +505,7 @@ router.delete(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       await vaultClient.delete(
@@ -322,7 +528,7 @@ router.post(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
       const response = await vaultClient.post<{
@@ -352,7 +558,7 @@ router.get(
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
 
@@ -423,10 +629,10 @@ router.delete(
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.params['role']);
       const accessor = String(req.params['accessor']);
-      if (!role || !/^[\w\-]+$/.test(role)) {
+      if (!role || !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
-      if (!accessor || !/^[0-9a-fA-F\-]{5,100}$/.test(accessor)) {
+      if (!accessor || !/^[0-9a-fA-F-]{5,100}$/.test(accessor)) {
         return res.status(400).json({ error: 'Invalid accessor format' });
       }
       await vaultClient.post(
@@ -503,10 +709,10 @@ router.get(
       const mount = String(req.params['method']).replace(/\/$/, '');
       const role = String(req.query['role'] ?? '');
 
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
-      if (role && !/^[\w\-]+$/.test(role)) {
+      if (role && !/^[\w-]+$/.test(role)) {
         return res.status(400).json({ error: 'Invalid role name' });
       }
 
@@ -561,7 +767,7 @@ router.put(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
 
@@ -596,7 +802,7 @@ router.delete(
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const mount = String(req.params['method']).replace(/\/$/, '');
-      if (!mount || !/^[\w\-]+$/.test(mount)) {
+      if (!mount || !/^[\w-]+$/.test(mount)) {
         return res.status(400).json({ error: 'Invalid mount name' });
       }
 
@@ -605,8 +811,6 @@ router.delete(
 
       // Delete disk override so built-in default is restored
       await deleteTemplateOverride(authTypeKey);
-
-      return res.json({ success: true, authType });
 
       return res.json({ success: true, authType });
     } catch (error) {

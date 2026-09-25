@@ -6,6 +6,7 @@ import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { CREDS_SECTION } from '../lib/systemToken.js';
 import { getAvailableTemplates, getTemplate, saveTemplateOverride } from '../lib/devIntegrationLoader.js';
 import { backupsTotal, backupDurationSeconds, lastBackupTimestamp, lastBackupSizeBytes, lastBackupSecretsCount } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
@@ -556,6 +557,10 @@ async function performAppBackup(): Promise<{ filename: string; size: number; cre
   const appConfig: Record<string, Record<string, string>> = {};
   for (const section of sections) {
     if (section.startsWith('_blob_')) continue; // Vault backend mixes blobs into list()
+    // Never export the system AppRole credentials — this backup file is meant to be
+    // copied off-box, and leaking role_id/secret_id would let anyone with a copy
+    // impersonate VaultLens's own privileged Vault identity.
+    if (section === CREDS_SECTION) continue;
     const data = await storage.get(section);
     if (data) appConfig[section] = data;
   }

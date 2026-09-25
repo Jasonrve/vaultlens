@@ -60,7 +60,23 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Secret Management', link: '/features/secrets' },
-            { text: 'Auth Methods', link: '/features/auth-methods' },
+            {
+              text: 'Auth Methods',
+              link: '/features/auth-methods',
+              collapsed: true,
+              items: [
+                { text: 'Backend Auth Methods', link: '/features/auth-methods-index' },
+                { text: 'Kubernetes', link: '/features/auth-methods-kubernetes' },
+                { text: 'AppRole', link: '/features/auth-methods-approle' },
+                { text: 'GitHub', link: '/features/auth-methods-github' },
+                { text: 'OIDC and JWT', link: '/features/auth-methods-oidc-jwt' },
+                { text: 'AWS', link: '/features/auth-methods-aws' },
+                { text: 'GCP', link: '/features/auth-methods-gcp' },
+                { text: 'Azure', link: '/features/auth-methods-azure' },
+                { text: 'LDAP', link: '/features/auth-methods-ldap' },
+                { text: 'UserPass', link: '/features/auth-methods-userpass' },
+              ]
+            },
             { text: 'ACL Policies', link: '/features/policies' },
             { text: 'Identity Management', link: '/features/identity' },
             { text: 'Visualizations', link: '/features/visualizations' },
@@ -91,7 +107,23 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: 'Secret Management', link: '/features/secrets' },
-            { text: 'Auth Methods', link: '/features/auth-methods' },
+            {
+              text: 'Auth Methods',
+              link: '/features/auth-methods',
+              collapsed: true,
+              items: [
+                { text: 'Backend Auth Methods', link: '/features/auth-methods-index' },
+                { text: 'Kubernetes', link: '/features/auth-methods-kubernetes' },
+                { text: 'AppRole', link: '/features/auth-methods-approle' },
+                { text: 'GitHub', link: '/features/auth-methods-github' },
+                { text: 'OIDC and JWT', link: '/features/auth-methods-oidc-jwt' },
+                { text: 'AWS', link: '/features/auth-methods-aws' },
+                { text: 'GCP', link: '/features/auth-methods-gcp' },
+                { text: 'Azure', link: '/features/auth-methods-azure' },
+                { text: 'LDAP', link: '/features/auth-methods-ldap' },
+                { text: 'UserPass', link: '/features/auth-methods-userpass' },
+              ]
+            },
             { text: 'ACL Policies', link: '/features/policies' },
             { text: 'Identity Management', link: '/features/identity' },
             { text: 'Visualizations', link: '/features/visualizations' },

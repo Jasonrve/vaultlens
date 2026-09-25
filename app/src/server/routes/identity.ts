@@ -3,10 +3,12 @@ import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { identityOperationsTotal } from '../lib/metrics.js';
+import { concurrentMap } from '../lib/concurrency.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
 const router = Router();
 const vaultClient = new VaultClient(config.vaultAddr, config.vaultSkipTlsVerify);
+const CONCURRENT_LIMIT = 20;
 
 router.use(authMiddleware);
 
@@ -110,45 +112,43 @@ router.get(
 
       const suggestions: Suggestion[] = [];
 
-      await Promise.all(
-        entityIds.map(async (entityId) => {
-          try {
-            const resp = await vaultClient.get<{
-              data: {
-                id: string;
-                name: string;
-                aliases: Array<{ name: string; mount_type: string }>;
-              };
-            }>(`/identity/entity/id/${entityId}`, token);
+      await concurrentMap(entityIds, CONCURRENT_LIMIT, async (entityId) => {
+        try {
+          const resp = await vaultClient.get<{
+            data: {
+              id: string;
+              name: string;
+              aliases: Array<{ name: string; mount_type: string }>;
+            };
+          }>(`/identity/entity/id/${entityId}`, token);
 
-            const entity = resp.data;
-            const aliases: Array<{ name: string; mount_type: string }> = entity.aliases ?? [];
+          const entity = resp.data;
+          const aliases: Array<{ name: string; mount_type: string }> = entity.aliases ?? [];
 
-            for (const alias of aliases) {
-              if (alias.name) {
-                suggestions.push({
-                  aliasName: alias.name,
-                  entityId: entity.id,
-                  entityName: entity.name,
-                  mountType: alias.mount_type ?? '',
-                });
-              }
-            }
-
-            // Always include the entity name itself as a fallback if no aliases
-            if (aliases.length === 0 && entity.name) {
+          for (const alias of aliases) {
+            if (alias.name) {
               suggestions.push({
-                aliasName: entity.name,
+                aliasName: alias.name,
                 entityId: entity.id,
                 entityName: entity.name,
-                mountType: '',
+                mountType: alias.mount_type ?? '',
               });
             }
-          } catch {
-            // skip inaccessible entities
           }
-        })
-      );
+
+          // Always include the entity name itself as a fallback if no aliases
+          if (aliases.length === 0 && entity.name) {
+            suggestions.push({
+              aliasName: entity.name,
+              entityId: entity.id,
+              entityName: entity.name,
+              mountType: '',
+            });
+          }
+        } catch {
+          // skip inaccessible entities
+        }
+      });
 
       suggestions.sort((a, b) => a.aliasName.localeCompare(b.aliasName));
 
@@ -177,24 +177,22 @@ router.get(
       }
 
       const entities: { id: string; name: string; aliasName: string; groupCount: number; policyCount: number }[] = [];
-      await Promise.all(
-        entityIds.map(async (id) => {
-          try {
-            const resp = await vaultClient.get<{
-              data: { id: string; name: string; group_ids?: string[]; policies?: string[]; aliases?: Array<{ name: string }> };
-            }>(`/identity/entity/id/${id}`, token);
-            entities.push({
-              id: resp.data.id,
-              name: resp.data.name || '',
-              aliasName: resp.data.aliases?.[0]?.name || '',
-              groupCount: resp.data.group_ids?.length || 0,
-              policyCount: resp.data.policies?.length || 0,
-            });
-          } catch {
-            entities.push({ id, name: '', aliasName: '', groupCount: 0, policyCount: 0 });
-          }
-        })
-      );
+      await concurrentMap(entityIds, CONCURRENT_LIMIT, async (id) => {
+        try {
+          const resp = await vaultClient.get<{
+            data: { id: string; name: string; group_ids?: string[]; policies?: string[]; aliases?: Array<{ name: string }> };
+          }>(`/identity/entity/id/${id}`, token);
+          entities.push({
+            id: resp.data.id,
+            name: resp.data.name || '',
+            aliasName: resp.data.aliases?.[0]?.name || '',
+            groupCount: resp.data.group_ids?.length || 0,
+            policyCount: resp.data.policies?.length || 0,
+          });
+        } catch {
+          entities.push({ id, name: '', aliasName: '', groupCount: 0, policyCount: 0 });
+        }
+      });
 
       entities.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
       return res.json({ entities });
@@ -222,23 +220,21 @@ router.get(
       }
 
       const groups: { id: string; name: string; memberCount: number; policyCount: number }[] = [];
-      await Promise.all(
-        groupIds.map(async (id) => {
-          try {
-            const resp = await vaultClient.get<{
-              data: { id: string; name: string; member_entity_ids?: string[]; policies?: string[] };
-            }>(`/identity/group/id/${id}`, token);
-            groups.push({
-              id: resp.data.id,
-              name: resp.data.name || '',
-              memberCount: resp.data.member_entity_ids?.length || 0,
-              policyCount: resp.data.policies?.length || 0,
-            });
-          } catch {
-            groups.push({ id, name: '', memberCount: 0, policyCount: 0 });
-          }
-        })
-      );
+      await concurrentMap(groupIds, CONCURRENT_LIMIT, async (id) => {
+        try {
+          const resp = await vaultClient.get<{
+            data: { id: string; name: string; member_entity_ids?: string[]; policies?: string[] };
+          }>(`/identity/group/id/${id}`, token);
+          groups.push({
+            id: resp.data.id,
+            name: resp.data.name || '',
+            memberCount: resp.data.member_entity_ids?.length || 0,
+            policyCount: resp.data.policies?.length || 0,
+          });
+        } catch {
+          groups.push({ id, name: '', memberCount: 0, policyCount: 0 });
+        }
+      });
 
       groups.sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
       return res.json({ groups });

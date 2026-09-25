@@ -1,8 +1,6 @@
 import { config } from '../../config/index.js';
 import type { ConfigStorageProvider } from './types.js';
 import { FileConfigStorage } from './fileStorage.js';
-// VaultConfigStorage kept for future extension — not used in current builds
-// import { VaultConfigStorage } from './vaultStorage.js';
 import { configStorageOpsTotal, configStorageDurationSeconds } from '../metrics.js';
 
 export type { ConfigStorageProvider } from './types.js';
