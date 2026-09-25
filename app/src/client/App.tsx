@@ -1,3 +1,8 @@
+import { retryQuery } from './lib/requestBackoff';
+import AuditWorkspace from './components/AuditWorkspace';
+import AuditReportsPage from './pages/AuditReportsPage';
+import AuditRunsPage from './pages/AuditRunsPage';
+import AuditSourcesPage from './pages/AuditSourcesPage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -7,6 +12,9 @@ import * as api from './lib/api';
 import Layout from './components/layout/Layout';
 import LoginPage from './components/auth/LoginPage';
 import OidcCallbackPage from './pages/OidcCallbackPage';
+import AuditObjectExceptions from './components/AuditObjectExceptions';
+import AuditRulesPage from './pages/AuditRulesPage';
+import SecurityAuditPage from './pages/SecurityAuditPage';
 import DashboardPage from './pages/DashboardPage';
 import SecretsPage from './pages/SecretsPage';
 import PoliciesPage from './pages/PoliciesPage';
@@ -33,16 +41,19 @@ import LoadingSpinner from './components/common/LoadingSpinner';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
+      retry: retryQuery,
       refetchOnWindowFocus: false,
     },
   },
 });
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   const { isAuthenticated } = useAuthStore();
 
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to={location.pathname.startsWith('/security-audit') ? '/login?returnTo=security-audit' : '/login'} replace />;
+  }
   return <>{children}</>;
 }
 
@@ -159,7 +170,8 @@ function SetupRouteGuard({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { checkAuth, isAuthenticated } = useAuthStore();
+  const location = useLocation();
+  const { checkAuth, isAuthenticated, authCheckError, authRetryAt } = useAuthStore();
   const { loadBranding } = useBrandingStore();
   const [checking, setChecking] = useState(true);
 
@@ -169,6 +181,12 @@ function AppRoutes() {
     checkAuth().finally(() => setChecking(false));
   }, [checkAuth, loadBranding]);
 
+  useEffect(() => {
+    if (!authCheckError) return;
+    const timer = window.setTimeout(() => void checkAuth(), Math.max(1000, authRetryAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [authCheckError, authRetryAt, checkAuth]);
+
   if (checking) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -177,10 +195,20 @@ function AppRoutes() {
     );
   }
 
+  if (authCheckError && !isAuthenticated) {
+    return <main className="flex min-h-screen items-center justify-center bg-white p-6">
+      <div className="max-w-md space-y-4" role="alert">
+        <h1 className="text-lg font-semibold">Session check temporarily unavailable</h1>
+        <p className="text-sm text-slate-600">{authCheckError}</p>
+        <button className="rounded bg-blue-600 px-4 py-2 text-white" onClick={() => void checkAuth()}>Retry session check</button>
+      </div>
+    </main>;
+  }
+
   return (
     <Routes>
       <Route path="/login" element={
-        isAuthenticated ? <Navigate to="/app" replace /> : <LoginPage />
+        isAuthenticated ? <Navigate to={new URLSearchParams(location.search).get('returnTo') === 'security-audit' ? '/security-audit' : '/app'} replace /> : <LoginPage />
       } />
       {/* OIDC popup callback — public, no Layout, no auth guard */}
       <Route path="/oidc-callback/:mountPath" element={<OidcCallbackPage />} />
@@ -232,6 +260,19 @@ function AppRoutes() {
         <Route path="/admin/sharing-audit" element={<VaultLensAuditPage />} />
         <Route path="/tools/share" element={<ShareSecretPage />} />
         <Route path="/tools/generator" element={<SecretGeneratorPage />} />
+      </Route>
+      {/* Read-only audit does not need background-service provisioning. */}
+      <Route path="/security-audit" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route element={<AuditWorkspace />}>
+          <Route index element={<Navigate to="findings" replace />} />
+          <Route path="findings" element={<SecurityAuditPage />} />
+          <Route path="runs" element={<AuditRunsPage />} />
+          <Route path="reports" element={<AuditReportsPage />} />
+          <Route path="checks" element={<AuditRulesPage />} />
+          <Route path="exceptions" element={<AuditObjectExceptions />} />
+          <Route path="sources" element={<AuditSourcesPage />} />
+          <Route path="rules" element={<Navigate to="../checks" replace />} />
+        </Route>
       </Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>

@@ -37,6 +37,21 @@ jobs:
         working-directory: app
         run: npm run build
 
+  security-audit-tests:
+    name: Security Audit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - run: npm run test:security-audit
+        working-directory: app
+
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest

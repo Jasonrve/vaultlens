@@ -32,6 +32,7 @@ export default defineConfig({
           { text: 'Architecture', link: '/architecture/overview' },
           { text: 'System Token', link: '/architecture/system-token' },
           { text: 'Security', link: '/architecture/security' },
+            { text: 'Security Audit', link: '/architecture/security-audit' },
         ]
       },
       {
@@ -62,6 +63,7 @@ export default defineConfig({
             { text: 'Secret Management', link: '/features/secrets' },
             { text: 'Auth Methods', link: '/features/auth-methods' },
             { text: 'ACL Policies', link: '/features/policies' },
+            { text: 'Security Audit', link: '/features/security-audit' },
             { text: 'Identity Management', link: '/features/identity' },
             { text: 'Visualizations', link: '/features/visualizations' },
             { text: 'Permission Tester', link: '/features/permission-tester' },
@@ -93,6 +95,7 @@ export default defineConfig({
             { text: 'Secret Management', link: '/features/secrets' },
             { text: 'Auth Methods', link: '/features/auth-methods' },
             { text: 'ACL Policies', link: '/features/policies' },
+            { text: 'Security Audit', link: '/features/security-audit' },
             { text: 'Identity Management', link: '/features/identity' },
             { text: 'Visualizations', link: '/features/visualizations' },
             { text: 'Permission Tester', link: '/features/permission-tester' },
@@ -122,6 +125,7 @@ export default defineConfig({
             { text: 'Overview', link: '/architecture/overview' },
             { text: 'System Token', link: '/architecture/system-token' },
             { text: 'Security', link: '/architecture/security' },
+            { text: 'Security Audit', link: '/architecture/security-audit' },
           ]
         }
       ],
@@ -140,6 +144,7 @@ export default defineConfig({
             { text: 'Overview', link: '/architecture/overview' },
             { text: 'System Token', link: '/architecture/system-token' },
             { text: 'Security', link: '/architecture/security' },
+            { text: 'Security Audit', link: '/architecture/security-audit' },
           ]
         }
       ]
