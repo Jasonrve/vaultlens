@@ -73,7 +73,11 @@ subjects:
   namespace: default
 YAML
 
-until TOKEN=$(kubectl create token vaultlens-vso-reader -n default 2>/dev/null) && [ -n "$TOKEN" ]; do
+# --duration is required here: this file is written once by this one-shot
+# fixture container and never regenerated for the life of the stack, so the
+# default 1h token TTL expires mid dev-session and every downstream VSO call
+# starts failing with a 401 that has nothing to do with permissions.
+until TOKEN=$(kubectl create token vaultlens-vso-reader -n default --duration=24h 2>/dev/null) && [ -n "$TOKEN" ]; do
   sleep 2
 done
 printf '%s' "$TOKEN" > /shared/token
