@@ -5,6 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
 import { authMethodOperationsTotal } from '../lib/metrics.js';
+import { invalidateResourceCache } from '../lib/resourceCache.js';
 import {
   getTemplate,
   saveTemplateOverride as saveTemplateToDisk,
@@ -285,6 +286,11 @@ router.post(
         req.vaultToken!,
         body
       );
+      // POST is create-or-update — invalidate both the role's own cached detail
+      // (graph.ts's auth-policy-map/policy-relationships reverse index) and the
+      // mount's role list, since we can't cheaply tell which case this was.
+      invalidateResourceCache(`role:${mount}:${role}`);
+      invalidateResourceCache(`role-list:${mount}`);
       return res.json({ success: true, method: mount, role });
     } catch (error) {
       return next(error);
@@ -306,6 +312,8 @@ router.delete(
         `/auth/${encodeURIComponent(mount)}/role/${encodeURIComponent(role)}`,
         req.vaultToken!
       );
+      invalidateResourceCache(`role:${mount}:${role}`);
+      invalidateResourceCache(`role-list:${mount}`);
       return res.json({ success: true });
     } catch (error) {
       return next(error);

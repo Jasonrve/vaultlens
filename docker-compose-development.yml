@@ -62,7 +62,7 @@ services:
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "root"
-      VAULT_AUDIT_SOCKET_VAULT_ADDRESS: "${VAULT_AUDIT_SOCKET_VAULT_ADDRESS:-host.docker.internal:9090}"
+      VAULT_AUDIT_SOCKET_VAULT_ADDRESS: "${VAULT_AUDIT_SOCKET_VAULT_ADDRESS:-vaultlens:9090}"
     volumes:
       - ./vault/scripts:/vault/scripts:ro
     entrypoint: /bin/sh

@@ -17,30 +17,6 @@ interface Props {
   onClose: () => void;
 }
 
-/** Extract the subgraph reachable from rootNodeId (BFS) */
-function extractSubgraph(data: GraphData, rootNodeId: string): GraphData {
-  const childMap = new Map<string, string[]>();
-  for (const edge of data.edges) {
-    if (!childMap.has(edge.source)) childMap.set(edge.source, []);
-    childMap.get(edge.source)!.push(edge.target);
-  }
-  const reachable = new Set<string>([rootNodeId]);
-  const queue = [rootNodeId];
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    for (const child of childMap.get(cur) ?? []) {
-      if (!reachable.has(child)) {
-        reachable.add(child);
-        queue.push(child);
-      }
-    }
-  }
-  return {
-    nodes: data.nodes.filter((n) => reachable.has(n.id)),
-    edges: data.edges.filter((e) => reachable.has(e.source) && reachable.has(e.target)),
-  };
-}
-
 const NODE_COLORS: Record<string, string> = {
   policy: '#10b981',
   secretPath: '#60A5FA',
@@ -73,12 +49,11 @@ export default function RelationshipGraphModal({ entityType, entityId, entityLab
         const data = await api.getUserIdentityMap({ groupId: entityId });
         setGraphData(data);
       } else if (entityType === 'authMethod') {
-        // Fetch the full auth-policy map, then filter to the authMethod subtree
-        const data = await api.getAuthPolicyMap();
-        // Auth method node IDs are formatted as auth-<normalizedMountPath>
-        const normalizedId = `auth-${entityId.replace(/\/$/, '')}`;
-        const subgraph = extractSubgraph(data, normalizedId);
-        setGraphData(subgraph.nodes.length > 0 ? subgraph : data);
+        // Assembles this one mount's roles + policies via the scoped
+        // auth-policy-map expand calls (the endpoint no longer returns
+        // everything in one call — see api.getAuthMethodSubgraph).
+        const data = await api.getAuthMethodSubgraph(entityId);
+        setGraphData(data);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load graph');

@@ -19,7 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 import * as api from '../../lib/api';
-import type { GraphData } from '../../types';
+import type { GraphData, GraphNode, GraphEdge } from '../../types';
 import {
   AuthIcon,
   NODE_TYPES,
@@ -132,6 +132,28 @@ function collectSubtreeIds(
   return result;
 }
 
+/** Merge a fetched-on-expand result into the existing graph, deduping by id. */
+function mergeGraphData(prev: GraphData, addition: { nodes: GraphNode[]; edges: GraphEdge[] }): GraphData {
+  const nodeIds = new Set(prev.nodes.map((n) => n.id));
+  const edgeIds = new Set(prev.edges.map((e) => e.id));
+  const newNodes = addition.nodes.filter((n) => !nodeIds.has(n.id));
+  const newEdges = addition.edges.filter((e) => !edgeIds.has(e.id));
+  if (newNodes.length === 0 && newEdges.length === 0) return prev;
+  return { ...prev, nodes: [...prev.nodes, ...newNodes], edges: [...prev.edges, ...newEdges] };
+}
+
+/**
+ * Whether a node type can even be expanded via a fetch-on-demand call.
+ * secretPath is always a leaf; authMethod only expands when the summary
+ * response said its auth type supports roles (data.hasRoles) — the actual
+ * role list/count is only fetched once the node is expanded.
+ */
+function canExpandType(node: GraphNode): boolean {
+  if (node.type === 'secretPath') return false;
+  if (node.type === 'authMethod') return Boolean(node.data.hasRoles);
+  return true;
+}
+
 // ── Custom node type ─────────────────────────────────────────────────────────
 // ExpandableNodeData, ExpandableNode, NODE_TYPES are imported from graphNodeTypes
 
@@ -193,6 +215,8 @@ interface GraphCanvasProps {
   childMap: Map<string, string[]>;
   rootIds: string[];
   expandedIds: Set<string>;
+  expandableIds: Set<string>;
+  expandingIds: Set<string>;
   onToggle: (id: string) => void;
   onQuickView: (node: Node) => void;
   highlightedIds: Set<string>;
@@ -206,6 +230,8 @@ function GraphCanvas({
   childMap,
   rootIds,
   expandedIds,
+  expandableIds,
+  expandingIds,
   onToggle,
   onQuickView,
   highlightedIds,
@@ -271,9 +297,10 @@ function GraphCanvas({
             data: {
               label: raw.data.label,
               color: nodeColors[raw.type] ?? '#6b7280',
-              hasChildren: (childMap.get(id)?.length ?? 0) > 0,
+              hasChildren: expandableIds.has(id),
               isExpanded: expandedIds.has(id),
               isHighlighted: highlightedIds.has(id),
+              isLoadingChildren: expandingIds.has(id),
               isAuthPath,
               authType: raw.data.authType as string | undefined,
               // Pass through extra node data for quick-view panel
@@ -283,7 +310,7 @@ function GraphCanvas({
             } satisfies ExpandableNodeData,
           };
         }),
-    [visibleNodeIds, nodeMap, childMap, positions, expandedIds, highlightedIds, nodeColors],
+    [visibleNodeIds, nodeMap, positions, expandedIds, expandableIds, expandingIds, highlightedIds, nodeColors],
   );
 
   const edges: Edge[] = useMemo(
@@ -803,6 +830,16 @@ interface GraphExplorerProps {
   error: string | null;
   hideSearch?: boolean;
   autoExpandRoots?: boolean;
+  /**
+   * When provided, expanding a node with no already-known children calls this
+   * to fetch just that node's one-hop neighborhood instead of assuming `data`
+   * already contains everything. The result is merged into the graph and the
+   * node is only re-fetched if it's re-collapsed and re-expanded after a full
+   * `data` prop change (e.g. a new search root) — not on every toggle.
+   */
+  onExpandNode?: (node: GraphNode) => Promise<{ nodes: GraphNode[]; edges: GraphEdge[] } | null>;
+  /** Overrides the default "No data available" message when `data` is null/empty. */
+  emptyPrompt?: string;
 }
 
 export default function GraphExplorer({
@@ -812,6 +849,8 @@ export default function GraphExplorer({
   error,
   hideSearch = false,
   autoExpandRoots = false,
+  onExpandNode,
+  emptyPrompt,
 }: GraphExplorerProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
@@ -820,24 +859,52 @@ export default function GraphExplorer({
   const [quickViewNode, setQuickViewNode] = useState<QuickViewNode | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Merged view of `data` plus anything fetched on-demand via onExpandNode.
+  const [mergedData, setMergedData] = useState<GraphData | null>(data);
+  // Nodes we've already asked onExpandNode about (whether or not it returned children) —
+  // prevents re-fetching a confirmed-empty node on every expand click.
+  const [fetchedNodeIds, setFetchedNodeIds] = useState<Set<string>>(new Set());
+  const [expandingIds, setExpandingIds] = useState<Set<string>>(new Set());
+
   const { childMap, parentMap, rootIds } = useMemo(() => {
-    if (!data) return { childMap: new Map(), parentMap: new Map(), rootIds: [] };
+    if (!mergedData) return { childMap: new Map(), parentMap: new Map(), rootIds: [] };
 
     const childMap = new Map<string, string[]>();
     const parentMap = new Map<string, string[]>();
 
-    for (const edge of data.edges) {
+    for (const edge of mergedData.edges) {
       if (!childMap.has(edge.source)) childMap.set(edge.source, []);
       childMap.get(edge.source)!.push(edge.target);
       if (!parentMap.has(edge.target)) parentMap.set(edge.target, []);
       parentMap.get(edge.target)!.push(edge.source);
     }
 
-    const rootIds = data.nodes
+    const rootIds = mergedData.nodes
       .filter((n) => !parentMap.has(n.id) || parentMap.get(n.id)!.length === 0)
       .map((n) => n.id);
 
     return { childMap, parentMap, rootIds };
+  }, [mergedData]);
+
+  const expandableIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (!mergedData) return ids;
+    for (const n of mergedData.nodes) {
+      if ((childMap.get(n.id)?.length ?? 0) > 0) {
+        ids.add(n.id);
+      } else if (onExpandNode && !fetchedNodeIds.has(n.id) && canExpandType(n)) {
+        ids.add(n.id);
+      }
+    }
+    return ids;
+  }, [mergedData, childMap, onExpandNode, fetchedNodeIds]);
+
+  // Reset the merged/fetch state whenever a brand-new `data` payload arrives
+  // (new tab, refresh, or a new search root) — not on every render.
+  useEffect(() => {
+    setMergedData(data);
+    setFetchedNodeIds(new Set());
+    setExpandingIds(new Set());
   }, [data]);
 
   useEffect(() => {
@@ -883,24 +950,59 @@ export default function GraphExplorer({
 
   const toggleExpanded = useCallback(
     (id: string) => {
-      setExpandedIds((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) {
+      const isCurrentlyExpanded = expandedIds.has(id);
+
+      if (isCurrentlyExpanded) {
+        setExpandedIds((prev) => {
+          const next = new Set(prev);
           const remove = (nodeId: string) => {
             next.delete(nodeId);
             for (const childId of childMap.get(nodeId) ?? []) remove(childId);
           };
           remove(id);
-        } else {
-          next.add(id);
-        }
-        return next;
-      });
-      setFocusNodeId(id);
-      // Don't trigger fitView when expanding — let the user expand in place.
-      // fitViewTrigger is only used for search results and the initial load animation.
+          return next;
+        });
+        setFocusNodeId(id);
+        return;
+      }
+
+      // Expanding. If we already know this node's children (from the initial
+      // data or an earlier fetch), just reveal them — no new request.
+      const node = mergedData?.nodes.find((n) => n.id === id);
+      const hasKnownChildren = (childMap.get(id)?.length ?? 0) > 0;
+      const needsFetch = Boolean(onExpandNode) && !!node && !hasKnownChildren
+        && !fetchedNodeIds.has(id) && canExpandType(node);
+
+      if (!needsFetch) {
+        setExpandedIds((prev) => new Set(prev).add(id));
+        setFocusNodeId(id);
+        // Don't trigger fitView when expanding — let the user expand in place.
+        // fitViewTrigger is only used for search results and the initial load animation.
+        return;
+      }
+
+      setExpandingIds((prev) => new Set(prev).add(id));
+      onExpandNode!(node!)
+        .then((result) => {
+          setFetchedNodeIds((prev) => new Set(prev).add(id));
+          if (result && (result.nodes.length > 0 || result.edges.length > 0)) {
+            setMergedData((prev) => mergeGraphData(prev ?? { nodes: [], edges: [] }, result));
+          }
+          setExpandedIds((prev) => new Set(prev).add(id));
+          setFocusNodeId(id);
+        })
+        .catch(() => {
+          // Leave it unfetched so clicking again retries, rather than getting stuck.
+        })
+        .finally(() => {
+          setExpandingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        });
     },
-    [childMap],
+    [expandedIds, childMap, mergedData, onExpandNode, fetchedNodeIds],
   );
 
   const handleQuickView = useCallback((node: Node) => {
@@ -918,12 +1020,12 @@ export default function GraphExplorer({
 
   useEffect(() => {
     const term = search.trim().toLowerCase();
-    if (!data || !term) {
+    if (!mergedData || !term) {
       setFitViewTrigger((n) => n + 1);
       return;
     }
 
-    const matches = data.nodes.filter((n) =>
+    const matches = mergedData.nodes.filter((n) =>
       n.data.label.toLowerCase().includes(term),
     );
     if (matches.length === 0) return;
@@ -940,15 +1042,15 @@ export default function GraphExplorer({
       return next;
     });
     setFitViewTrigger((n) => n + 1);
-  }, [search, data, parentMap]);
+  }, [search, mergedData, parentMap]);
 
   const highlightedIds = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!data || !term) return new Set<string>();
+    if (!mergedData || !term) return new Set<string>();
     return new Set(
-      data.nodes.filter((n) => n.data.label.toLowerCase().includes(term)).map((n) => n.id),
+      mergedData.nodes.filter((n) => n.data.label.toLowerCase().includes(term)).map((n) => n.id),
     );
-  }, [data, search]);
+  }, [mergedData, search]);
 
   if (loading) {
     return (
@@ -966,10 +1068,10 @@ export default function GraphExplorer({
     );
   }
 
-  if (!data || data.nodes.length === 0) {
+  if (!mergedData || mergedData.nodes.length === 0) {
     return (
       <div className="flex h-[600px] items-center justify-center rounded-md border border-gray-200 bg-white">
-        <p className="text-sm text-gray-400">No data available</p>
+        <p className="text-sm text-gray-400">{emptyPrompt ?? 'No data available'}</p>
       </div>
     );
   }
@@ -1013,11 +1115,13 @@ export default function GraphExplorer({
       <div className="relative h-[600px] rounded-md border border-gray-200 bg-white">
         <ReactFlowProvider>
           <GraphCanvas
-            data={data}
+            data={mergedData}
             nodeColors={nodeColors}
             childMap={childMap}
             rootIds={rootIds}
             expandedIds={expandedIds}
+            expandableIds={expandableIds}
+            expandingIds={expandingIds}
             onToggle={toggleExpanded}
             onQuickView={handleQuickView}
             highlightedIds={highlightedIds}
@@ -1039,7 +1143,7 @@ export default function GraphExplorer({
         <div className="flex items-center gap-3 text-xs text-gray-400">
           <span>
             {rootIds.length} root node{rootIds.length !== 1 ? 's' : ''} · {expandedIds.size} expanded
-            · {data.nodes.length} total
+            · {mergedData.nodes.length} total
           </span>
           {highlightedIds.size > 0 && (
             <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">

@@ -33,6 +33,8 @@ export interface ExpandableNodeData {
   hasChildren: boolean;
   isExpanded: boolean;
   isHighlighted: boolean;
+  /** True while an on-demand expand fetch for this node is in flight. */
+  isLoadingChildren?: boolean;
   isAuthPath?: boolean;
   authType?: string;
   [key: string]: unknown;
@@ -59,7 +61,14 @@ export const ExpandableNode = memo(function ExpandableNode({
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <span className="max-w-[110px] overflow-hidden text-ellipsis whitespace-nowrap">{data.label}</span>
-      {data.hasChildren && (
+      {data.isLoadingChildren ? (
+        <span
+          className="ml-2 flex h-4 w-4 shrink-0 animate-pulse items-center justify-center rounded-full bg-white/25 text-[10px] font-bold leading-none text-white"
+          title="Loading…"
+        >
+          …
+        </span>
+      ) : data.hasChildren && (
         <span
           className="ml-2 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/25 text-[10px] font-bold leading-none text-white"
           title={data.isExpanded ? 'Collapse' : 'Expand'}

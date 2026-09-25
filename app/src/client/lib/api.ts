@@ -399,8 +399,10 @@ export interface EntitySuggestion {
   mountType: string;
 }
 
-export async function getEntitySuggestions() {
-  const { data } = await api.get<{ suggestions: EntitySuggestion[] }>('/identity/entity-suggestions');
+export async function getEntitySuggestions(params?: { search?: string; limit?: number }) {
+  const { data } = await api.get<{ suggestions: EntitySuggestion[] }>('/identity/entity-suggestions', {
+    params,
+  });
   return data.suggestions;
 }
 
@@ -419,18 +421,20 @@ export async function getGroups() {
   return data.groupIds;
 }
 
-export async function getEntitiesSummary() {
-  const { data } = await api.get<{
-    entities: { id: string; name: string; aliasName: string; groupCount: number; policyCount: number }[];
-  }>('/identity/entities-summary');
-  return data.entities;
+export interface EntitySummaryRow { id: string; name: string; aliasName: string; groupCount: number; policyCount: number }
+export interface EntitiesSummaryResult { entities: EntitySummaryRow[]; total: number; offset: number; limit: number }
+
+export async function getEntitiesSummary(params?: { search?: string; offset?: number; limit?: number }) {
+  const { data } = await api.get<EntitiesSummaryResult>('/identity/entities-summary', { params });
+  return data;
 }
 
-export async function getGroupsSummary() {
-  const { data } = await api.get<{
-    groups: { id: string; name: string; memberCount: number; policyCount: number }[];
-  }>('/identity/groups-summary');
-  return data.groups;
+export interface GroupSummaryRow { id: string; name: string; memberCount: number; policyCount: number }
+export interface GroupsSummaryResult { groups: GroupSummaryRow[]; total: number; offset: number; limit: number }
+
+export async function getGroupsSummary(params?: { search?: string; offset?: number; limit?: number }) {
+  const { data } = await api.get<GroupsSummaryResult>('/identity/groups-summary', { params });
+  return data;
 }
 
 export async function resolveNames(entityIds: string[], groupIds: string[]) {
@@ -449,23 +453,26 @@ export async function getGroup(id: string) {
 }
 
 // ── Graph ─────────────────────────────────────────────────
-export async function getAuthPolicyMap(refresh = false) {
+// Each graph endpoint defaults to a cheap summary (no params) and expands one
+// hop at a time via the params below — see app/src/server/routes/graph.ts for
+// the full contract. `refresh: true` bypasses server-side caching.
+export async function getAuthPolicyMap(params?: { mount?: string; role?: string; refresh?: boolean }) {
   const { data } = await api.get<GraphData>('/graph/auth-policy-map', {
-    params: refresh ? { refresh: 'true' } : undefined,
+    params: params?.refresh ? { ...params, refresh: 'true' } : params,
   });
   return data;
 }
 
-export async function getPolicySecretMap(refresh = false) {
+export async function getPolicySecretMap(params?: { policy?: string; refresh?: boolean }) {
   const { data } = await api.get<GraphData>('/graph/policy-secret-map', {
-    params: refresh ? { refresh: 'true' } : undefined,
+    params: params?.refresh ? { ...params, refresh: 'true' } : params,
   });
   return data;
 }
 
-export async function getIdentityMap(refresh = false) {
+export async function getIdentityMap(params?: { entityId?: string; groupId?: string; refresh?: boolean }) {
   const { data } = await api.get<GraphData>('/graph/identity-map', {
-    params: refresh ? { refresh: 'true' } : undefined,
+    params: params?.refresh ? { ...params, refresh: 'true' } : params,
   });
   return data;
 }
@@ -483,9 +490,9 @@ export async function getUserIdentityMap(options?: { entityName?: string; entity
   return data;
 }
 
-export async function getPolicyRelationshipsMap(refresh = false) {
+export async function getPolicyRelationshipsMap(params?: { policy?: string; refresh?: boolean }) {
   const { data } = await api.get<GraphData>('/graph/policy-relationships', {
-    params: refresh ? { refresh: 'true' } : undefined,
+    params: params?.refresh ? { ...params, refresh: 'true' } : params,
   });
   return data;
 }
@@ -495,6 +502,38 @@ export async function getSecretPathRelationships(path: string) {
     params: { path },
   });
   return data;
+}
+
+/**
+ * Assembles a full (small, bounded-to-one-mount) subgraph for a single auth
+ * method — mount node, its roles, and each role's policies — by combining
+ * the mount summary with the one-hop auth-policy-map expand calls. Used by
+ * RelationshipGraphModal, which wants the whole picture for one known mount
+ * up front rather than progressive expand-on-click.
+ */
+export async function getAuthMethodSubgraph(mountPath: string): Promise<GraphData> {
+  const normalized = mountPath.replace(/\/$/, '');
+  const mountId = `auth-${normalized}`;
+
+  const [summary, rolesResp] = await Promise.all([
+    getAuthPolicyMap(),
+    getAuthPolicyMap({ mount: normalized }),
+  ]);
+
+  const mountNode = summary.nodes.find((n) => n.id === mountId);
+  const nodes = mountNode ? [mountNode, ...rolesResp.nodes] : [...rolesResp.nodes];
+  const edges = [...rolesResp.edges];
+
+  const roleNames = rolesResp.nodes.filter((n) => n.type === 'role').map((n) => n.data.label as string);
+  const policyResults = await Promise.all(
+    roleNames.map((roleName) => getAuthPolicyMap({ mount: normalized, role: roleName })),
+  );
+  for (const result of policyResults) {
+    nodes.push(...result.nodes);
+    edges.push(...result.edges);
+  }
+
+  return { nodes, edges };
 }
 
 // ── Sharing ───────────────────────────────────────────────
