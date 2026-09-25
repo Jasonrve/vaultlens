@@ -49,9 +49,9 @@ echo ""
 echo "→ Seeding example secrets..."
 
 vault kv put kv/product/service/nprd/secret \
-  database_url="postgresql://app:s3cret@db.nprd.internal:5432/appdb" \
-  api_key="nprd-ak-f8a2b3c4d5e6f7a8b9c0" \
-  jwt_secret="nprd-jwt-super-secret-key-12345"
+  database_url="postgresql://db.nprd.internal:5432/appdb" \
+  api_key="example-nprd-api-key" \
+  jwt_secret="example-nprd-jwt-secret"
 echo "  ✓ kv/product/service/nprd/secret"
 
 vault kv put kv/product/service/nprd/config \
@@ -61,18 +61,18 @@ vault kv put kv/product/service/nprd/config \
 echo "  ✓ kv/product/service/nprd/config"
 
 vault kv put kv/product/service/nprd/certificates \
-  tls_cert="-----BEGIN CERTIFICATE-----\nMIIBxTCCAWugAwIBAgIJAJ...(example)\n-----END CERTIFICATE-----" \
-  tls_key="-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG...(example)\n-----END PRIVATE KEY-----"
+  tls_cert="example-certificate-data" \
+  tls_key="example-key-data"
 echo "  ✓ kv/product/service/nprd/certificates"
 
 vault kv put kv/product/service/prod/secret \
-  database_url="postgresql://app:pr0d-s3cret@db.prod.internal:5432/appdb" \
-  api_key="prod-ak-a1b2c3d4e5f6a7b8c9d0"
+  database_url="postgresql://db.prod.internal:5432/appdb" \
+  api_key="example-prod-api-key"
 echo "  ✓ kv/product/service/prod/secret"
 
 vault kv put kv/shared/team-credentials \
-  ci_token="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-  deploy_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample"
+  ci_token="example-ci-token" \
+  deploy_key="example-deploy-key"
 echo "  ✓ kv/shared/team-credentials"
 
 # Seed a multi-version secret for testing the Version History UI (10 writes = 10 versions)
@@ -272,21 +272,21 @@ vault auth enable \
   userpass 2>/dev/null || echo "  (already enabled)"
 
 vault write auth/userpass/users/alice \
-  password="Password1!" \
+  password="example-password" \
   token_policies="admin,vaultlens-admin" \
   token_ttl="8h" \
   token_max_ttl="24h"
 echo "  ✓ UserPass user 'alice' created (admin, vaultlens-admin)"
 
 vault write auth/userpass/users/bob \
-  password="Password1!" \
+  password="example-password" \
   token_policies="app-specific" \
   token_ttl="8h" \
   token_max_ttl="24h"
 echo "  ✓ UserPass user 'bob' created (app-specific)"
 
 vault write auth/userpass/users/charlie \
-  password="Password1!" \
+  password="example-password" \
   token_policies="readonly" \
   token_ttl="8h" \
   token_max_ttl="24h"
@@ -558,9 +558,9 @@ echo "    okta/                (demo Okta org)"
 echo "    radius/              (demo RADIUS server)"
 echo ""
 echo "  ── Persistent Test Credentials (UserPass) ──"
-echo "    Username: alice   | Password: Password1! | Policies: admin, vaultlens-admin"
-echo "    Username: bob     | Password: Password1! | Policies: app-specific"
-echo "    Username: charlie | Password: Password1! | Policies: readonly"
+echo "    Username: alice   | Password: example-password | Policies: admin, vaultlens-admin"
+echo "    Username: bob     | Password: example-password | Policies: app-specific"
+echo "    Username: charlie | Password: example-password | Policies: readonly"
 echo ""
 echo "  ── Ephemeral Test Tokens (expire in 24h) ──"
 echo "    Root:              root         (full access)"

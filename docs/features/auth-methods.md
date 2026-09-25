@@ -11,6 +11,8 @@ The **Access → Auth Methods** page shows all enabled auth methods with:
 - Description (rendered as rich labels and links — see below)
 - Accessor ID
 
+For backend-specific guidance, see the [Backend Auth Methods](auth-methods-index) submenu. It covers the identity model, configuration, role or policy mapping, and security considerations for each supported backend.
+
 ## Description Labels & Links
 
 VaultLens parses the **description** field of each auth method and renders it as visual chips and link pills automatically — no extra configuration needed.
@@ -143,6 +145,123 @@ Access to a Kubernetes auth mount's own cluster is resolved per mount, in this o
 5. **Local ServiceAccount token** — if none of the above apply, VaultLens falls back to its own pod's mounted ServiceAccount token (`VAULT_K8S_TOKEN_PATH`), which only makes sense when the Kubernetes auth mount's cluster *is* the cluster VaultLens itself runs in.
 
 For all EKS IAM role paths, the pod's IAM role must be allowed (via the target EKS cluster's `aws-auth` ConfigMap or access entries) to authenticate, and the resulting Kubernetes identity needs `get`/`list` on the VSO resources. No token is stored anywhere — it's signed fresh for each request. Auto-detection (step 2) additionally requires the pod's IAM role to have the read-only `eks:ListClusters` and `eks:DescribeCluster` permissions in that region; the mount-name guess (step 4) requires neither.
+
+#### EKS setup with IRSA
+
+IRSA lets VaultLens use the IAM role attached to its own Kubernetes ServiceAccount to create short-lived EKS bearer tokens. VaultLens does not need a long-lived Kubernetes token for this path.
+
+1. Create or select an IAM OIDC provider for the EKS cluster that runs VaultLens.
+2. Create an IAM role whose trust policy allows `sts:AssumeRoleWithWebIdentity` for the VaultLens namespace and ServiceAccount. Restrict the trust subject to the exact ServiceAccount, for example `system:serviceaccount:vaultlens:vaultlens`.
+3. Give the role `eks:DescribeCluster` and `eks:ListClusters` only when you want endpoint auto-detection. These permissions are not needed when every mount sets an explicit cluster name.
+4. Allow that IAM principal into each target EKS cluster. Use an EKS access entry with a Kubernetes group, or map the role in `aws-auth` on older clusters.
+5. Bind that group to the read-only VSO `ClusterRole` shown below.
+
+Example Helm values for a VaultLens release in namespace `vaultlens`:
+
+```yaml
+serviceAccount:
+  create: true
+  name: vaultlens
+  automount: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/vaultlens-vso-reader
+
+# Use the exact EKS cluster name when the auth mount name is different.
+extraEnv:
+  - name: K8S_ACCESS_KUBERNETES_PROD_EKS_CLUSTER
+    value: production-eks
+  - name: K8S_ACCESS_KUBERNETES_PROD_EKS_REGION
+    value: eu-west-1
+```
+
+Install or upgrade with `helm upgrade --install`, then verify that the VaultLens pod has the expected ServiceAccount and role annotation. For endpoint auto-detection, omit the `_EKS_CLUSTER` variable and ensure the EKS endpoint belongs to the AWS account visible to the IAM role. For a cross-account cluster, set the explicit cluster name; `ListClusters` cannot discover clusters in another AWS account.
+
+The IAM role alone is not enough. The target cluster must authorize the role, for example with an access entry:
+
+```bash
+aws eks create-access-entry \
+  --cluster-name production-eks \
+  --principal-arn arn:aws:iam::123456789012:role/vaultlens-vso-reader \
+  --kubernetes-groups vaultlens-vso-readers
+```
+
+Then apply the `ClusterRoleBinding` below, using the same group name. If the target cluster uses `aws-auth` instead of access entries, map the IAM role to `vaultlens-vso-readers` there instead.
+
+#### Kubernetes ServiceAccount token setup
+
+Use this path when the downstream cluster is the same cluster where VaultLens runs, or when you intentionally provide a bearer token for another cluster. The default fallback reads the VaultLens pod's mounted token from `VAULT_K8S_TOKEN_PATH`; with the Helm chart, leave `serviceAccount.automount: true` and use the default path unless your deployment changes it.
+
+Apply a least-privilege reader to the target cluster:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vaultlens-vso-reader
+  namespace: vaultlens
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vaultlens-vso-reader
+rules:
+  - apiGroups: ["secrets.hashicorp.com"]
+    resources:
+      - vaultconnections
+      - vaultauths
+      - vaultauthglobals
+      - vaultstaticsecrets
+      - vaultdynamicsecrets
+      - vaultpkisecrets
+      - secrettransformations
+      - csisecrets
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts", "secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vaultlens-vso-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vaultlens-vso-reader
+subjects:
+  - kind: ServiceAccount
+    name: vaultlens-vso-reader
+    namespace: vaultlens
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vaultlens-vso-reader-irsa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vaultlens-vso-reader
+subjects:
+  - kind: Group
+    name: vaultlens-vso-readers
+```
+
+The ServiceAccount binding is used by token-based access. The group binding is used by the IRSA access-entry example above; keep both if the same installation supports both access methods.
+
+For same-cluster access, either run VaultLens with this ServiceAccount or grant the same role to the ServiceAccount already used by the VaultLens deployment. For a different cluster, create the ServiceAccount there and provide its token through the matching mount variable. A short-lived token can be created with `kubectl create token vaultlens-vso-reader --duration=1h`, but it must be rotated before it expires. If a longer-lived token is required, store it in a secret manager or a protected Kubernetes Secret and inject it into VaultLens rather than committing it to Helm values:
+
+```yaml
+extraEnv:
+  - name: K8S_ACCESS_KUBERNETES_PROD
+    valueFrom:
+      secretKeyRef:
+        name: downstream-kubernetes-token
+        key: token
+```
+
+`K8S_ACCESS_<MOUNT>` uses the auth mount path with non-alphanumeric characters converted to underscores. For a mount named `kubernetes-prod`, use `K8S_ACCESS_KUBERNETES_PROD`; the `K8S_ACCESS_PROD` alias is also accepted. Do not set both a static token and the EKS variables for the same mount unless you deliberately want the static-token fallback.
+
+The `secrets` permission above is used only to check whether a VSO destination object exists; VaultLens does not display Secret values. The VSO Resources tab does not need pod permissions. Enable the separate VSO Logs feature only if you also grant `get`/`list` on the operator pods and `get` on `pods/log` in the operator namespace.
 
 When a VSO request fails, the tab's **Request diagnostics** section walks through what happened as three steps — whether the endpoint was reached, whether TLS verification passed, and whether the request was authorized — plus which of the identity sources above actually produced the bearer token, the raw path, HTTP or network error code, and the upstream Kubernetes API error message. HTTPS verification uses `K8S_CA_CERT_PATH` when set, otherwise the ServiceAccount `ca.crt` beside `VAULT_K8S_TOKEN_PATH`, otherwise the `kubernetes_ca_cert` already configured on that auth mount (`auth/<mount>/config`) — reusing the CA trust the admin already established for that cluster instead of requiring a second copy of it. If none of the three resolve to a certificate, the diagnostic identifies the missing CA. The server logs the same request and failure details, but never logs the bearer token.
 

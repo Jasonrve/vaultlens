@@ -1,4 +1,45 @@
 {
+  "0.13.0": {
+    "date": "2026-09-25",
+    "highlights": [
+      "Vault Secrets Operator resource browser",
+      "VSO connection diagnostics",
+      "VSO resource YAML drawer",
+      "Complete VSO resource discovery"
+    ],
+    "sections": {
+      "New": [
+        {
+          "title": "Vault Secrets Operator resource browser",
+          "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
+        }
+      ],
+      "Improved": [
+        {
+          "title": "VSO connection diagnostics",
+          "description": "When VaultLens cannot reach a downstream Kubernetes cluster, the VSO tabs now show the exact API request, TLS verification state, CA certificate status, and upstream error details. The same information is recorded in the server logs without exposing credentials."
+        },
+        {
+          "title": "Reduced VSO Kubernetes permissions",
+          "description": "The VSO Resources tab no longer needs access to Kubernetes Secret objects. Destination Secret checks are omitted when that information cannot be read, while resource health and authentication checks continue to work."
+        },
+        {
+          "title": "VSO resource YAML drawer",
+          "description": "Inspect VSO objects in a right-side drawer with grouped resource rows, resource search, correctly indented YAML, and an optional managed-fields view that is hidden by default. Permission failures now show the configured Kubernetes URL and example cluster RBAC."
+        }
+      ],
+      "Fixed": [
+        {
+          "title": "VSO resource permission errors",
+          "description": "Opening Resources on a Kubernetes auth method now keeps you on the page and shows downstream cluster permission guidance instead of redirecting you to the dashboard."
+        },
+        {
+          "title": "Complete VSO resource discovery",
+          "description": "The Resources tab now lists every Vault Secrets Operator resource type exposed by the connected Kubernetes cluster, including resource types added in newer operator versions."
+        }
+      ]
+    }
+  },
   "0.12.0": {
     "date": "2026-09-03",
     "highlights": [
@@ -38,7 +79,6 @@
       "Browser-based secret generation",
       "Custom auth-method action buttons",
       "Iconify technology and developer icon collections",
-      "Vault Secrets Operator resource browser",
       "Persistent and faster action configuration"
     ],
     "sections": {
@@ -52,27 +92,11 @@
           "description": "Administrators can add icon buttons to auth-method screens for common links and form requests, with mount-specific settings, reusable context placeholders, and configurable tab or popup behavior."
         },
         {
-          "title": "Vault Secrets Operator resource browser",
-          "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
-        },
-        {
           "title": "Iconify auth action icons",
           "description": "Choose icons from popular technology, developer, and general-purpose collections when configuring auth-method action buttons."
         }
       ],
       "Improved": [
-        {
-          "title": "VSO connection diagnostics",
-          "description": "When VaultLens cannot reach a downstream Kubernetes cluster, the VSO tabs now show the exact API request, TLS verification state, CA certificate status, and upstream error details. The same information is recorded in the server logs without exposing credentials."
-        },
-        {
-          "title": "Reduced VSO Kubernetes permissions",
-          "description": "The VSO Resources tab no longer needs access to Kubernetes Secret objects. Destination Secret checks are omitted when that information cannot be read, while resource health and authentication checks continue to work."
-        },
-        {
-          "title": "VSO resource YAML drawer",
-          "description": "Inspect VSO objects in a right-side drawer with grouped resource rows, resource search, correctly indented YAML, and an optional managed-fields view that is hidden by default. Permission failures now show the configured Kubernetes URL and example cluster RBAC."
-        },
         {
           "title": "Persistent auth action configuration",
           "description": "Auth action buttons are stored in the same persistent configuration volume as the rest of VaultLens settings, so they survive pod restarts."
@@ -87,14 +111,6 @@
         }
       ],
       "Fixed": [
-        {
-          "title": "VSO resource permission errors",
-          "description": "Opening Resources on a Kubernetes auth method now keeps you on the page and shows downstream cluster permission guidance instead of redirecting you to the dashboard."
-        },
-        {
-          "title": "Complete VSO resource discovery",
-          "description": "The Resources tab now lists every Vault Secrets Operator resource type exposed by the connected Kubernetes cluster, including resource types added in newer operator versions."
-        },
         {
           "title": "Login branding logo",
           "description": "Custom logos and application names now appear on the login screen as well as inside the main interface."
