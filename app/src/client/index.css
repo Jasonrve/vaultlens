@@ -74,3 +74,92 @@ html, body, #root {
     transition: none;
   }
 }
+
+:root {
+  --dropdown-background: white;
+  --dropdown-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7181' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Shared dropdown surface; page-specific utility classes retain layout only. */
+#root :is(.pki-workspace, .engine-workspace) select:not([multiple]):not([size]),
+#root :is(.pki-workspace, .engine-workspace) .ui-dropdown-control {
+  appearance: none;
+  box-sizing: border-box;
+  min-height: 38px;
+  min-width: 0;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  padding: 8px 11px;
+  background: var(--dropdown-background);
+  color: #25272b;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+}
+#root :is(.pki-workspace, .engine-workspace) select:not([multiple]):not([size]) {
+  padding-right: 35px;
+  background-image: var(--dropdown-chevron);
+  background-position: right 11px center;
+  background-size: 16px 16px;
+  background-repeat: no-repeat;
+  text-overflow: ellipsis;
+}
+#root :is(.pki-workspace, .engine-workspace) .pki-source-picker .ui-dropdown-control {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+#root :is(.pki-workspace, .engine-workspace) .pki-source-picker .ui-dropdown-control:hover {
+  background: #e5e7eb;
+}
+#root :is(.pki-workspace, .engine-workspace) .pki-source-picker .ui-dropdown-control:focus-visible {
+  outline-color: #6b7280;
+}
+#root :is(.pki-workspace, .engine-workspace) summary.ui-dropdown-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  list-style: none;
+}
+#root :is(.pki-workspace, .engine-workspace) summary.ui-dropdown-control::-webkit-details-marker { display: none; }
+#root :is(.pki-workspace, .engine-workspace) .engine-picker-input > .ui-dropdown-control { padding-right: 35px; }
+#root :is(.pki-workspace, .engine-workspace) .engine-picker-input > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  padding: 0;
+}
+#root :is(.pki-workspace, .engine-workspace) select option,
+#root :is(.pki-workspace, .engine-workspace) select optgroup {
+  background: white;
+  color: #25272b;
+}
+#root :is(.pki-workspace, .engine-workspace) select:not([multiple]):not([size]):focus-visible,
+#root :is(.pki-workspace, .engine-workspace) .ui-dropdown-control:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+#root :is(.pki-workspace, .engine-workspace) select:disabled,
+#root :is(.pki-workspace, .engine-workspace) .ui-dropdown-control:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ui-dropdown-chevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: #6b7181;
+  transition: transform 150ms ease;
+}
+details[open] > summary .ui-dropdown-chevron,
+[aria-expanded="true"] > .ui-dropdown-chevron {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-dropdown-chevron { transition: none; }
+}

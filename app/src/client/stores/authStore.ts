@@ -47,6 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     } finally {
       // Clear the repair skip flag so the health check runs again on next login
       sessionStorage.removeItem('vaultlens_skip_repair_check');
+      sessionStorage.removeItem('vaultlens.pki.sources');
       set({
         tokenInfo: null,
         isAuthenticated: false,

@@ -1,0 +1,441 @@
+.pki-workspace {
+  color: #25272b;
+}
+.pki-workspace h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+.pki-workspace h2 {
+  font-weight: 600;
+}
+.pki-muted {
+  color: #666d78;
+  font-size: 13px;
+}
+.pki-workspace button,
+.pki-workspace input,
+.pki-workspace select {
+  background: white;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  padding: 8px 11px;
+  font-size: 14px;
+}
+.pki-workspace button {
+  cursor: pointer;
+}
+.pki-workspace button:hover {
+  border-color: var(--brand-primary);
+}
+.pki-workspace button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pki-workspace .pki-primary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: white;
+}
+.pki-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pki-spread {
+  justify-content: space-between;
+}
+.pki-workspace label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pki-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #dfe3e8;
+  margin: 20px 0;
+}
+.pki-tabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 0;
+}
+.pki-tabs .selected {
+  color: var(--brand-primary);
+  border-bottom-color: var(--brand-primary);
+}
+.pki-box {
+  background: white;
+  border: 1px solid #e2e5e9;
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.pki-controls {
+  margin: 16px 0;
+}
+.pki-condition {
+  display: grid;
+  grid-template-columns: 180px 170px minmax(120px, 1fr) 40px;
+  gap: 8px;
+  margin: 14px 0;
+}
+.pki-condition input,
+.pki-condition select {
+  min-width: 0;
+  width: 100%;
+}
+.pki-table {
+  overflow-x: auto;
+}
+.pki-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.pki-table th,
+.pki-table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid #e8ebee;
+  vertical-align: top;
+}
+.pki-table th {
+  color: #667085;
+  font-weight: 500;
+}
+.pki-table small {
+  display: block;
+  color: #667085;
+  margin-top: 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.pki-workspace .pki-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--brand-primary);
+  text-align: left;
+}
+.pki-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+}
+.pki-badge.expired {
+  background: #fff0f0;
+  color: #a12832;
+}
+.pki-error {
+  background: #fff0f0;
+  border: 1px solid #efc7c7;
+  color: #96212b;
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.pki-detail {
+  border-left: 3px solid var(--brand-primary);
+}
+.pki-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 16px 0; }
+.pki-pagination label, .pki-pagination-pages { display: flex; align-items: center; gap: 8px; }
+.pki-pagination label { font-size: 13px; color: #667085; }
+.pki-pagination-pages { flex-wrap: wrap; }
+.pki-pagination-pages button { min-width: 38px; }
+.pki-pagination-pages button[aria-current="page"] { background: var(--brand-primary); border-color: var(--brand-primary); color: white; }
+.pki-page-previous { display: flex; transform: rotate(90deg); }
+.pki-page-next { display: flex; transform: rotate(-90deg); }
+.pki-workspace .pki-selection-cell { width: 42px; padding-right: 4px; }
+.pki-workspace .pki-selection-cell input { width: 16px; height: 16px; padding: 0; accent-color: var(--brand-primary); cursor: pointer; }
+.pki-selected-row { background: color-mix(in srgb, var(--brand-primary) 5%, white); }
+.pki-selection-dock { background: white; border-top: 1px solid #dfe3e8; padding: 12px 24px; }
+.pki-batch-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; }
+.pki-batch-bar strong { font-size: 14px; font-weight: 600; }
+.pki-batch-bar .pki-muted { display: block; margin-top: 3px; font-size: 12px; }
+.pki-batch-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pki-batch-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; }
+.pki-batch-action-divider { width: 1px; height: 22px; margin: 0 4px; background: #e3e6ed; }
+.pki-batch-selection-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: #9ca3af; }
+.pki-workspace .pki-batch-selection-tools button { padding: 2px 0; background: transparent; border: 0; border-radius: 2px; color: #666d78; font-size: 12px; }
+.pki-workspace .pki-batch-selection-tools button:hover:not(:disabled) { color: var(--brand-primary); text-decoration: underline; }
+.pki-workspace .pki-batch-danger { background: #b42332; border-color: #b42332; color: white; }
+@media (max-width: 760px) {
+  .pki-selection-dock { padding: 12px 16px; }
+  .pki-batch-actions { gap: 6px; }
+  .pki-batch-actions button { font-size: 12px; padding: 7px 9px; }
+}
+.pki-batch-preview { max-height: 340px; overflow: auto; margin: 16px 0; border: 1px solid #e5e7eb; border-radius: 6px; }
+.pki-batch-preview table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pki-batch-preview th, .pki-batch-preview td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eeeff3; overflow-wrap: anywhere; }
+.pki-batch-preview th { position: sticky; top: 0; background: #f8f9fb; font-weight: 500; }
+.pki-batch-preview small { display: block; color: #697383; }
+.pki-batch-confirm { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 13px; margin: 16px 0; }
+.pki-certificate-dialog {
+  margin: auto;
+  padding: 0;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: white;
+  color: #25272b;
+  box-shadow: 0 24px 80px rgb(16 24 40 / 20%);
+}
+.pki-certificate-dialog::backdrop { background: rgb(16 24 40 / 28%); backdrop-filter: blur(3px); }
+.pki-certificate-dialog-content { padding: 24px; }
+.pki-certificate-dialog header { padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
+.pki-certificate-summary { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; margin: 20px 0; }
+.pki-certificate-summary aside { background: #f8f9fb; border-radius: 8px; padding: 18px; }
+.pki-certificate-summary aside dt { margin-top: 22px; }
+.pki-certificate-summary dt { font-size: 12px; color: #667085; }
+.pki-certificate-summary dd { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
+.pki-certificate-summary h3 { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; margin-bottom: 16px; }
+.pki-certificate-facts > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid #eeeff3; }
+.pki-certificate-facts dd { margin: 0; }
+.pki-certificate-dialog summary { cursor: pointer; font-size: 13px; padding: 12px 0; }
+.pki-certificate-dialog .pki-row { flex-wrap: wrap; }
+.pki-certificate-dialog .pki-muted { margin: 16px 0; }
+.pki-certificate-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; }
+.pki-certificate-technical { border-top: 1px solid #e5e7eb; border-bottom: 1px solid #e5e7eb; }
+@media (max-width: 640px) {
+  .pki-certificate-dialog-content { padding: 16px; }
+  .pki-certificate-summary { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .pki-certificate-facts > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
+.pki-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 18px 0;
+}
+.pki-detail-grid dt {
+  color: #667085;
+  font-size: 12px;
+}
+.pki-detail-grid dd {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.pki-workspace pre {
+  overflow-x: auto;
+  font-size: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+.pki-workspace details {
+  margin-top: 12px;
+}
+.pki-workspace summary {
+  cursor: pointer;
+}
+@media (max-width: 800px) {
+  .pki-condition {
+    grid-template-columns: 1fr 1fr;
+  }
+  .pki-detail-grid {
+    grid-template-columns: 1fr;
+  }
+  .pki-workspace input,
+  .pki-workspace select {
+    max-width: 100%;
+  }
+  .pki-box {
+    padding: 12px;
+  }
+}
+.pki-tabs > a { padding: 12px 0; margin-right: 24px; color: inherit; text-decoration: none; border-bottom: 2px solid transparent; }
+.pki-tabs > a[aria-current="page"] { color: var(--brand-primary); border-color: var(--brand-primary); }
+.pki-workspace a { overflow-wrap: anywhere; }
+
+.pki-overview { margin: 20px 0; }
+.pki-overview-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px 24px; }
+.pki-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.pki-overview-heading h2 { font-size: 14px; }
+.pki-overview-scope { background: #f5f5f7; border-radius: 5px; padding: 4px 8px; color: #6b7181; font-size: 12px; }
+.pki-overview-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+.pki-overview-columns h3 { color: #6b7181; font-size: 13px; font-weight: 400; }
+.pki-status-stack { display: flex; height: 10px; border-radius: 4px; overflow: hidden; margin: 15px 0 16px; gap: 2px; background: #eeeff3; }
+.pki-status-stack > span, .pki-status-dot { background: var(--status-tone); }
+.pki-tone-valid { --status-tone: #379b87; }
+.pki-tone-warning { --status-tone: #d9a045; }
+.pki-tone-critical { --status-tone: #dc3545; }
+.pki-tone-expired { --status-tone: #76273e; }
+.pki-tone-revoked { --status-tone: #6b7181; }
+.pki-status-legend { display: grid; grid-auto-flow: column; grid-template-rows: repeat(3, auto); grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px 24px; }
+.pki-status-legend > div { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.pki-status-legend dt { color: #6b7181; display: flex; align-items: center; gap: 6px; }
+.pki-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.pki-status-legend dd, .pki-expiry-bars dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pki-expiry-bars > div { display: grid; grid-template-columns: 80px minmax(0, 1fr) minmax(36px, max-content); gap: 12px; align-items: center; margin-top: 13px; font-size: 13px; }
+.pki-expiry-bars dt { color: #6b7181; }
+.pki-expiry-bars dd { text-align: right; }
+.pki-expiry-track { height: 6px; border-radius: 3px; background: #eeeff3; overflow: hidden; }
+.pki-expiry-track span { display: block; height: 100%; background: var(--status-tone); border-radius: 3px; }
+@media (max-width: 760px) {
+  .pki-overview-panel { padding: 16px; }
+  .pki-overview-columns { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+}
+
+.pki-search-panel { margin: 16px 0; background: white; border: 1px solid #e5e7eb; border-radius: 12px; }
+.pki-search-scope { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 16px 24px; background: white; border-radius: 12px 12px 0 0; border-bottom: 1px solid #eeeff3; }
+.pki-search-scope > label, .pki-source-field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #6b7181; min-width: 0; }
+.pki-search-scope select { width: 100%; color: #25272b; }
+.pki-source-picker { position: relative; }
+.pki-source-picker summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 11px; font-size: 14px; color: #374151; cursor: pointer; list-style: none; }
+.pki-source-picker summary::-webkit-details-marker { display: none; }
+.pki-source-picker summary { min-height: 38px; line-height: 20px; }
+.pki-source-picker summary > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pki-source-picker summary:focus-visible { outline: 2px solid #6b7280; outline-offset: 2px; }
+.pki-source-options { position: absolute; top: calc(100% + 6px); left: 0; z-index: 10; width: max-content; min-width: 100%; max-width: min(400px, 75vw); max-height: 300px; overflow: auto; padding: 10px; background: white; border: 1px solid #dfe3e8; border-radius: 8px; box-shadow: 0 8px 24px rgb(16 24 40 / 12%); }
+.pki-source-options label { display: flex; align-items: center; gap: 8px; padding: 7px 4px; color: #25272b; overflow-wrap: anywhere; }
+.pki-search-body { padding: 20px 24px; }
+.pki-search-body > .pki-row > label { font-size: 12px; color: #6b7181; }
+.pki-search-body > .pki-row > label select { font-size: 12px; padding: 5px 8px; }
+.pki-search-conditions { padding: 12px; margin-top: 16px; background: white; border-radius: 8px; }
+.pki-search-conditions .pki-condition { margin: 0 0 10px; }
+.pki-workspace .pki-add-condition { border-color: transparent; background: transparent; color: #25272b; padding-left: 0; }
+.pki-search-footer { margin-top: 16px; }
+@media (max-width: 900px) { .pki-search-scope { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 540px) { .pki-search-scope { grid-template-columns: minmax(0, 1fr); padding: 16px; } .pki-search-body { padding: 16px; } }
+.pki-search-scope > label { align-items: stretch; text-align: left; }
+.pki-search-scope .pki-source-picker { margin: 0; }
+
+.pki-certificate-list tbody tr:has(input):hover { background: color-mix(in srgb, var(--brand-primary) 9%, var(--bg-surface, white)); }
+.pki-certificate-name { display: flex; align-items: center; gap: 12px; }
+.pki-certificate-name .pki-link { color: #25272b; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.pki-certificate-name .pki-engine-link { color: var(--text-muted); font-size: 12px; white-space: nowrap; display: inline-flex; align-items: center; flex-shrink: 0; border: 1px solid #dfe3e8; border-radius: 4px; padding: 2px 6px; text-decoration: none; }
+.pki-certificate-name .pki-engine-link:hover { border-color: var(--brand-primary); background: #f3f4f6; }
+.pki-certificate-list td small { white-space: nowrap; }
+.pki-certificate-list .pki-details-button { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.pki-table .pki-sort-heading { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; }
+.pki-table .pki-sort-heading:hover { color: var(--brand-primary); }
+
+.pki-export-control { position: relative; }
+.pki-export-trigger { display: inline-flex; align-items: center; gap: 8px; }
+.pki-export-options { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 144px; padding: 4px; background: white; border: 1px solid #dfe3e8; border-radius: 6px; box-shadow: 0 4px 12px #00000012; }
+.pki-export-options button { display: block; width: 100%; text-align: left; border: 0; }
+.pki-export-options button:hover { background: #f3f4f6; }
+
+.pki-certificate-list table { min-width: 1080px; }
+.pki-certificate-list td { padding-top: 9px; padding-bottom: 9px; }
+.pki-serial-type { display: flex !important; gap: 4px; }
+.pki-serial-type span:first-child { flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-variant-numeric: tabular-nums; }
+.pki-source-cell { max-width: 205px; }
+.pki-engine-name { display: block; font-size: 12px; color: #25272b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pki-source-cell small { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.pki-certificate-list .pki-san-link { display: block; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: transparent; color: #25272b; font-size: 13px; text-align: left; }
+.pki-certificate-list .pki-san-link:hover { text-decoration: underline; }
+.pki-certificate-list .pki-san-more { color: #667085; font-size: 12px; }
+.pki-expiry-state { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 12px; }
+.pki-expiry-state.valid { color: #168058; }
+.pki-expiry-state.warning { color: #926400; }
+.pki-expiry-state.expired { color: #bb404c; }
+.pki-expiry-state.pending { color: #667085; }
+.pki-expiry-label { border-radius: 3px; padding: 1px 5px; background: color-mix(in srgb, currentColor 9%, transparent); }
+.pki-san-values { list-style: none; padding: 0; overflow-wrap: anywhere; }
+.pki-san-values li { padding: 7px 0; }
+.pki-san-values li span { display: inline-block; min-width: 50px; color: #667085; font-size: 12px; }
+
+.pki-detail-status { --status-color: #667085; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 14px 16px; margin-top: 20px; border-left: 3px solid var(--status-color); border-radius: 5px; color: var(--status-color); background: color-mix(in srgb, var(--status-color) 8%, white); }
+.pki-detail-status.expired, .pki-detail-duration.expired { --status-color: #bb404c; color: #bb404c; }
+.pki-detail-status.warning, .pki-detail-duration.warning { --status-color: #926400; color: #926400; }
+.pki-detail-status.valid, .pki-detail-duration.valid { --status-color: #168058; color: #168058; }
+.pki-detail-status strong { font-weight: 600; }
+.pki-detail-revocation { font-size: 13px; color: #667085; }
+.pki-certificate-summary aside dt:first-child { margin-top: 0; }
+.pki-detail-duration { font-weight: 600; }
+.pki-detail-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+.pki-detail-actions a { display: inline-flex; align-items: center; padding: 8px 11px; border: 1px solid #dfe3e8; border-radius: 6px; background: white; color: #25272b; font-size: 14px; text-decoration: none; }
+.pki-detail-actions a:hover { border-color: var(--brand-primary); }
+.pki-action-spacer { flex: 1; }
+
+.pki-detail-status.pending, .pki-detail-duration.pending { --status-color: #526fa9; color: #526fa9; }
+
+/* Keep the disclosure above both search modes so it never moves on toggle. */
+.pki-search-panel .pki-search-body { padding: 8px 20px 14px; }
+.pki-search-panel .pki-search-scope { padding: 14px 20px; gap: 10px; border-bottom: 0; }
+.pki-workspace .pki-search-link { border: 0; background: transparent; color: #374151; padding: 4px 0; font-size: 12px; }
+.pki-search-link:hover { text-decoration: underline; }
+.pki-search-toggle-row { margin-bottom: 8px; }
+.pki-search-main { display: flex; align-items: center; gap: 8px; }
+.pki-search-input-area { flex: 1; min-width: 0; }
+.pki-search-input-area > input { width: 100%; }
+.pki-search-match { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #6b7181; }
+.pki-search-main input, .pki-search-main select, .pki-search-main button { height: 38px; }
+.pki-search-panel .pki-search-conditions { margin-top: 10px; padding: 12px; background: #f9fafb; border-top: 1px solid #eeeff3; border-radius: 6px; }
+.pki-search-conditions[hidden] { display: none; }
+.pki-search-builder-heading { margin-bottom: 8px; color: #6b7181; font-size: 12px; }
+.pki-search-panel .pki-search-footer { margin-top: 10px; font-size: 12px; }
+@media (max-width: 540px) { .pki-search-panel .pki-search-body, .pki-search-panel .pki-search-scope { padding-left: 14px; padding-right: 14px; } .pki-search-match select { min-width: 0; width: 100%; } }
+
+.pki-status-hint { font-size: 12px; white-space: nowrap; }
+
+.pki-workspace .pki-search-main .pki-search-link { color: #6b7280; }
+.pki-workspace .pki-search-main .pki-search-link:hover { color: #374151; }
+.pki-workspace .pki-search-main .pki-primary { background: #374151; border-color: #374151; color: white; }
+.pki-workspace .pki-search-main .pki-primary:hover:not(:disabled) { background: #25272b; border-color: #25272b; }
+.pki-source-picker summary:hover { background: #e5e7eb; }
+
+.pki-source-difference { color: #926400; font-weight: 600; }
+.pki-workspace button.pki-source-collect-needed { border-color: #c18a29; }
+
+.pki-table .pki-sources-table {
+  table-layout: fixed;
+  min-width: 1200px;
+}
+.pki-sources-table th,
+.pki-sources-table td {
+  overflow-wrap: anywhere;
+}
+
+.pki-workspace .pki-source-actions-help { margin-top: 10px; font-size: 13px; }
+.pki-source-actions-help summary { color: #667085; cursor: pointer; }
+.pki-source-actions-help dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 10px 0;
+}
+.pki-source-actions-help dt { font-weight: 600; }
+.pki-source-actions-help dd { margin: 0; color: #667085; }
+.pki-source-comparison-note { margin: 10px 0; font-size: 12px; }
+.pki-sources-table abbr[title] { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+@media (max-width: 640px) {
+  .pki-source-actions-help dl { grid-template-columns: 1fr; gap: 4px; }
+  .pki-source-actions-help dd { margin-bottom: 6px; }
+}
+
+.pki-jobs-heading { margin: 18px 0 8px; }
+.pki-jobs-heading h2 { margin: 0; }
+.pki-workspace .pki-jobs-help { margin: 0 0 14px; font-size: 13px; color: #667085; }
+.pki-jobs-help p { max-width: 800px; margin: 8px 0; }
+.pki-jobs-table { background: #fff; border: 1px solid #e2e5e9; border-radius: 8px; }
+.pki-jobs-table > table { min-width: 740px; }
+.pki-jobs-table th { background: #f8fafc; }
+.pki-jobs-table td { padding: 10px 12px; vertical-align: middle; }
+.pki-jobs-table th { padding: 10px 12px; }
+.pki-table .pki-job-number { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pki-job-started { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pki-job-scope { overflow-wrap: anywhere; max-width: 260px; }
+.pki-job-status { display: inline-flex; align-items: center; gap: 7px; text-transform: capitalize; white-space: nowrap; }
+.pki-job-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #7a8492; flex: none; }
+.pki-job-status-completed::before { background: #27835a; }
+.pki-job-status-running::before, .pki-job-status-queued::before { background: #7860d4; }
+.pki-job-status-partial::before, .pki-job-status-paused::before, .pki-job-status-pausing::before { background: #ac7b21; }
+.pki-job-status-failed::before, .pki-job-status-interrupted::before { background: #bb4040; }
+.pki-jobs-table .pki-job-error { color: #b42332; }
+.pki-job-actions { gap: 6px; }
+.pki-workspace .pki-job-actions button { padding: 4px 9px; font-size: 13px; }
+.pki-job-progress { display: block; width: 100%; height: 4px; margin-top: 6px; accent-color: #7860d4; }
+.pki-job-details-row > td { background: #f8fafc; padding: 14px 18px; }
+.pki-job-source-progress { margin-top: 10px; }
+.pki-job-source-progress table { min-width: 650px; font-size: 13px; }
+.pki-job-source-progress td { vertical-align: top; }
+.pki-jobs-timezone { font-size: 12px; margin-top: 10px; }

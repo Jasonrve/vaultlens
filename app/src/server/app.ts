@@ -1,3 +1,5 @@
+import pkiRoutes from './routes/pki.js';
+import pkiEngineRoutes from './routes/pkiEngine.js';
 import express from 'express';
 import crypto from 'crypto';
 import cors from 'cors';
@@ -189,6 +191,8 @@ app.use('/api/identity', identityRoutes);
 app.use('/api/graph', graphRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/pki', pkiRoutes);
+app.use('/api/pki-engine', pkiEngineRoutes);
 app.use('/api/sys', sysRoutes);
 app.use('/api/rotation', rotationRoutes);
 app.use('/api/backup', backupRoutes);

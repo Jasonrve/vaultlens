@@ -15,7 +15,8 @@
     "start": "node dist/server/server.js",
     "lint": "eslint src/client",
     "test:config-import": "tsx scripts/check-config-import.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:pki": "npm run build:server && node --test dist/server/pki/*.test.js"
   },
   "keywords": [],
   "license": "GPL-3.0-only",
@@ -73,5 +74,8 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "tailwindcss": "^4.2.2",
     "tsx": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

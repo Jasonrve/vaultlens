@@ -61,7 +61,8 @@ export default function Header() {
     SECRET_MODES.has(rawSegments[1]);
 
   // segments used for display — strip the mode word (edit/create/merge/view)
-  const segments = isSecretMode
+  const isPkiEngine = rawSegments[0] === 'pki' && rawSegments[1] === 'engines' && rawSegments.length > 2;
+  const segments = isPkiEngine ? ['secrets', rawSegments.slice(2).join('/')] : isSecretMode
     ? [rawSegments[0], ...rawSegments.slice(2)]
     : rawSegments;
 
@@ -71,6 +72,7 @@ export default function Header() {
   // - Last segment in edit/create/merge → /secrets/view/<full-path> (exit edit mode)
   // - Last segment in view → non-clickable (handled by isLastButClickable below)
   function segmentPath(index: number): string {
+    if(isPkiEngine) return index===0 ? '/secrets' : location.pathname;
     if (isSecretMode) {
       if (index === 0) return '/secrets';
       // Reconstruct using the original secret path segments (rawSegments[2..])
@@ -133,7 +135,7 @@ export default function Header() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
               </svg>
               {tokenInfo.display_name}
-              <svg className={`h-3 w-3 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <svg className={`h-3 w-3 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
               </svg>
             </button>

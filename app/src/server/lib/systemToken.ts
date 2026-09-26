@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'node:path';
 import { config } from '../config/index.js';
 import { VaultClient } from './vaultClient.js';
 import { getConfigStorage } from './config-storage/index.js';
@@ -218,8 +219,6 @@ export function isSystemTokenConfigured(): boolean {
   if (cachedToken) return true;
   // Best-effort: try to read config synchronously (file backend only)
   try {
-    const fs = require('fs') as typeof import('fs');
-    const path = require('path') as typeof import('path');
     // Use the same default path as FileConfigStorage
     const configPath = config.configStoragePath || './data';
     const iniPath = path.resolve(configPath, 'config.ini');
