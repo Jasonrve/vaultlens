@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { changedRoleFields } from "../../shared/pkiOperations.js";
 import { pkiEngineUrl } from "../../shared/pkiEngine.js";
 test("PKI engine reads roles without certificate LIST, scopes references and fences replacement mounts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pki-engine-"));
@@ -35,8 +36,11 @@ test("PKI engine reads roles without certificate LIST, scopes references and fen
     replace = false,
     denyCertificate = false,
     denyRoles = false;
+  let role: Record<string, unknown> = { issuer_ref: "issuer-a", allowed_domains: ["test"], no_store_metadata: true, future_setting: "preserve" };
+  let patchStatus = 200;
+  const writes: { method: string; contentType?: string; body: Record<string, unknown> }[] = [];
   const calls: string[] = [];
-  const vault = createServer((req, res) => {
+  const vault = createServer(async (req, res) => {
     const path = req.url!.split("?")[0];
     calls.push(path);
     res.setHeader("Content-Type", "application/json");
@@ -55,7 +59,20 @@ test("PKI engine reads roles without certificate LIST, scopes references and fen
       } else res.end(JSON.stringify({data:{keys:["server", ...Array.from({length:110}, (_, i) => "role-" + i), "tail-role"]}}));
     } else if (path === "/v1/team/pki/roles/server") {
       if (replace) accessor = "b";
-      res.end('{"data":{"issuer_ref":"issuer-a","allowed_domains":["test"]}}');
+      if (req.method === "POST" || req.method === "PATCH") {
+        let raw = "";
+        for await (const chunk of req) raw += chunk;
+        const body = JSON.parse(raw);
+        writes.push({ method: req.method, contentType: req.headers["content-type"], body });
+        if (req.method === "PATCH" && patchStatus !== 200) {
+          res.statusCode = patchStatus;
+          res.end("{}");
+          return;
+        }
+        // Model Vault's replacement POST and partial PATCH semantics.
+        role = req.method === "PATCH" ? { ...role, ...body } : { no_store_metadata: false, ...body };
+      }
+      res.end(JSON.stringify({ data: role }));
     } else if (path === "/v1/team/pki/issuers")
       res.end(
         '{"data":{"keys":["issuer-a"],"key_info":{"issuer-a":{"issuer_name":"CA"}}}}',
@@ -142,7 +159,24 @@ test("PKI engine reads roles without certificate LIST, scopes references and fen
           ...body,
         }),
       });
+    const initial = { ...role };
+    const fields = changedRoleFields({ issuer_ref: "issuer-a", allowed_domains: ["new.test"], allow_localhost: false }, initial);
+    assert.deepEqual(fields, { allowed_domains: ["new.test"], allow_localhost: false });
+    assert.equal((await post({ action: "role-update", fields })).status, 200);
+    assert.deepEqual(role, { ...initial, ...fields });
+    assert.deepEqual(writes.at(-1), { method: "PATCH", contentType: "application/merge-patch+json", body: fields });
+    assert.deepEqual(changedRoleFields({ allowed_domains: [], allow_localhost: false }, { allowed_domains: ["test"], allow_localhost: true }), { allowed_domains: [], allow_localhost: false });
+    for (const status of [403, 405]) {
+      patchStatus = status;
+      const before = writes.length;
+      assert.equal((await post({ action: "role-update", fields: { ttl: "2h" } })).status, status);
+      assert.equal(writes.length, before + 1, "A rejected PATCH must not fall back to POST");
+      assert.equal(writes.at(-1)!.method, "PATCH");
+      assert.deepEqual(role, { ...initial, ...fields });
+    }
+    patchStatus = 200;
     assert.equal((await post({})).status, 200);
+    assert.equal(writes.at(-1)!.method, "POST", "Role creation still uses POST");
     assert.equal((await post({}, "expired")).status, 403);
     assert.equal((await post({ source: "old" })).status, 409);
     assert.equal((await post({ ref: "../sys" })).status, 400);

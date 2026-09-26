@@ -287,10 +287,12 @@ export class PkiStore {
         return;
       }
 
+      // Confirmed revocation is permanent for this source/serial/fingerprint.
+      // Keep its evidence timestamp when a later observation cannot confirm it.
       this.db
         .prepare(
           `INSERT INTO certificates(sourceId,serial,fingerprint,cn,subject,issuer,notBefore,notAfter,algorithm,keySize,curve,type,revoked,revocationObservedAt,firstSeen,lastSeen,eku) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(sourceId,serial) DO UPDATE SET fingerprint=excluded.fingerprint,cn=excluded.cn,subject=excluded.subject,issuer=excluded.issuer,notBefore=excluded.notBefore,notAfter=excluded.notAfter,algorithm=excluded.algorithm,keySize=excluded.keySize,curve=excluded.curve,type=excluded.type,revoked=excluded.revoked,revocationObservedAt=excluded.revocationObservedAt,lastSeen=excluded.lastSeen,presence='present',eku=excluded.eku`,
+      ON CONFLICT(sourceId,serial) DO UPDATE SET fingerprint=excluded.fingerprint,cn=excluded.cn,subject=excluded.subject,issuer=excluded.issuer,notBefore=excluded.notBefore,notAfter=excluded.notAfter,algorithm=excluded.algorithm,keySize=excluded.keySize,curve=excluded.curve,type=excluded.type,revoked=CASE WHEN certificates.revoked='revoked' THEN 'revoked' ELSE excluded.revoked END,revocationObservedAt=CASE WHEN certificates.revoked='revoked' AND excluded.revoked!='revoked' THEN certificates.revocationObservedAt ELSE excluded.revocationObservedAt END,lastSeen=excluded.lastSeen,presence='present',eku=excluded.eku`,
         )
         .run(
           sourceId,

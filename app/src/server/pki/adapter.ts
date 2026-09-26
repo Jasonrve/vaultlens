@@ -67,6 +67,7 @@ export class PkiAdapter {
           method: method === "LIST" ? "GET" : method,
           ...(method === "LIST" ? { params: { list: true } } : {}),
           data,
+          ...(method === "PATCH" ? { headers: { "Content-Type": "application/merge-patch+json" } } : {}),
           ...(maxContentLength ? { maxContentLength } : {}),
         })
       ).data;

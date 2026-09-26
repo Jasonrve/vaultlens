@@ -225,11 +225,10 @@ export async function collectPki(input: WorkerInput) {
               store.save(
                 id,
                 observation.pem,
-                revokedSet
-                  ? revokedSet.has(normalized)
-                    ? "revoked"
-                    : "not_revoked"
-                  : observation.revocation,
+                // Either source can prove revocation; the list predates the certificate read.
+                observation.revocation === "revoked" || revokedSet?.has(normalized)
+                  ? "revoked"
+                  : revokedSet ? "not_revoked" : observation.revocation,
                 normalized,
                 () => {
                   store.db

@@ -1,7 +1,7 @@
 import { AxiosError } from "axios";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { pkiOperations } from "../../../shared/pkiOperations";
+import { changedRoleFields, pkiOperations } from "../../../shared/pkiOperations";
 import type { PkiEngineResult } from "../../../shared/pkiEngine";
 import * as api from "../../lib/api";
 import {
@@ -29,6 +29,7 @@ export default function OperationForm({
   cancel: string;
   onSaved: () => void;
 }) {
+  const editingRole = action === "role-save" && !!reference;
   const operation = Object.prototype.hasOwnProperty.call(pkiOperations, action)
     ? pkiOperations[action]
     : undefined;
@@ -75,10 +76,10 @@ export default function OperationForm({
       const r = await api.pkiEngineAction({
         mount,
         source,
-        action,
+        action: editingRole ? "role-update" : action,
         ref: name,
         mode,
-        fields,
+        fields: editingRole ? changedRoleFields(fields, initial || {}) : fields,
         confirm,
       });
       setResponse(r);
@@ -204,8 +205,8 @@ export default function OperationForm({
                       }
                     >
                       <option value="">
-                        Use Vault default
-                        {field.default !== undefined
+                        {editingRole ? "Keep current value" : "Use Vault default"}
+                        {!editingRole && field.default !== undefined
                           ? " (" + displayValue(field.default) + ")"
                           : ""}
                       </option>
@@ -217,7 +218,7 @@ export default function OperationForm({
                       value={shown}
                       onChange={(e) => set(e.target.value || undefined)}
                     >
-                      <option value="">Use Vault default</option>
+                      <option value="">{editingRole ? "Keep current value" : "Use Vault default"}</option>
                       {field.enum.map((v) => (
                         <option key={v}>{v}</option>
                       ))}

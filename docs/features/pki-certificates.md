@@ -58,6 +58,17 @@ record and records conflict evidence. Partial observations do not prove absence.
 
 ## PKI engine workspace
 
+Existing role edits use Vault's partial-update API (`PATCH`) and submit only changed
+fields. Settings absent from the form remain unchanged. The session needs the
+`patch` capability on `<mount>/roles/<name>` and a Vault version that supports
+role patching. A rejected PATCH is never retried as a replacement POST. Creating
+a role still uses POST.
+
+Collection treats positive revocation evidence from either the revoked-serial
+list or the individual certificate response as authoritative. For the same
+source and certificate identity, later negative or missing evidence cannot
+clear a confirmed revoked status or replace its evidence timestamp.
+
 PKI entries in Secrets Engines open an engine workspace for issuers, keys, roles,
 certificates, URLs, CRLs, tidy settings and CA lifecycle operations. Available
 operations depend on the Vault version and current session capabilities.

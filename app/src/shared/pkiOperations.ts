@@ -1199,3 +1199,12 @@ export const pkiOperations: Record<string, PkiOperation> = {
     },
   },
 };
+
+// Editing must preserve fields not represented by the form (including future Vault fields).
+pkiOperations["role-update"] = { ...pkiOperations["role-save"], method: "PATCH" };
+
+export function changedRoleFields(fields: Record<string, unknown>, initial: Record<string, unknown>) {
+  return Object.fromEntries(Object.entries(fields).filter(([key, value]) =>
+    JSON.stringify(value) !== JSON.stringify(initial[key]),
+  ));
+}
