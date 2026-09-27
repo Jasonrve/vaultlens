@@ -34,6 +34,11 @@ const NODE_H = 32;    // approx rendered node height
 const GHOST_W = 130;  // ghost overlay width
 const GHOST_H = 26;   // ghost overlay height
 const MAX_GHOSTS_PER_SIDE = 3;
+// A single node's children can fan out into the hundreds (one auth mount
+// with 500 roles, one policy referenced by hundreds of groups/roles) — cap
+// what gets merged into the visible graph per expand so it stays readable,
+// stash the rest, and let the existing search box reveal a specific one.
+const EXPAND_CAP = 50;
 
 // ── Helper types ──────────────────────────────────────────────────────────────
 type GhostSide = 'top' | 'bottom' | 'left' | 'right';
@@ -865,6 +870,10 @@ export default function GraphExplorer({
   // prevents re-fetching a confirmed-empty node on every expand click.
   const [fetchedNodeIds, setFetchedNodeIds] = useState<Set<string>>(new Set());
   const [expandingIds, setExpandingIds] = useState<Set<string>>(new Set());
+  // Children beyond EXPAND_CAP for a given expand, stashed (not merged) so
+  // they stay findable via search without cluttering the rendered graph.
+  const [overflowByParent, setOverflowByParent] =
+    useState<Map<string, { nodes: GraphNode[]; edges: GraphEdge[] }>>(new Map());
 
   const { childMap, parentMap, rootIds } = useMemo(() => {
     if (!mergedData) return { childMap: new Map(), parentMap: new Map(), rootIds: [] };
@@ -905,6 +914,7 @@ export default function GraphExplorer({
     setMergedData(data);
     setFetchedNodeIds(new Set());
     setExpandingIds(new Set());
+    setOverflowByParent(new Map());
   }, [data]);
 
   useEffect(() => {
@@ -986,7 +996,20 @@ export default function GraphExplorer({
         .then((result) => {
           setFetchedNodeIds((prev) => new Set(prev).add(id));
           if (result && (result.nodes.length > 0 || result.edges.length > 0)) {
-            setMergedData((prev) => mergeGraphData(prev ?? { nodes: [], edges: [] }, result));
+            if (result.nodes.length > EXPAND_CAP) {
+              // Stable sort → deterministic which ones show first, not which
+              // ones happen to come back first from Vault.
+              const sorted = [...result.nodes].sort((a, b) => a.data.label.localeCompare(b.data.label));
+              const capped = sorted.slice(0, EXPAND_CAP);
+              const overflow = sorted.slice(EXPAND_CAP);
+              const overflowIds = new Set(overflow.map((n) => n.id));
+              const cappedEdges = result.edges.filter((e) => !overflowIds.has(e.target) && !overflowIds.has(e.source));
+              const overflowEdges = result.edges.filter((e) => overflowIds.has(e.target) || overflowIds.has(e.source));
+              setMergedData((prev) => mergeGraphData(prev ?? { nodes: [], edges: [] }, { nodes: capped, edges: cappedEdges }));
+              setOverflowByParent((prev) => new Map(prev).set(id, { nodes: overflow, edges: overflowEdges }));
+            } else {
+              setMergedData((prev) => mergeGraphData(prev ?? { nodes: [], edges: [] }, result));
+            }
           }
           setExpandedIds((prev) => new Set(prev).add(id));
           setFocusNodeId(id);
@@ -1025,6 +1048,41 @@ export default function GraphExplorer({
       return;
     }
 
+    // Pull matching nodes out of the capped-overflow stash into the visible
+    // graph first — this re-runs the effect (mergedData/overflowByParent
+    // change), and the ancestor-expand below then finds them normally on
+    // that next pass via an up-to-date parentMap.
+    if (overflowByParent.size > 0) {
+      const matchedIds = new Set<string>();
+      const toMergeNodes: GraphNode[] = [];
+      for (const batch of overflowByParent.values()) {
+        for (const n of batch.nodes) {
+          if (!matchedIds.has(n.id) && n.data.label.toLowerCase().includes(term)) {
+            matchedIds.add(n.id);
+            toMergeNodes.push(n);
+          }
+        }
+      }
+      if (matchedIds.size > 0) {
+        const toMergeEdges: GraphEdge[] = [];
+        for (const batch of overflowByParent.values()) {
+          for (const e of batch.edges) {
+            if (matchedIds.has(e.target) || matchedIds.has(e.source)) toMergeEdges.push(e);
+          }
+        }
+        setMergedData((prev) => mergeGraphData(prev ?? { nodes: [], edges: [] }, { nodes: toMergeNodes, edges: toMergeEdges }));
+        setOverflowByParent((prev) => {
+          const next = new Map<string, { nodes: GraphNode[]; edges: GraphEdge[] }>();
+          for (const [parentId, batch] of prev) {
+            const nodes = batch.nodes.filter((n) => !matchedIds.has(n.id));
+            const edges = batch.edges.filter((e) => !matchedIds.has(e.target) && !matchedIds.has(e.source));
+            if (nodes.length > 0) next.set(parentId, { nodes, edges });
+          }
+          return next;
+        });
+      }
+    }
+
     const matches = mergedData.nodes.filter((n) =>
       n.data.label.toLowerCase().includes(term),
     );
@@ -1042,7 +1100,7 @@ export default function GraphExplorer({
       return next;
     });
     setFitViewTrigger((n) => n + 1);
-  }, [search, mergedData, parentMap]);
+  }, [search, mergedData, parentMap, overflowByParent]);
 
   const highlightedIds = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -1051,6 +1109,29 @@ export default function GraphExplorer({
       mergedData.nodes.filter((n) => n.data.label.toLowerCase().includes(term)).map((n) => n.id),
     );
   }, [mergedData, search]);
+
+  // Two distinct kinds of "not everything is shown": client-capped overflow
+  // (search above will reveal a specific one) vs. server-capped omissions
+  // like Identity's MAX_EXPANDED_MEMBERS (their names were never fetched, so
+  // search can't find them — don't imply otherwise).
+  const overflowStats = useMemo(() => {
+    let hidden = 0;
+    let parents = 0;
+    for (const batch of overflowByParent.values()) {
+      if (batch.nodes.length > 0) {
+        hidden += batch.nodes.length;
+        parents += 1;
+      }
+    }
+    let serverOmitted = 0;
+    if (mergedData) {
+      for (const n of mergedData.nodes) {
+        const count = n.data.omittedCount;
+        if (typeof count === 'number') serverOmitted += count;
+      }
+    }
+    return { hidden, parents, serverOmitted };
+  }, [overflowByParent, mergedData]);
 
   if (loading) {
     return (
@@ -1148,6 +1229,16 @@ export default function GraphExplorer({
           {highlightedIds.size > 0 && (
             <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-600 ring-1 ring-amber-200">
               {highlightedIds.size} match{highlightedIds.size !== 1 ? 'es' : ''}
+            </span>
+          )}
+          {overflowStats.hidden > 0 && (
+            <span className="rounded bg-gray-50 px-1.5 py-0.5 text-gray-500 ring-1 ring-gray-200">
+              {overflowStats.hidden} node{overflowStats.hidden !== 1 ? 's' : ''} hidden across {overflowStats.parents} expanded node{overflowStats.parents !== 1 ? 's' : ''} — use search above to find a specific one
+            </span>
+          )}
+          {overflowStats.serverOmitted > 0 && (
+            <span className="rounded bg-gray-50 px-1.5 py-0.5 text-gray-500 ring-1 ring-gray-200">
+              +{overflowStats.serverOmitted} not shown (server limit)
             </span>
           )}
           <span className="ml-auto italic">Click [+] to expand · Ctrl+click for quick-view</span>

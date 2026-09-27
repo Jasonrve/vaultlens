@@ -485,7 +485,10 @@ router.get(
         }
 
         const entityNodeId = `entity-${entityId}`;
-        nodes.push(createNode(entityNodeId, 'entity', entity.name || entityId, 0, 0, { entityId }));
+        nodes.push(createNode(entityNodeId, 'entity', entity.name || entityId, 0, 0, {
+          entityId,
+          omittedCount: Math.max(0, (entity.group_ids?.length ?? 0) - MAX_EXPANDED_MEMBERS),
+        }));
         for (const policyName of entity.policies ?? []) {
           const policyId = `policy-${policyName}`;
           nodes.push(createNode(policyId, 'policy', policyName, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y));
@@ -529,7 +532,10 @@ router.get(
         }
 
         const groupNodeId = `group-${groupId}`;
-        nodes.push(createNode(groupNodeId, 'group', group.name || groupId, 0, 0, { groupId }));
+        nodes.push(createNode(groupNodeId, 'group', group.name || groupId, 0, 0, {
+          groupId,
+          omittedCount: Math.max(0, (group.member_entity_ids?.length ?? 0) - MAX_EXPANDED_MEMBERS),
+        }));
         for (const policyName of group.policies ?? []) {
           const policyId = `policy-${policyName}`;
           nodes.push(createNode(policyId, 'policy', policyName, NODE_SPACING_X * 2, nodes.length * NODE_SPACING_Y));
@@ -613,7 +619,12 @@ router.get(
         const gPolicies = (groupData.policies as string[]) ?? [];
         const memberEntityIds = (groupData.member_entity_ids as string[]) ?? [];
         const gNodeId = `group-${groupId}`;
-        nodes.push(createNode(gNodeId, 'group', groupName, 0, 0, { groupId, groupName, policies: gPolicies }));
+        nodes.push(createNode(gNodeId, 'group', groupName, 0, 0, {
+          groupId,
+          groupName,
+          policies: gPolicies,
+          omittedCount: Math.max(0, memberEntityIds.length - MAX_EXPANDED_MEMBERS),
+        }));
 
         // Member entities (capped to avoid oversize graphs), fetched concurrently
         await concurrentMap(memberEntityIds.slice(0, MAX_EXPANDED_MEMBERS), CONCURRENT_LIMIT, async (eId) => {
