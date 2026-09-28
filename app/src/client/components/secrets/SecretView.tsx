@@ -6,6 +6,7 @@ import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
 import Badge from '../common/Badge';
 import MoveSecretsDialog from './MoveSecretsDialog';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 interface SecretMetadata {
   created_time?: string;
@@ -128,6 +129,9 @@ export default function SecretView() {
   // Version restore
   const [restoringVersion, setRestoringVersion] = useState<number | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<
+    { type: 'delete' } | { type: 'restore'; versionNum: number } | null
+  >(null);
 
   // Tracks whether user has "show all" active — persisted across version switches
   const showAllRef = useRef(false);
@@ -201,7 +205,6 @@ export default function SecretView() {
   }, [splat, version, metadataRefreshKey]);
 
   async function handleRestoreVersion(versionNum: number) {
-    if (!confirm(`This will create a new version with the data from v${versionNum}. Continue?`)) return;
     setRestoringVersion(versionNum);
     setRestoreError(null);
     try {
@@ -261,7 +264,6 @@ export default function SecretView() {
   }
 
   async function handleDelete() {
-    if (!confirm('Delete this secret?')) return;
     try {
       await api.deleteSecret(splat);
       const parentPath = splat.split('/').slice(0, -1).join('/');
@@ -455,7 +457,7 @@ export default function SecretView() {
                 Edit
               </button>
               <button
-                onClick={() => { void handleDelete(); }}
+                onClick={() => setConfirmDialog({ type: 'delete' })}
                 className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
               >
                 Delete
@@ -500,7 +502,7 @@ export default function SecretView() {
           </div>
           {!restricted && (
             <button
-              onClick={() => { void handleRestoreVersion(viewingSecretVersion); }}
+              onClick={() => setConfirmDialog({ type: 'restore', versionNum: viewingSecretVersion })}
               disabled={restoringVersion === viewingSecretVersion}
               className="ml-4 rounded border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-50"
             >
@@ -938,7 +940,7 @@ export default function SecretView() {
                                   <div className="flex items-center gap-2">
                                     {!isCurrent && isActive && !restricted && (
                                       <button
-                                        onClick={() => { void handleRestoreVersion(vNum); }}
+                                        onClick={() => setConfirmDialog({ type: 'restore', versionNum: vNum })}
                                         disabled={restoringVersion === vNum}
                                         className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-50"
                                       >
@@ -1080,6 +1082,24 @@ export default function SecretView() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmDialog !== null}
+        title={confirmDialog?.type === 'delete' ? 'Delete secret' : 'Restore version'}
+        message={
+          confirmDialog?.type === 'delete'
+            ? 'Delete this secret? This cannot be undone.'
+            : confirmDialog?.type === 'restore'
+              ? `This will create a new version with the data from v${confirmDialog.versionNum}. Continue?`
+              : ''
+        }
+        confirmLabel={confirmDialog?.type === 'delete' ? 'Delete' : 'Restore'}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          if (confirmDialog?.type === 'delete') void handleDelete();
+          else if (confirmDialog?.type === 'restore') void handleRestoreVersion(confirmDialog.versionNum);
+          setConfirmDialog(null);
+        }}
+      />
     </div>
   );
 }
