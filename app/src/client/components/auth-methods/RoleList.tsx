@@ -4,6 +4,7 @@ import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import AuditErrorBadge from '../common/AuditErrorBadge';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 interface AppRoleForm {
   bindSecretId: boolean;
@@ -69,6 +70,7 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
 
   // Delete state
   const [deletingRole, setDeletingRole] = useState<string | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
 
   function loadRoles() {
     setLoading(true);
@@ -126,7 +128,6 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
   }
 
   async function handleDelete(role: string) {
-    if (!window.confirm(`Delete role "${role}"? This cannot be undone.`)) return;
     setDeletingRole(role);
     try {
       await api.deleteRole(method, role);
@@ -371,7 +372,7 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
                   <div className="flex items-center justify-end gap-2">
                     <AuditErrorBadge count={errorCounts?.byRole[role] ?? 0} mountPath={method} roleFilter={role} label={role} />
                     <button
-                      onClick={() => { void handleDelete(role); }}
+                      onClick={() => setConfirmTarget(role)}
                       disabled={deletingRole === role}
                       className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
                     >
@@ -391,6 +392,17 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
           </tbody>
         </table>
       </div>
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="Delete role"
+        message={`Delete role "${confirmTarget}"? This cannot be undone.`}
+        onCancel={() => setConfirmTarget(null)}
+        onConfirm={() => {
+          const role = confirmTarget;
+          setConfirmTarget(null);
+          if (role) void handleDelete(role);
+        }}
+      />
     </div>
   );
 }

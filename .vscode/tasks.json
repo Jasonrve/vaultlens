@@ -19,7 +19,7 @@
       "label": "docker-compose-remove-development-containers",
       "type": "shell",
       "command": "pwsh",
-      "args": ["-NoProfile", "-Command", "docker rm -f vaultlens-vault vaultlens-vault-init vaultlens-vault-audit-demo vaultlens-app 2>$null; exit 0"],
+      "args": ["-NoProfile", "-Command", "docker rm -f vaultlens-k3s vaultlens-k3s-vso-fixture vaultlens-vault vaultlens-vault-init vaultlens-vault-audit-demo vaultlens-app 2>$null; exit 0"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "continueOnError": true,
@@ -34,7 +34,53 @@
       "label": "docker-compose-up",
       "type": "shell",
       "command": "docker-compose",
-      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault", "vault-init", "vault-audit-demo"],
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "k3s", "k3s-vso-fixture", "vault", "vault-init", "vault-audit-demo"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "rancher-desktop-start",
+      "type": "shell",
+      "command": "pwsh",
+      "args": ["-NoProfile", "-File", "${workspaceFolder}/.vscode/start-rancher-desktop.ps1"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker-compose-start",
+      "dependsOn": ["rancher-desktop-start"],
+      "dependsOrder": "sequence",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "--wait", "--wait-timeout", "180", "k3s", "k3s-vso-fixture", "vault", "vault-init"],
+      "cwd": "${workspaceFolder}",
+      "isBackground": false,
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "docker-compose-start-audit-demo",
+      "dependsOn": ["docker-compose-start"],
+      "dependsOrder": "sequence",
+      "type": "shell",
+      "command": "docker-compose",
+      "args": ["-f", "docker-compose-development.yml", "up", "-d", "vault-audit-demo"],
       "cwd": "${workspaceFolder}",
       "isBackground": false,
       "presentation": {
