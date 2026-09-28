@@ -1,5 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
@@ -33,6 +33,11 @@ interface GraphCacheEntry {
 }
 
 const graphCache = new Map<string, GraphCacheEntry>();
+
+/** Current number of cached graph responses (across all callers/graph types). */
+export function getGraphCacheSize(): number {
+  return graphCache.size;
+}
 
 // Graphs are built with the caller's own Vault token, so the cache must be scoped
 // per-caller — otherwise one user's response (built from their ACLs) would be served
