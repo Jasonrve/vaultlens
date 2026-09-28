@@ -13,7 +13,7 @@ import type {
   ResolvedAuthAction,
 } from '../types';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: '/api',
   withCredentials: true,
 });
@@ -584,6 +584,8 @@ export async function updatePoliciesConfig(config: PoliciesConfig) {
 // ── Auth Methods Config ─────────────────────────────────
 export interface AuthMethodsConfig {
   enableDevIntegrationGuides: boolean;
+  enableVsoResources: boolean;
+  enableVsoLogs: boolean;
 }
 
 export async function getAuthMethodsConfig() {
@@ -593,6 +595,91 @@ export async function getAuthMethodsConfig() {
 
 export async function updateAuthMethodsConfig(config: AuthMethodsConfig) {
   const { data } = await api.put<{ success: boolean }>('/vaultlens-audit/auth-methods-config', config);
+  return data;
+}
+
+export type VsoHealth = 'healthy' | 'warning' | 'error' | 'unknown';
+
+export interface VsoCondition {
+  type: string;
+  status: string;
+  reason?: string;
+  message?: string;
+  lastTransitionTime?: string;
+}
+
+export interface VsoIssue {
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+export interface VsoResourceRow {
+  kind: string;
+  resource: string;
+  namespace?: string;
+  name: string;
+  createdAt?: string;
+  status?: string;
+  health: VsoHealth;
+  conditions?: VsoCondition[];
+  vaultAuthRef?: { name: string; namespace?: string };
+  vaultConnectionRef?: { name: string; namespace?: string };
+  authMount?: string;
+  role?: string;
+  serviceAccount?: string;
+  secretMount?: string;
+  path?: string;
+  destinationSecret?: { name: string; namespace?: string; create?: boolean };
+  issues?: VsoIssue[];
+}
+
+export interface VsoResourceList {
+  resources: VsoResourceRow[];
+  supportedKinds: Array<{ kind: string; resource: string }>;
+}
+
+export interface VsoResourceDetail {
+  yaml: string;
+  fullYaml: string;
+  row: VsoResourceRow;
+}
+
+export async function listVsoResources(method: string, role?: string) {
+  const { data } = await api.get<VsoResourceList>(
+    `/auth-methods/${encodeURIComponent(method)}/vso-resources`,
+    { params: role ? { role } : undefined },
+  );
+  return data;
+}
+
+export async function getVsoResource(
+  method: string,
+  row: Pick<VsoResourceRow, 'kind' | 'resource' | 'namespace' | 'name'>,
+) {
+  const namespace = row.namespace ? encodeURIComponent(row.namespace) : '_';
+  const { data } = await api.get<VsoResourceDetail>(
+    `/auth-methods/${encodeURIComponent(method)}/vso-resources/${encodeURIComponent(row.kind)}/${encodeURIComponent(row.resource)}/${namespace}/${encodeURIComponent(row.name)}`,
+  );
+  return data;
+}
+
+export interface VsoLogPod {
+  name: string;
+  namespace: string;
+  startedAt?: string;
+}
+
+export interface VsoLogs {
+  pods: VsoLogPod[];
+  selectedPod: string | null;
+  lines: string[];
+}
+
+export async function getVsoLogs(method: string, options: { pod?: string; tailLines?: number } = {}) {
+  const { data } = await api.get<VsoLogs>(
+    `/auth-methods/${encodeURIComponent(method)}/vso-logs`,
+    { params: options },
+  );
   return data;
 }
 

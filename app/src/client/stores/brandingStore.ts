@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import axios from 'axios';
+import { api } from '../lib/api';
 
 export interface BrandingConfig {
   logo: string;
@@ -34,23 +34,6 @@ interface BrandingState {
   uploadLogo: (file: File) => Promise<void>;
   removeLogo: () => Promise<void>;
 }
-
-const api = axios.create({
-  baseURL: '/api',
-  withCredentials: true,
-});
-
-// Read CSRF token from cookie and attach to state-changing requests
-api.interceptors.request.use((reqConfig) => {
-  const method = (reqConfig.method || '').toUpperCase();
-  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-    const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-    if (match?.[1]) {
-      reqConfig.headers['X-CSRF-Token'] = decodeURIComponent(match[1]);
-    }
-  }
-  return reqConfig;
-});
 
 export const useBrandingStore = create<BrandingState>((set, get) => ({
   branding: { ...DEFAULT_BRANDING },

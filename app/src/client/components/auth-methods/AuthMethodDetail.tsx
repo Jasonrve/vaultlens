@@ -10,9 +10,19 @@ import { AuthMethodMeta } from './AuthMethodMeta';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
 import AuditErrorBadge from '../common/AuditErrorBadge';
 import AuthActionBar from './AuthActionBar';
+import VsoResourcesTab from './VsoResourcesTab';
+import VsoLogsTab from './VsoLogsTab';
+import { SiKubernetes } from 'react-icons/si';
 
-type Tab = 'Configuration' | 'Method Options' | 'Roles';
-const ALL_TABS: Tab[] = ['Roles', 'Configuration', 'Method Options'];
+type Tab = 'Configuration' | 'Method Options' | 'Roles' | 'VSO Resources' | 'VSO Logs';
+const ALL_TABS: Tab[] = ['Roles', 'Configuration', 'Method Options', 'VSO Resources', 'VSO Logs'];
+
+function tabLabel(tab: Tab) {
+  if (tab === 'VSO Resources') {
+    return <span className="inline-flex items-center gap-1.5"><SiKubernetes className="h-3.5 w-3.5" /> Resources</span>;
+  }
+  return tab;
+}
 
 export default function AuthMethodDetail() {
   const { method = '' } = useParams<{ method: string }>();
@@ -22,8 +32,22 @@ export default function AuthMethodDetail() {
   const [showGraph, setShowGraph] = useState(false);
   const [tuneAccessible, setTuneAccessible] = useState(true);
   const [errorCounts, setErrorCounts] = useState<api.AuditErrorCounts | null>(null);
+  const [vsoResourcesEnabled, setVsoResourcesEnabled] = useState(false);
+  const [vsoLogsEnabled, setVsoLogsEnabled] = useState(false);
 
   // Resolve the method type from the auth methods list
+  useEffect(() => {
+    api.getAuthMethodsConfig()
+      .then((cfg) => {
+        setVsoResourcesEnabled(cfg.enableVsoResources);
+        setVsoLogsEnabled(cfg.enableVsoLogs);
+      })
+      .catch(() => {
+        setVsoResourcesEnabled(false);
+        setVsoLogsEnabled(false);
+      });
+  }, []);
+
   useEffect(() => {
     api.getAuthMethods()
       .then((methods) => {
@@ -65,8 +89,13 @@ export default function AuthMethodDetail() {
     return unsubscribe;
   }, [method]);
 
-  const tabs: Tab[] = ALL_TABS.filter((t) => t !== 'Method Options' || tuneAccessible);
   const authType = methodInfo?.type ?? method;
+  const tabs: Tab[] = ALL_TABS.filter((t) => {
+    if (t === 'Method Options') return tuneAccessible;
+    if (t === 'VSO Resources') return vsoResourcesEnabled && authType === 'kubernetes';
+    if (t === 'VSO Logs') return vsoLogsEnabled && authType === 'kubernetes';
+    return true;
+  });
 
   return (
     <div>
@@ -135,7 +164,7 @@ export default function AuthMethodDetail() {
                   : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
               }`}
             >
-              {tab}
+              {tabLabel(tab)}
             </button>
           ))}
         </nav>
@@ -155,6 +184,12 @@ export default function AuthMethodDetail() {
         )}
         {activeTab === 'Roles' && (
           <RoleList embedded errorCounts={errorCounts} />
+        )}
+        {activeTab === 'VSO Resources' && authType === 'kubernetes' && (
+          <VsoResourcesTab method={method} />
+        )}
+        {activeTab === 'VSO Logs' && authType === 'kubernetes' && (
+          <VsoLogsTab method={method} />
         )}
       </div>
     </div>

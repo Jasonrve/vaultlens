@@ -3,11 +3,13 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import crypto from 'crypto';
+import dns from 'dns';
 import axios from 'axios';
 import { config } from '../config/index.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { requireAdmin } from '../middleware/requireAdmin.js';
 import { getConfigStorage } from '../lib/config-storage/index.js';
+import { getAuditBuffer, getAuditSocketStats } from '../lib/auditSocket.js';
 import { webhookFiresTotal, webhookDeliveryDurationSeconds } from '../lib/metrics.js';
 import type { AuthenticatedRequest } from '../types/index.js';
 
@@ -22,6 +24,47 @@ const HOOKS_SECTION_PREFIX = 'hook-';
  * Validate a webhook endpoint URL.
  * Returns an error string if invalid, or null if the URL is acceptable.
  */
+// True if `host` (a hostname or a bare IP literal — brackets/scheme already stripped)
+// is a loopback/private/link-local/metadata address. Shared by the config-time string
+// check below and the delivery-time DNS-resolution check, so a hostname that only
+// resolves to an internal address *after* being approved (DNS rebinding) is still caught.
+function isPrivateOrReservedHost(host: string): boolean {
+  const h = host.toLowerCase();
+  return (
+    // Localhost by name and common loopback addresses
+    h === 'localhost' ||
+    h === '127.0.0.1' ||
+    h === '::1' ||
+    h === '0.0.0.0' ||
+    h === '::' ||
+    h === '0:0:0:0:0:0:0:0' ||
+    h === '0:0:0:0:0:0:0:1' ||
+    // IPv4 loopback range 127.0.0.0/8
+    /^127\./.test(h) ||
+    // IPv4 private ranges
+    h.startsWith('10.') ||
+    h.startsWith('192.168.') ||
+    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(h) ||
+    // IPv4 link-local and cloud metadata
+    h.startsWith('169.254.') ||
+    // IPv4 CGNAT range 100.64.0.0/10
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(h) ||
+    // IPv6 link-local fe80::/10
+    h.startsWith('fe80:') ||
+    h.startsWith('fe80::') ||
+    // IPv6 Unique Local Addresses (ULA) fc00::/7 — covers fc:: and fd::
+    h.startsWith('fc') ||
+    h.startsWith('fd') ||
+    // IPv4-mapped IPv6 ::ffff:192.168.x.x  or  ::ffff:10.x.x.x
+    h.startsWith('::ffff:') ||
+    h.startsWith('::ffff:0:') ||
+    // Internal hostnames
+    h.endsWith('.internal') ||
+    h === 'metadata.google.internal' ||
+    h === 'metadata.aws.internal'
+  );
+}
+
 function validateWebhookEndpoint(endpoint: string): string | null {
   let parsed: URL;
   try {
@@ -44,43 +87,36 @@ function validateWebhookEndpoint(endpoint: string): string | null {
     return null;
   }
 
-  const isBlocked =
-    // Localhost by name and common loopback addresses
-    rawHost === 'localhost' ||
-    rawHost === '127.0.0.1' ||
-    rawHost === '::1' ||
-    rawHost === '0.0.0.0' ||
-    rawHost === '::' ||
-    rawHost === '0:0:0:0:0:0:0:0' ||
-    rawHost === '0:0:0:0:0:0:0:1' ||
-    // IPv4 loopback range 127.0.0.0/8
-    /^127\./.test(rawHost) ||
-    // IPv4 private ranges
-    rawHost.startsWith('10.') ||
-    rawHost.startsWith('192.168.') ||
-    /^172\.(1[6-9]|2[0-9]|3[01])\./.test(rawHost) ||
-    // IPv4 link-local and cloud metadata
-    rawHost.startsWith('169.254.') ||
-    // IPv4 CGNAT range 100.64.0.0/10
-    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(rawHost) ||
-    // IPv6 link-local fe80::/10
-    rawHost.startsWith('fe80:') ||
-    rawHost.startsWith('fe80::') ||
-    // IPv6 Unique Local Addresses (ULA) fc00::/7 — covers fc:: and fd::
-    rawHost.startsWith('fc') ||
-    rawHost.startsWith('fd') ||
-    // IPv4-mapped IPv6 ::ffff:192.168.x.x  or  ::ffff:10.x.x.x
-    rawHost.startsWith('::ffff:') ||
-    rawHost.startsWith('::ffff:0:') ||
-    // Internal hostnames
-    hostname.endsWith('.internal') ||
-    hostname === 'metadata.google.internal' ||
-    hostname === 'metadata.aws.internal';
-
-  if (isBlocked) {
+  if (isPrivateOrReservedHost(rawHost)) {
     return 'Webhook endpoints must not target internal or metadata addresses';
   }
   return null;
+}
+
+/**
+ * Re-validates the endpoint's *resolved* address right before delivery, not just its
+ * hostname string. Catches DNS rebinding (host approved at config time, now resolves
+ * to an internal address) since the string check above can't see that. Throws if blocked.
+ */
+async function assertDeliveryHostAllowed(endpoint: string): Promise<void> {
+  if (config.nodeEnv === 'development') return;
+  const parsed = new URL(endpoint);
+  const hostname = parsed.hostname.toLowerCase();
+  const rawHost = hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
+
+  if (isPrivateOrReservedHost(rawHost)) {
+    throw new Error('Webhook endpoint targets an internal or metadata address');
+  }
+
+  let addresses: string[];
+  try {
+    addresses = (await dns.promises.lookup(rawHost, { all: true })).map((a) => a.address);
+  } catch {
+    throw new Error('Webhook endpoint hostname could not be resolved');
+  }
+  if (addresses.some((addr) => isPrivateOrReservedHost(addr))) {
+    throw new Error('Webhook endpoint resolves to an internal or metadata address');
+  }
 }
 
 /**
@@ -375,9 +411,11 @@ router.post(
 
       try {
         const cleanEndpoint = sanitizeEndpointUrl(endpoint);
+        await assertDeliveryHostAllowed(cleanEndpoint);
         const testStart = process.hrtime.bigint();
         const response = await axios.post(cleanEndpoint, payload, {
           timeout: 10000,
+          maxRedirects: 0,
           headers: {
             'Content-Type': 'application/json',
             'User-Agent': 'VaultLens-Webhook/1.0',
@@ -417,6 +455,7 @@ const AUDIT_LOG_FILE = config.auditLogPath
   : path.resolve(process.cwd(), '..', 'vault', 'audit', 'vault-audit.log');
 
 let lastFileSize = 0;
+let lastSocketEventsProcessed = 0;
 let watcherTimerId: ReturnType<typeof setInterval> | null = null;
 
 interface AuditLogEntry {
@@ -496,42 +535,75 @@ function auditFieldMatches(
   return true;
 }
 
-async function checkAuditLogForChanges(): Promise<void> {
-  try {
-    if (!fs.existsSync(AUDIT_LOG_FILE)) return;
+/** Collect newly-written-since-last-check entries from the socket audit ring buffer. */
+function collectNewSocketEntries(): Array<{ path: string; entry: AuditLogEntry }> {
+  const changedEntries: Array<{ path: string; entry: AuditLogEntry }> = [];
+  const { totalEventsReceived } = getAuditSocketStats();
+  const newCount = totalEventsReceived - lastSocketEventsProcessed;
+  lastSocketEventsProcessed = totalEventsReceived;
+  if (newCount <= 0) return changedEntries;
 
-    const stats = fs.statSync(AUDIT_LOG_FILE);
-    if (stats.size <= lastFileSize) {
-      lastFileSize = stats.size;
-      return;
-    }
-
-    // Read only the new portion of the file
-    const stream = fs.createReadStream(AUDIT_LOG_FILE, {
-      start: lastFileSize,
-      encoding: 'utf-8',
-    });
-
-    const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
-    const changedEntries: Array<{ path: string; entry: AuditLogEntry }> = [];
-
-    for await (const line of rl) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line) as AuditLogEntry;
-        if (entry.type === 'request' && entry.request) {
-          const op = entry.request.operation;
-          // Only trigger on write operations
-          if (['create', 'update', 'delete'].includes(op)) {
-            changedEntries.push({ path: entry.request.path, entry });
-          }
-        }
-      } catch {
-        // Skip malformed lines
+  // The ring buffer only keeps the most recent MAX_BUFFER_ENTRIES entries — if more
+  // than that arrived since the last check we can only see the newest of them
+  // (a bounded gap, not a crash), same trade-off the buffer itself already makes.
+  const buffer = getAuditBuffer();
+  const newEntries = buffer.slice(Math.max(0, buffer.length - newCount));
+  for (const raw of newEntries) {
+    const entry = raw as AuditLogEntry;
+    if (entry?.type === 'request' && entry.request) {
+      const op = entry.request.operation;
+      if (['create', 'update', 'delete'].includes(op)) {
+        changedEntries.push({ path: entry.request.path, entry });
       }
     }
+  }
+  return changedEntries;
+}
 
+/** Collect newly-written-since-last-check entries from the on-disk audit log file. */
+async function collectNewFileEntries(): Promise<Array<{ path: string; entry: AuditLogEntry }>> {
+  if (!fs.existsSync(AUDIT_LOG_FILE)) return [];
+
+  const stats = fs.statSync(AUDIT_LOG_FILE);
+  if (stats.size <= lastFileSize) {
     lastFileSize = stats.size;
+    return [];
+  }
+
+  // Read only the new portion of the file
+  const stream = fs.createReadStream(AUDIT_LOG_FILE, {
+    start: lastFileSize,
+    encoding: 'utf-8',
+  });
+
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const changedEntries: Array<{ path: string; entry: AuditLogEntry }> = [];
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as AuditLogEntry;
+      if (entry.type === 'request' && entry.request) {
+        const op = entry.request.operation;
+        // Only trigger on write operations
+        if (['create', 'update', 'delete'].includes(op)) {
+          changedEntries.push({ path: entry.request.path, entry });
+        }
+      }
+    } catch {
+      // Skip malformed lines
+    }
+  }
+
+  lastFileSize = stats.size;
+  return changedEntries;
+}
+
+async function checkAuditLogForChanges(): Promise<void> {
+  try {
+    const changedEntries = config.auditSource === 'socket'
+      ? collectNewSocketEntries()
+      : await collectNewFileEntries();
 
     if (changedEntries.length === 0) return;
 
@@ -599,8 +671,10 @@ async function fireWebhook(hookId: string, hookData: Record<string, string>, aud
   const fireStart = process.hrtime.bigint();
   try {
     const cleanEndpoint = sanitizeEndpointUrl(hookData['endpoint']!);
+    await assertDeliveryHostAllowed(cleanEndpoint);
     await axios.post(cleanEndpoint, payload, {
       timeout: 10000,
+      maxRedirects: 0,
       headers: {
         'Content-Type': 'application/json',
         'User-Agent': 'VaultLens-Webhook/1.0',

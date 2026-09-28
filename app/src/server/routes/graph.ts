@@ -1,7 +1,9 @@
 import { Router, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { concurrentMap } from '../lib/concurrency.js';
 import { parsePolicyHCL } from './policies.js';
 import {
   graphQueriesTotal,
@@ -32,6 +34,14 @@ interface GraphCacheEntry {
 
 const graphCache = new Map<string, GraphCacheEntry>();
 
+// Graphs are built with the caller's own Vault token, so the cache must be scoped
+// per-caller — otherwise one user's response (built from their ACLs) would be served
+// to every other user regardless of what that user is actually allowed to see.
+function graphCacheKey(graphType: string, token: string): string {
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  return `${graphType}:${tokenHash}`;
+}
+
 function getFromGraphCache(key: string): GraphCacheEntry | null {
   const entry = graphCache.get(key);
   if (!entry) return null;
@@ -48,24 +58,6 @@ function setInGraphCache(key: string, nodes: GraphNode[], edges: GraphEdge[]): G
   return entry;
 }
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── Concurrency helper ────────────────────────────────────────────────────────
-// Runs `fn` over every item with at most `limit` calls in-flight at once.
-// JavaScript's single-threaded event loop keeps Set/array mutations safe.
-async function concurrentMap<T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  const queue = [...items];
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (queue.length > 0) {
-      const item = queue.shift()!;
-      await fn(item);
-    }
-  });
-  await Promise.all(workers);
-}
 
 const CONCURRENT_LIMIT = 20;
 const NODE_SPACING_X = 180;
@@ -100,9 +92,11 @@ router.get(
   '/auth-policy-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('auth-policy-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache('auth-policy-map');
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'auth-policy', cache_hit: 'true' });
           res.json(cached); return;
@@ -110,7 +104,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
       const addedPolicyIds = new Set<string>();
@@ -193,7 +186,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'auth-policy' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'auth-policy' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'auth-policy' }, edges.length);
-      res.json(setInGraphCache('auth-policy-map', nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -205,9 +198,11 @@ router.get(
   '/policy-secret-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('policy-secret-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache('policy-secret-map');
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'policy-secret', cache_hit: 'true' });
           res.json(cached); return;
@@ -215,7 +210,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
@@ -263,7 +257,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'policy-secret' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'policy-secret' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'policy-secret' }, edges.length);
-      res.json(setInGraphCache('policy-secret-map', nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -275,9 +269,11 @@ router.get(
   '/identity-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('identity-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache('identity-map');
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'identity', cache_hit: 'true' });
           res.json(cached); return;
@@ -285,7 +281,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
       const addedGroupIds = new Set<string>();
@@ -383,7 +378,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'identity' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'identity' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'identity' }, edges.length);
-      res.json(setInGraphCache('identity-map', nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -651,8 +646,8 @@ router.get(
         policyY += 65;
       }
 
-      return res.json({ nodes, edges });
       graphQueriesTotal.inc({ graph_type: 'user-identity', cache_hit: 'false' });
+      return res.json({ nodes, edges });
     } catch (error) {
       return next(error);
     }
@@ -664,9 +659,11 @@ router.get(
   '/policy-relationships',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('policy-relationships', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache('policy-relationships');
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'policy-relationships', cache_hit: 'true' });
           res.json(cached); return;
@@ -674,7 +671,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
@@ -792,7 +788,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'policy-relationships' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'policy-relationships' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'policy-relationships' }, edges.length);
-      res.json(setInGraphCache('policy-relationships', nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }

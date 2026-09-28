@@ -1,4 +1,35 @@
 services:
+  k3s:
+    image: rancher/k3s:v1.31.5-k3s1
+    container_name: vaultlens-k3s
+    privileged: true
+    command: server --disable=traefik --tls-san=k3s --write-kubeconfig=/shared/k3s.yaml --write-kubeconfig-mode=644
+    ports:
+      - "6443:6443"
+    volumes:
+      - k3s-data:/var/lib/rancher/k3s
+      - k3s-shared:/shared
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get --raw=/readyz >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  k3s-vso-fixture:
+    image: rancher/k3s:v1.31.5-k3s1
+    container_name: vaultlens-k3s-vso-fixture
+    depends_on:
+      k3s:
+        condition: service_healthy
+    environment:
+      KUBECONFIG: /shared/k3s.yaml
+    volumes:
+      - k3s-shared:/shared
+      - ./vault/scripts:/vault/scripts:ro
+    entrypoint: /bin/sh
+    command: /vault/scripts/k3s-vso-fixture.sh
+    restart: "no"
+
   vault:
     image: hashicorp/vault:1.17
     container_name: vaultlens-vault
@@ -31,9 +62,12 @@ services:
     depends_on:
       vault:
         condition: service_healthy
+      k3s-vso-fixture:
+        condition: service_completed_successfully
     environment:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "root"
+      K8S_ACCESS_K3S: "${K8S_ACCESS_K3S:-}"
       # Optional OIDC configuration — set these in your root .env file to enable
       # full OIDC login in VaultLens. See .env.example for details.
       OIDC_DISCOVERY_URL: "${OIDC_DISCOVERY_URL:-}"
@@ -45,6 +79,7 @@ services:
     volumes:
       - ./vault/policies:/vault/policies:ro
       - ./vault/scripts:/vault/scripts:ro
+      - k3s-shared:/shared:ro
     entrypoint: /bin/sh
     command: /vault/scripts/bootstrap.sh
     restart: "no"
@@ -82,11 +117,18 @@ services:
     depends_on:
       vault:
         condition: service_healthy
+      k3s-vso-fixture:
+        condition: service_completed_successfully
     environment:
       PORT: "3001"
       NODE_ENV: "development"
       VAULT_ADDR: "http://vault:8200"
       VAULT_SYSTEM_TOKEN: "root"
+      K8S_ACCESS_K3S: "${K8S_ACCESS_K3S:-}"
+      K8S_SKIP_TLS_VERIFY: "${K8S_SKIP_TLS_VERIFY:-true}"
+      K8S_SERVICE_ACCOUNT_NAME: "${K8S_SERVICE_ACCOUNT_NAME:-vaultlens-vso-reader}"
+      K8S_SERVICE_ACCOUNT_NAMESPACE: "${K8S_SERVICE_ACCOUNT_NAMESPACE:-default}"
+      K8S_IAM_ROLE_NAME: "${K8S_IAM_ROLE_NAME:-}"
       VAULT_SKIP_TLS_VERIFY: "false"
       VAULT_AUDIT_SOURCE: "socket"
       VAULT_AUDIT_SOCKET_PORT: "9090"
@@ -101,10 +143,15 @@ services:
     volumes:
       - ./app:/app
       - ./docker-entrypoint.sh:/usr/local/bin/vaultlens-entrypoint:ro
-    command: sh -c "npm install && npm run build && npm start"
+      - k3s-shared:/var/run/secrets/kubernetes.io/serviceaccount:ro
+    command: sh -c "npm install && rm -rf dist && npm run build && npm start"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health > /dev/null 2>&1 && echo OK || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
       start_period: 120s
+
+volumes:
+  k3s-data:
+  k3s-shared:
