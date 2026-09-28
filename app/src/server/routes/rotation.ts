@@ -37,8 +37,12 @@ const DEFAULT_CHARSET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012
 /** Generate a random password using the specified charset (rejection sampling to avoid modulo bias). */
 function generatePassword(length: number, charset: string): string {
   const charsetLen = charset.length;
-  // Largest multiple of charsetLen that fits in a byte, for unbiased sampling
-  const maxValid = Math.floor(256 / charsetLen) * charsetLen;
+  if (charsetLen === 0) throw new Error('Password charset must not be empty');
+  // Largest multiple of charsetLen that fits in a byte, for unbiased sampling.
+  // A charset over 256 chars can't be sampled unbiased from a single byte —
+  // Math.floor(256/charsetLen) would be 0 there, making the loop below never
+  // terminate — so fall back to plain modulo (accepts minor bias) in that case.
+  const maxValid = charsetLen <= 256 ? Math.floor(256 / charsetLen) * charsetLen : 256;
   let result = '';
   while (result.length < length) {
     const bytes = crypto.randomBytes(length - result.length + 16); // over-request to reduce iterations
@@ -528,6 +532,10 @@ router.post(
       }
       if (!rotateInterval || !parseInterval(rotateInterval)) {
         res.status(400).json({ error: 'Invalid rotate-interval. Use e.g. 1h, 24h, 7d.' });
+        return;
+      }
+      if (rotateFormat.length > 256) {
+        res.status(400).json({ error: 'rotate-format charset must be 256 characters or fewer.' });
         return;
       }
 

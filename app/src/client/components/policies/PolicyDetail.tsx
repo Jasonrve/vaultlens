@@ -7,6 +7,7 @@ import ErrorMessage from '../common/ErrorMessage';
 import Badge from '../common/Badge';
 import SuggestionsCombobox from '../common/SuggestionsCombobox';
 import PolicyTesterPanel from './PolicyTesterPanel';
+import ConfirmDialog from '../common/ConfirmDialog';
 import type { PolicyRule } from './PolicyTesterPanel';
 
 const ALL_CAPABILITIES = ['create', 'read', 'update', 'delete', 'list', 'sudo', 'deny'] as const;
@@ -226,7 +227,7 @@ export default function PolicyDetail() {
   const [paths, setPaths] = useState<PolicyPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState<EditMode>('visual');
+  const [editMode, setEditMode] = useState<EditMode>('view');
 
   // Visual editor state
   const [visualRows, setVisualRows] = useState<VisualRow[]>([]);
@@ -245,6 +246,7 @@ export default function PolicyDetail() {
 
   // Delete state
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
 
   // Test panel
@@ -341,7 +343,6 @@ export default function PolicyDetail() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(`Delete policy "${name}"? This cannot be undone.`)) return;
     setDeleting(true);
     try {
       await api.deletePolicy(name);
@@ -450,7 +451,7 @@ export default function PolicyDetail() {
                 Edit (Raw HCL)
               </button>
               <button
-                onClick={() => { void handleDelete(); }}
+                onClick={() => setConfirmDelete(true)}
                 disabled={deleting}
                 className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
@@ -680,6 +681,13 @@ export default function PolicyDetail() {
           )}
         </div>
       </div>{/* end split-screen */}
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete policy"
+        message={`Delete policy "${name}"? This cannot be undone.`}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); void handleDelete(); }}
+      />
     </div>
   );
 }

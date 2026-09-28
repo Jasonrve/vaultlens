@@ -4,6 +4,12 @@ on:
   push:
     branches: [main, develop]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Docker image tag (leave empty for the default branch tag)
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -49,8 +55,9 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            type=raw,value=develop,enable=${{ github.ref_name == 'develop' }}
-            type=raw,value=edge,enable=${{ github.ref_name == 'main' }}
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=raw,value=develop,enable=${{ inputs.tag == '' && github.ref_name == 'develop' }}
+            type=raw,value=edge,enable=${{ inputs.tag == '' && github.ref_name == 'main' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6

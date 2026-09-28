@@ -357,7 +357,18 @@ router.post('/logout', async (req: AuthenticatedRequest, res: Response) => {
     try {
       const lookup = await vaultClient.get<{ data: VaultTokenInfo }>('/auth/token/lookup-self', token);
       user = lookup.data.display_name || lookup.data.entity_id || 'authenticated';
+
+      // Revoke the Vault token itself so a copied/stolen cookie can't keep working
+      // after logout. Never auto-revoke a root token — those are commonly shared
+      // across a dev's own CLI/other sessions and revoking one is not reversible.
+      if (!lookup.data.policies?.includes('root')) {
+        vaultClient.post('/auth/token/revoke-self', token, {}).catch(() => {
+          // Best-effort: a revoke failure (e.g. Vault briefly unreachable) must not
+          // block logout — the cookie is cleared regardless.
+        });
+      }
     } catch {
+      // Token already invalid/expired — still clear the cookie below.
     }
   }
   res.clearCookie('vault_token', {

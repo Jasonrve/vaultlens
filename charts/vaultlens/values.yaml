@@ -100,9 +100,19 @@ kubernetesAuth:
   # -- Path to the service account token (usually auto-mounted)
   tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"
 
+# -- Extra environment variables appended to the container, e.g. for VSO
+# Resources' downstream-cluster access (K8S_ACCESS_<MOUNT>, or
+# K8S_ACCESS_<MOUNT>_EKS_CLUSTER / _EKS_REGION to sign tokens with this pod's
+# own IAM role via IRSA or EKS Pod Identity — see docs/features/auth-methods.md).
+# extraEnv:
+#   - name: K8S_ACCESS_KUBERNETES_PROD_EKS_CLUSTER
+#     value: my-eks-cluster
+extraEnv: []
+
 serviceAccount:
   create: true
   automount: true
+  # -- For EKS IRSA, annotate with e.g. eks.amazonaws.com/role-arn: arn:aws:iam::...:role/...
   annotations: {}
   name: ""
 
@@ -120,7 +130,7 @@ securityContext:
   capabilities:
     drop:
       - ALL
-  readOnlyRootFilesystem: false
+  readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 1001
 

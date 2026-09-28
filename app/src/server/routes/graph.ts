@@ -3,8 +3,8 @@ import crypto from 'node:crypto';
 import { config } from '../config/index.js';
 import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
-import { parsePolicyHCL } from './policies.js';
 import { concurrentMap } from '../lib/concurrency.js';
+import { parsePolicyHCL } from './policies.js';
 import {
   graphQueriesTotal,
   graphComputationDurationSeconds,
@@ -97,9 +97,11 @@ router.get(
   '/auth-policy-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('auth-policy-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache(graphCacheKey('auth-policy-map', req.vaultToken!));
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'auth-policy', cache_hit: 'true' });
           res.json(cached); return;
@@ -107,7 +109,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
       const addedPolicyIds = new Set<string>();
@@ -190,7 +191,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'auth-policy' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'auth-policy' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'auth-policy' }, edges.length);
-      res.json(setInGraphCache(graphCacheKey('auth-policy-map', token), nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -202,9 +203,11 @@ router.get(
   '/policy-secret-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('policy-secret-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache(graphCacheKey('policy-secret-map', req.vaultToken!));
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'policy-secret', cache_hit: 'true' });
           res.json(cached); return;
@@ -212,7 +215,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
@@ -260,7 +262,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'policy-secret' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'policy-secret' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'policy-secret' }, edges.length);
-      res.json(setInGraphCache(graphCacheKey('policy-secret-map', token), nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -272,9 +274,11 @@ router.get(
   '/identity-map',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('identity-map', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache(graphCacheKey('identity-map', req.vaultToken!));
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'identity', cache_hit: 'true' });
           res.json(cached); return;
@@ -282,7 +286,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
       const addedGroupIds = new Set<string>();
@@ -380,7 +383,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'identity' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'identity' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'identity' }, edges.length);
-      res.json(setInGraphCache(graphCacheKey('identity-map', token), nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }
@@ -648,8 +651,8 @@ router.get(
         policyY += 65;
       }
 
-      return res.json({ nodes, edges });
       graphQueriesTotal.inc({ graph_type: 'user-identity', cache_hit: 'false' });
+      return res.json({ nodes, edges });
     } catch (error) {
       return next(error);
     }
@@ -661,9 +664,11 @@ router.get(
   '/policy-relationships',
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
+      const token = req.vaultToken!;
+      const cacheKey = graphCacheKey('policy-relationships', token);
       const isRefresh = req.query.refresh === 'true';
       if (!isRefresh) {
-        const cached = getFromGraphCache(graphCacheKey('policy-relationships', req.vaultToken!));
+        const cached = getFromGraphCache(cacheKey);
         if (cached) {
           graphQueriesTotal.inc({ graph_type: 'policy-relationships', cache_hit: 'true' });
           res.json(cached); return;
@@ -671,7 +676,6 @@ router.get(
       }
       const _graphStart = process.hrtime.bigint();
 
-      const token = req.vaultToken!;
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
@@ -789,7 +793,7 @@ router.get(
       graphComputationDurationSeconds.observe({ graph_type: 'policy-relationships' }, Number(process.hrtime.bigint() - _graphStart) / 1e9);
       graphNodeCount.set({ graph_type: 'policy-relationships' }, nodes.length);
       graphEdgeCount.set({ graph_type: 'policy-relationships' }, edges.length);
-      res.json(setInGraphCache(graphCacheKey('policy-relationships', token), nodes, edges));
+      res.json(setInGraphCache(cacheKey, nodes, edges));
     } catch (error) {
       next(error);
     }

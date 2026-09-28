@@ -1,5 +1,9 @@
-// Runs `fn` over every item with at most `limit` calls in-flight at once.
-// JavaScript's single-threaded event loop keeps Set/array mutations safe.
+/**
+ * Runs `fn` over every item with at most `limit` calls in-flight at once.
+ * Use for fan-out over Vault API calls (one request per entity/group/role/...)
+ * so a large Vault install can't turn a single request into thousands of
+ * simultaneous outbound calls.
+ */
 export async function concurrentMap<T>(
   items: T[],
   limit: number,
