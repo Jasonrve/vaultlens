@@ -6,6 +6,9 @@ import ErrorMessage from '../common/ErrorMessage';
 import DevIntegrationTab from './DevIntegrationTab';
 import FilteredAuditLog from '../common/FilteredAuditLog';
 import AuthActionBar from './AuthActionBar';
+import VsoResourcesTab from './VsoResourcesTab';
+import { SiKubernetes } from 'react-icons/si';
+import type { ReactNode } from 'react';
 
 // Fields that contain token/security policies — rendered as badges
 const POLICY_FIELDS = new Set(['token_policies', 'policies', 'allowed_policies', 'disallowed_policies']);
@@ -291,10 +294,17 @@ export default function RoleDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'developer' | 'audits' | 'secret-ids'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'developer' | 'audits' | 'secret-ids' | 'vso'>('details');
   const [templateContent, setTemplateContent] = useState('');
   const [canCustomize, setCanCustomize] = useState(false);
   const [devGuidesEnabled, setDevGuidesEnabled] = useState(true);
+  const [vsoResourcesEnabled, setVsoResourcesEnabled] = useState(false);
+
+  useEffect(() => {
+    api.getAuthMethodsConfig()
+      .then((cfg) => setVsoResourcesEnabled(cfg.enableVsoResources))
+      .catch(() => setVsoResourcesEnabled(false));
+  }, []);
 
   useEffect(() => {
     api
@@ -373,12 +383,14 @@ export default function RoleDetail() {
           const tabs = [
             'details' as const,
             ...(authType === 'approle' ? ['secret-ids' as const] : []),
+            ...(authType === 'kubernetes' && vsoResourcesEnabled ? ['vso' as const] : []),
             ...(showDevGuide ? ['developer' as const] : []),
             'audits' as const,
           ];
-          const tabLabels: Record<string, string> = {
+          const tabLabels: Record<string, ReactNode> = {
             'details': 'Role Details',
             'secret-ids': 'Secret IDs',
+            'vso': <span className="inline-flex items-center gap-1.5"><SiKubernetes className="h-3.5 w-3.5" /> Resources</span>,
             'developer': '⚙ Developer Guide',
             'audits': '📋 Audits',
           };
@@ -438,6 +450,11 @@ export default function RoleDetail() {
       {/* Tab: Secret IDs (AppRole only) */}
       {activeTab === 'secret-ids' && (
         <SecretIdsSection method={method} role={role} />
+      )}
+
+      {/* Tab: VSO Resources scoped to this role (Kubernetes auth only) */}
+      {activeTab === 'vso' && (
+        <VsoResourcesTab method={method} role={role} />
       )}
 
       {/* Tab: Developer Guide */}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type FormEvent } from 'react';
 import { useAuthStore } from '../../stores/authStore';
+import { useBrandingStore } from '../../stores/brandingStore';
 import { useNavigate, useLocation } from 'react-router-dom';
 import * as api from '../../lib/api';
 
@@ -31,6 +32,7 @@ export default function LoginPage() {
   const [oidcMethods, setOidcMethods] = useState<{ path: string; type: string; defaultRole: string; description: string }[]>([]);
 
   const { login, loginWithToken, error, loading } = useAuthStore();
+  const { branding } = useBrandingStore();
   const navigate = useNavigate();
   const location = useLocation();
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
@@ -242,10 +244,14 @@ export default function LoginPage() {
         {/* Vault branding */}
         <div className="mb-8 flex flex-col items-center">
           <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-[#19191a] text-white">
-            <VaultHexIcon className="h-8 w-8" />
+            {branding.logo ? (
+              <img src={branding.logo} alt="Logo" className="h-10 w-10 object-contain" />
+            ) : (
+              <VaultHexIcon className="h-8 w-8" />
+            )}
           </div>
-          <h1 className="text-xl font-semibold text-gray-900">Sign in to Vault</h1>
-          <p className="mt-1 text-sm text-gray-500">VaultLens UI</p>
+          <h1 className="text-xl font-semibold text-gray-900">Sign in to {branding.appName || 'VaultLens'}</h1>
+          <p className="mt-1 text-sm text-gray-500">{branding.appName || 'VaultLens'} UI</p>
         </div>
 
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

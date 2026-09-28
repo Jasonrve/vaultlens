@@ -17,7 +17,7 @@ Branding settings require the `vaultlens-admin` policy (or `root`).
 | Setting | Description |
 |---------|-------------|
 | **Application Name** | Replaces "VaultLens" in the header and page title |
-| **Logo** | Custom logo image (PNG, JPG, SVG — shown in the header) |
+| **Logo** | Custom logo image (PNG, JPG, SVG, or WebP — shown on the login screen and in the sidebar) |
 | **Primary Color** | Main accent color for buttons and highlights |
 | **Secondary Color** | Secondary accent color |
 | **Background Color** | Sidebar and header background color |
@@ -40,4 +40,4 @@ Logo images are stored as binary blobs:
 
 ## Public Access
 
-The branding endpoint (`GET /api/branding`) is public — it's fetched before login so the login page also shows your custom branding.
+The branding endpoint (`GET /api/branding`) is public — it is fetched before login so the login screen and authenticated interface show your custom branding.
