@@ -27,6 +27,7 @@ import HooksPage from './pages/HooksPage';
 import SystemTokenSetupPage from './pages/SystemTokenSetupPage';
 import VaultLensAuditPage from './pages/VaultLensAuditPage';
 import FeaturesSettingsPage from './pages/FeaturesSettingsPage';
+import AdminHealthPage from './pages/AdminHealthPage';
 import ChangelogPage from './pages/ChangelogPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
@@ -217,6 +218,7 @@ function AppRoutes() {
         <Route path="/access/groups/*" element={<IdentityPage type="groups" />} />
         <Route path="/visualizations" element={<VisualizationsPage />} />
         <Route path="/identity" element={<MyIdentityPage />} />
+        <Route path="/admin/health" element={<AdminHealthPage />} />
         <Route path="/admin/branding" element={<AdminBrandingPage />} />
         <Route path="/admin/permission-tester" element={<PermissionTesterPage />} />
         <Route path="/admin/audit-log" element={<AuditLogPage />} />

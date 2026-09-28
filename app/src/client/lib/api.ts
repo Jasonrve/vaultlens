@@ -1021,6 +1021,64 @@ export async function testHook(id: string) {
   return data;
 }
 
+// ── Admin Health ──────────────────────────────────────────
+export interface AdminHealth {
+  app: {
+    version: string;
+    nodeEnv: string;
+    uptimeSeconds: number;
+    pid: number;
+    nodeVersion: string;
+  };
+  resources: {
+    memory: { rss: number; heapTotal: number; heapUsed: number; external: number; arrayBuffers: number };
+    loadAvg: [number, number, number];
+    cpuCount: number;
+    totalMemBytes: number;
+    freeMemBytes: number;
+  };
+  config: Record<string, unknown>;
+  vaultAuthIdentity: {
+    source: 'kubernetes' | 'static' | 'approle' | 'none';
+    configured: boolean;
+    kubernetesAuthRole?: string;
+    kubernetesAuthMount?: string;
+    token?: {
+      displayName: string;
+      entityId: string;
+      policies: string[];
+      identityPolicies: string[];
+      ttl: number;
+      type: string;
+    };
+    tokenError?: string;
+  };
+  awsIdentity: {
+    region: string;
+    manuallyConfiguredRole?: string;
+    callerIdentity: { arn: string; accountId: string; userId: string } | null;
+  } | null;
+  backgroundJobs: {
+    auditSocket: {
+      enabled: boolean;
+      listening: boolean;
+      port: number;
+      host: string;
+      connectedClients: number;
+      totalEventsReceived: number;
+      bufferSize: number;
+      firstEventAt: string | null;
+      lastEventAt: string | null;
+    };
+    graphCacheSize: number;
+  };
+}
+
+export async function getAdminHealth() {
+  const { data } = await api.get<AdminHealth>('/admin/health');
+  return data;
+}
+
 // ── Sys Info ──────────────────────────────────────────────
 export async function getVaultHealth() {
   const { data } = await api.get<Record<string, unknown>>('/sys/health');

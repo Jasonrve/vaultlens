@@ -6,7 +6,7 @@ import { tryDecryptConfigValue } from './configEncryption.js';
 
 const K8S_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
 const APPROLE_ROLE_NAME = 'vaultlens-system-token';
-const CREDS_SECTION = 'sys_token_approle';
+export const CREDS_SECTION = 'sys_token_approle';
 
 let cachedToken: string | null = null;
 let tokenExpiry: number = 0;
