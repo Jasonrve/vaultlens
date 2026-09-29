@@ -7,7 +7,7 @@ import { tryDecryptConfigValue } from './configEncryption.js';
 
 const K8S_SA_TOKEN_PATH = '/var/run/secrets/kubernetes.io/serviceaccount/token';
 const APPROLE_ROLE_NAME = 'vaultlens-system-token';
-const CREDS_SECTION = 'sys_token_approle';
+export const CREDS_SECTION = 'sys_token_approle';
 
 let cachedToken: string | null = null;
 let tokenExpiry: number = 0;
@@ -165,7 +165,20 @@ export async function getSystemToken(): Promise<string> {
     if (cachedToken && Date.now() < tokenExpiry) {
       return cachedToken;
     }
-    return authenticateK8s();
+    // Fall back to the static token on failure, same as the AppRole path below —
+    // a transient SA-token read or Vault K8s-login failure shouldn't hard-fail
+    // every caller when a static fallback is configured.
+    try {
+      return await authenticateK8s();
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (config.vaultSystemToken) {
+        console.debug('[K8s Auth] Failed to authenticate (falling back to static token):', errMsg);
+        return config.vaultSystemToken;
+      }
+      console.error('[K8s Auth] Failed to authenticate:', errMsg);
+      throw e;
+    }
   }
 
   // Try AppRole credentials stored in config storage

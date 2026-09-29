@@ -110,7 +110,7 @@ export default function SecretMergeEditor() {
                 onChange={(e) => updateField(i, e.target.value)}
                 className={`flex-1 rounded-md border px-3 py-2 text-sm focus:outline-none ${
                   field.modified
-                    ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
+                    ? 'border-blue-400 bg-white ring-1 ring-blue-300'
                     : 'border-gray-300'
                 }`}
               />

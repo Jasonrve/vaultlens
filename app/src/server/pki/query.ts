@@ -3,7 +3,10 @@ import type { PkiQuery } from "../../shared/pki.js";
 import { pkiSearchFields } from "../../shared/pki.js";
 import { normalizeFingerprint, normalizeSerial } from "./certificate.js";
 import { PkiError } from "./adapter.js";
-export function validateQuery(raw: any): PkiQuery {
+export function validateQuery(input: unknown): PkiQuery {
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    throw new PkiError(400, "Select up to 100 sources");
+  const raw = input as Record<string, unknown>;
   if (
     !raw ||
     !Array.isArray(raw.sources) ||
@@ -47,15 +50,15 @@ export function validateQuery(raw: any): PkiQuery {
     validity: ["", "valid", "expiring", "expired", "not_yet_valid"],
     revocation: ["", "revoked", "not_revoked", "unknown"],
   })) {
-    if (raw[field] !== undefined && !values.includes(raw[field]))
+    if (raw[field] !== undefined && (typeof raw[field] !== "string" || !values.includes(raw[field])))
       throw new PkiError(400, "Invalid " + field);
   }
   const limit = raw.limit ?? 50;
-  if (raw.offset !== undefined && (!Number.isSafeInteger(raw.offset) || raw.offset < 0))
+  if (raw.offset !== undefined && (typeof raw.offset !== "number" || !Number.isSafeInteger(raw.offset) || raw.offset < 0))
     throw new PkiError(400, "Invalid page offset");
   if (raw.cursor && raw.offset)
     throw new PkiError(400, "Use either a cursor or a page offset");
-  if (!Number.isInteger(limit) || limit < 1 || limit > 200)
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 200)
     throw new PkiError(400, "Page size must be between 1 and 200");
   if (
     raw.cursor !== undefined &&
@@ -68,7 +71,7 @@ export function validateQuery(raw: any): PkiQuery {
     sort: raw.sort ?? "notAfter",
     direction: raw.direction ?? "asc",
     limit,
-  };
+  } as PkiQuery;
 }
 export function whereQuery(query: PkiQuery, now = Date.now()) {
   const params: (string | number)[] = [...query.sources];

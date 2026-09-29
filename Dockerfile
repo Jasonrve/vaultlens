@@ -6,7 +6,7 @@ WORKDIR /build
 # Copy entire application source
 COPY app/ ./
 
-# Install dependencies (node:22-alpine ships with a working npm � do NOT upgrade globally)
+# Install dependencies (node:22-alpine ships with a working npm — do NOT upgrade globally)
 RUN npm ci
 
 # Build application

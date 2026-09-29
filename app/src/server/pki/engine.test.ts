@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { changedRoleFields } from "../../shared/pkiOperations.js";
-import { pkiEngineUrl } from "../../shared/pkiEngine.js";
+import { type PkiEngineResult, pkiEngineUrl } from "../../shared/pkiEngine.js";
 test("PKI engine reads roles without certificate LIST, scopes references and fences replacement mounts", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pki-engine-"));
   execFileSync(
@@ -112,16 +112,16 @@ test("PKI engine reads roles without certificate LIST, scopes references and fen
   try {
     assert.equal((await get("", "")).status, 401);
     assert.equal((await get("", "expired")).status, 403);
-    const root = (await (await get()).json()) as any;
+    const root = (await (await get()).json()) as PkiEngineResult;
     assert.equal(root.source.path, "team/pki");
     assert.equal((await get("&section=roles")).status, 200);
-    const lookup = await (await get("&section=roles&lookup=true&query=TAIL-ROLE")).json() as any;
-    assert.deepEqual(lookup.items.map((item:any) => item.id), ["tail-role"]);
+    const lookup = await (await get("&section=roles&lookup=true&query=TAIL-ROLE")).json() as PkiEngineResult;
+    assert.deepEqual(lookup.items!.map((item) => item.id), ["tail-role"]);
     assert.equal(lookup.total, 1);
-    const emptyLookup = await (await get("&section=roles&lookup=true&query=missing")).json() as any;
+    const emptyLookup = await (await get("&section=roles&lookup=true&query=missing")).json() as PkiEngineResult;
     assert.equal(emptyLookup.total, 0);
-    const issuerLookup = await (await get("&section=issuers&lookup=true&query=ca")).json() as any;
-    assert.equal(issuerLookup.items[0].id, "issuer-a");
+    const issuerLookup = await (await get("&section=issuers&lookup=true&query=ca")).json() as PkiEngineResult;
+    assert.equal(issuerLookup.items![0].id, "issuer-a");
     assert.equal((await get("&section=roles&ref=server")).status, 200);
     assert.equal(calls.includes("/v1/sys/capabilities-self"), false);
     assert.equal((await get("&section=issuers")).status, 200);
@@ -129,10 +129,10 @@ test("PKI engine reads roles without certificate LIST, scopes references and fen
     assert.equal((await get("&section=certificates")).status, 403);
     const certificate = (await (
       await get("&section=certificate&ref=00:01")
-    ).json()) as any;
-    assert.equal(certificate.certificate.serial, "1");
+    ).json()) as PkiEngineResult;
+    assert.equal(certificate.certificate!.serial, "1");
     assert.equal(certificate.revocation, "not_revoked");
-    assert.equal("der" in certificate.certificate, false);
+    assert.equal("der" in certificate.certificate!, false);
     denyCertificate = true;
     assert.equal((await get("&section=certificate&ref=1")).status, 403);
     denyCertificate = false;

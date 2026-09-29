@@ -53,6 +53,8 @@ pkiEngineRouter
         (ref.length > 256 ||
           ref === "." ||
           ref === ".." ||
+          // References must not contain control characters or URL delimiters.
+          // eslint-disable-next-line no-control-regex
           /[\x00-\x1f\x7f/\\?#%]/.test(ref))
       )
         throw new PkiError(400, "Invalid PKI object reference");

@@ -1,4 +1,4 @@
-import { pkiSearchFields, type PkiQuery, type PkiSource } from "./pki.js";
+import { pkiSearchFields, type PkiCondition, type PkiQuery, type PkiSource } from "./pki.js";
 export const pkiSelectionKey = "vaultlens.pki.sources";
 // Browser preferences only: source IDs are always intersected with live authorization.
 export function restorePkiQuery(
@@ -6,16 +6,17 @@ export function restorePkiQuery(
   sources: PkiSource[],
   saved: unknown,
 ): PkiQuery {
-  let raw: any = {};
+  let parsed: unknown;
   try {
-    raw = JSON.parse(params.get("filter") || "{}");
+    parsed = JSON.parse(params.get("filter") || "{}");
   } catch {
     throw new Error(
       "Invalid shared search. Clear the URL filter to start a new search.",
     );
   }
-  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new Error("Invalid shared search");
+  const raw = parsed as Record<string, unknown>;
   const mount = params.get("mount")?.replace(/\/$/, "");
   const selection =
     raw.sources ??
@@ -31,7 +32,7 @@ export function restorePkiQuery(
     direction: "asc",
     limit: 50,
   };
-  if (Number.isInteger(raw.limit) && raw.limit >= 1 && raw.limit <= 200) q.limit = raw.limit;
+  if (typeof raw.limit === "number" && Number.isInteger(raw.limit) && raw.limit >= 1 && raw.limit <= 200) q.limit = raw.limit;
   for (const [field, values] of Object.entries({
     match: ["all", "any"],
     sort: ["cn", "serial", "sourcePath", "type", "notAfter", "revoked"],
@@ -41,7 +42,7 @@ export function restorePkiQuery(
     revocation: ["", "revoked", "not_revoked", "unknown"],
   })) {
     if (raw[field] !== undefined) {
-      if (!values.includes(raw[field]))
+      if (typeof raw[field] !== "string" || !values.includes(raw[field]))
         throw new Error("Invalid shared search: " + field);
       Object.assign(q, { [field]: raw[field] });
     }
@@ -51,7 +52,7 @@ export function restorePkiQuery(
       !Array.isArray(raw.conditions) ||
       raw.conditions.length > 12 ||
       !raw.conditions.every(
-        (c: any) =>
+        (c: PkiCondition) =>
           c &&
           typeof c.value === "string" &&
           c.value.length <= 1024 &&
@@ -60,7 +61,7 @@ export function restorePkiQuery(
       )
     )
       throw new Error("Invalid shared search conditions");
-    q.conditions = raw.conditions.map(({ field, operator, value }: any) => ({
+    q.conditions = (raw.conditions as PkiCondition[]).map(({ field, operator, value }) => ({
       field,
       operator,
       value,

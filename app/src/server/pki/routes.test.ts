@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import type { PkiQuery } from "../../shared/pki.js";
 import { PkiStore } from "./store.js";
 import { PkiAdapter } from "./adapter.js";
 
@@ -82,7 +83,7 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/api/pki`;
-  const q = {
+  const q: PkiQuery = {
     sources: [source.id],
     conditions: [],
     match: "all",
@@ -132,17 +133,17 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
     assert.equal(lines.at(-1).kind, "complete");
     assert.equal(lines.at(-1).count, 300);
     assert.equal(lines.filter((x) => x.serial === "concurrent").length, 0);
-    assert.equal(store.query(q as any).total, 301);
+    assert.equal(store.query(q).total, 301);
     mutate = () => {};
-    const jsonExport = await (await get(exportPath + "&format=json")).json() as any;
+    const jsonExport = await (await get(exportPath + "&format=json")).json() as { complete: boolean; certificates: unknown[] };
     assert.equal(jsonExport.complete, true);
     assert.equal(jsonExport.certificates.length, 301);
     const csvExport = await (await get(exportPath + "&format=csv")).text();
     assert.equal(csvExport.trim().split("\r\n").length, 302);
     assert.ok(csvExport.includes('"sourcePath"'));
-    for (const sort of ["cn", "serial", "sourcePath", "type", "notAfter", "revoked"]) {
-      for (const direction of ["asc", "desc"]) {
-        const query = { ...q, sort, direction } as any;
+    for (const sort of ["cn", "serial", "sourcePath", "type", "notAfter", "revoked"] as const) {
+      for (const direction of ["asc", "desc"] as const) {
+        const query: PkiQuery = { ...q, sort, direction };
         const first = store.query(query);
         const second = store.query({ ...query, cursor: first.nextCursor! });
         assert.equal(new Set([...first.certificates, ...second.certificates].map(c => c.id)).size, 100);
@@ -171,7 +172,7 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
     await response.body!.getReader().read();
     abort.abort();
     copy.run("after-abort");
-    assert.equal(store.query(q as any).total, 302);
+    assert.equal(store.query(q).total, 302);
   } finally {
     server.closeAllConnections();
     vault.closeAllConnections();

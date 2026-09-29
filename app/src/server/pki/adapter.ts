@@ -52,12 +52,14 @@ export class PkiAdapter {
         : {}),
     });
   }
+  // Vault response shapes vary by endpoint; callers validate the fields they consume.
   async request(
     path: string,
     method = "GET",
     data?: unknown,
     maxContentLength?: number,
     validationDetails = false,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ): Promise<any> {
     await this.beforeRequest?.();
     try {
@@ -105,7 +107,7 @@ export class PkiAdapter {
     );
     if (!health.cluster_id)
       throw new PkiError(503, "Vault cluster identity unavailable");
-    let mounts: Record<string, any>;
+    let mounts: Record<string, { type: string; accessor: string; description?: string }>;
     try {
       mounts = (await this.request("sys/mounts")).data;
     } catch (e) {

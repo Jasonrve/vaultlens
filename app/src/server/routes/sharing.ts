@@ -43,7 +43,14 @@ interface StoredSecret {
   maxViews?: number;
   /** Current view count */
   viewCount?: number;
+  /** Consecutive failed OTP attempts — secret is deleted after MAX_OTP_ATTEMPTS */
+  otpFailedAttempts?: number;
 }
+
+/** OTP codes below this length are brute-forceable within a secret's lifetime even with rate limiting. */
+const MIN_OTP_LENGTH = 6;
+/** Delete the secret outright after this many wrong guesses, on top of the per-IP rate limit. */
+const MAX_OTP_ATTEMPTS = 10;
 
 /** Hash an OTP code for storage (SHA-256, not reversible) */
 function hashOtp(code: string): string {
@@ -78,7 +85,14 @@ async function cleanupExpiredSecrets(sysToken: string): Promise<void> {
     const CLEANUP_BATCH_SIZE = 50;
     const now = new Date();
     let remaining = keys.length;
-    const batch = keys.slice(0, CLEANUP_BATCH_SIZE);
+    // Rotate the scan window randomly each call so repeated calls eventually cover
+    // every key. A fixed slice(0, 50) would only ever re-check the same (alphabetically
+    // first) UUIDs — if those happen to still be live, expired secrets sitting
+    // elsewhere in the list never get swept and MAX_STORED_SECRETS stays pinned.
+    const startIdx = keys.length > CLEANUP_BATCH_SIZE ? Math.floor(Math.random() * keys.length) : 0;
+    const batch = keys.length <= CLEANUP_BATCH_SIZE
+      ? keys
+      : Array.from({ length: CLEANUP_BATCH_SIZE }, (_, i) => keys[(startIdx + i) % keys.length]!);
     for (const key of batch) {
       try {
         const resp = await vaultClient.get<{ data: StoredSecret }>(
@@ -157,8 +171,8 @@ router.post(
 
       // Validate OTP code for OTP mode
       if (mode === 'otp') {
-        if (!otpCode || typeof otpCode !== 'string' || otpCode.length < 4 || otpCode.length > 64) {
-          res.status(400).json({ error: 'OTP code is required (4-64 characters)' });
+        if (!otpCode || typeof otpCode !== 'string' || otpCode.length < MIN_OTP_LENGTH || otpCode.length > 64) {
+          res.status(400).json({ error: `OTP code is required (${MIN_OTP_LENGTH}-64 characters)` });
           return;
         }
       }
@@ -416,6 +430,21 @@ router.post(
         }
 
         if (!stored.otpHash || !verifyOtpHash(otpCode, stored.otpHash)) {
+          const attempts = (stored.otpFailedAttempts ?? 0) + 1;
+          if (attempts >= MAX_OTP_ATTEMPTS) {
+            // Too many wrong guesses — delete the secret so it can't keep being
+            // brute-forced. The per-IP rate limit alone isn't enough since a short
+            // OTP is guessable well within a secret's multi-day lifetime.
+            try {
+              await vaultClient.delete(`/cubbyhole/shared-secrets/${secretId}`, sysToken);
+            } catch { /* best effort */ }
+            res.status(404).json({ error: 'Secret not found or expired' });
+            return;
+          }
+          stored.otpFailedAttempts = attempts;
+          try {
+            await vaultClient.post(`/cubbyhole/shared-secrets/${secretId}`, sysToken, stored);
+          } catch { /* non-fatal */ }
           res.status(403).json({ error: 'Invalid OTP code' });
           return;
         }

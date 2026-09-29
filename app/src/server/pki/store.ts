@@ -337,14 +337,15 @@ export class PkiStore {
       truncated: rows.length > limit,
     };
   }
-  decorate(row: any): CertificateRecord {
+  decorate(raw: Record<string, unknown>): CertificateRecord {
+    const row = raw as Omit<CertificateRecord, "eku" | "sans"> & { eku: string };
     return {
       ...row,
       eku: JSON.parse(row.eku),
       role: null,
       sans: this.db
         .prepare("SELECT type,value FROM sans WHERE certificateId=?")
-        .all(row.id),
+        .all(row.id) as CertificateRecord["sans"],
     };
   }
   certificate(id: number, ids: string[]) {

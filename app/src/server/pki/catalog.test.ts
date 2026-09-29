@@ -398,7 +398,9 @@ test("job diagnostics are scoped and error samples are bounded", () => {
   } finally {
     try {
       s.close();
-    } catch {}
+    } catch {
+      // The success path already closed the store.
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 });
