@@ -1,3 +1,5 @@
+import CertificatesPage from './pages/CertificatesPage';
+import PkiEnginePage from './pages/PkiEnginePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -211,6 +213,7 @@ function AppRoutes() {
       >
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
+        <Route path="/pki/engines/*" element={<PkiEnginePage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />
         <Route path="/access/entities/*" element={<IdentityPage type="entities" />} />
@@ -233,6 +236,7 @@ function AppRoutes() {
         <Route path="/tools/share" element={<ShareSecretPage />} />
         <Route path="/tools/generator" element={<SecretGeneratorPage />} />
       </Route>
+        <Route path="/certificates" element={<ProtectedRoute><Layout /></ProtectedRoute>}><Route index element={<CertificatesPage />} /></Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );

@@ -22,6 +22,14 @@ export default [
       },
       globals: {
         // Browser APIs
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
+        Blob: 'readonly',
+        PointerEvent: 'readonly',
+        FocusEvent: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLDialogElement: 'readonly',
+        HTMLDetailsElement: 'readonly',
         console: 'readonly',
         document: 'readonly',
         navigator: 'readonly',

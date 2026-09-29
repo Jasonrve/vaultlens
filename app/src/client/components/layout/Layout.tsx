@@ -12,11 +12,12 @@ export default function Layout() {
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header />
         <main
-          className="flex-1 overflow-y-auto p-6"
+          className="min-h-0 flex-1 overflow-y-auto p-6"
           style={{ backgroundColor: branding.backgroundColor }}
         >
           <Outlet />
         </main>
+        <div id="page-action-dock" className="shrink-0" />
       </div>
     </div>
   );
