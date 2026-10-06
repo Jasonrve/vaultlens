@@ -11,6 +11,14 @@ function IconSquares() {
   );
 }
 
+function IconPulse() {
+  return (
+    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 12h1.5l1.5-4.5 3 9 1.5-4.5h3.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
 function IconKey() {
   return (
     <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -266,6 +274,7 @@ export default function Sidebar() {
 
         {isAdminUser && (
           <NavSection title="Admin" defaultOpen={isAdmin}>
+            <NavItem to="/admin/health" icon={<IconPulse />} label="Health" />
             <NavItem to="/admin/permission-tester" icon={<IconShieldCheck />} label="Permission Tester" />
             <NavItem to="/admin/audit-log" icon={<IconDocument />} label="Audit Log" />
             <NavItem to="/admin/sharing-audit" icon={<IconDocument />} label="Lens Audits" />

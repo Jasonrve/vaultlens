@@ -30,6 +30,7 @@ import backupRoutes from './routes/backup.js';
 import hooksRoutes from './routes/hooks.js';
 import sysTokenSetupRoutes from './routes/sys-token-setup.js';
 import vaultlensAuditRoutes from './routes/vaultlens-audit.js';
+import adminHealthRoutes from './routes/adminHealth.js';
 
 const app = express();
 
@@ -198,6 +199,7 @@ app.use('/api/rotation', rotationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/hooks', hooksRoutes);
 app.use('/api/sys-token-setup', sysTokenSetupRoutes);
+app.use('/api/admin/health', adminHealthRoutes);
 
 // Error handling
 app.use(errorHandler);
