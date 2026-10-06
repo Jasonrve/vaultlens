@@ -3,6 +3,8 @@ import AuditWorkspace from './components/AuditWorkspace';
 import AuditReportsPage from './pages/AuditReportsPage';
 import AuditRunsPage from './pages/AuditRunsPage';
 import AuditSourcesPage from './pages/AuditSourcesPage';
+import CertificatesPage from './pages/CertificatesPage';
+import PkiEnginePage from './pages/PkiEnginePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -35,6 +37,7 @@ import HooksPage from './pages/HooksPage';
 import SystemTokenSetupPage from './pages/SystemTokenSetupPage';
 import VaultLensAuditPage from './pages/VaultLensAuditPage';
 import FeaturesSettingsPage from './pages/FeaturesSettingsPage';
+import AdminHealthPage from './pages/AdminHealthPage';
 import ChangelogPage from './pages/ChangelogPage';
 import LoadingSpinner from './components/common/LoadingSpinner';
 
@@ -239,12 +242,14 @@ function AppRoutes() {
       >
         <Route path="/app" element={<DashboardPage />} />
         <Route path="/secrets/*" element={<SecretsPage />} />
+        <Route path="/pki/engines/*" element={<PkiEnginePage />} />
         <Route path="/policies/*" element={<PoliciesPage />} />
         <Route path="/access/auth-methods/*" element={<AuthMethodsPage />} />
         <Route path="/access/entities/*" element={<IdentityPage type="entities" />} />
         <Route path="/access/groups/*" element={<IdentityPage type="groups" />} />
         <Route path="/visualizations" element={<VisualizationsPage />} />
         <Route path="/identity" element={<MyIdentityPage />} />
+        <Route path="/admin/health" element={<AdminHealthPage />} />
         <Route path="/admin/branding" element={<AdminBrandingPage />} />
         <Route path="/admin/permission-tester" element={<PermissionTesterPage />} />
         <Route path="/admin/audit-log" element={<AuditLogPage />} />
@@ -274,6 +279,7 @@ function AppRoutes() {
           <Route path="rules" element={<Navigate to="../checks" replace />} />
         </Route>
       </Route>
+        <Route path="/certificates" element={<ProtectedRoute><Layout /></ProtectedRoute>}><Route index element={<CertificatesPage />} /></Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );

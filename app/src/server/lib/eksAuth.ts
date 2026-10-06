@@ -201,6 +201,53 @@ async function listClustersInRegion(region: string): Promise<EksClusterSummary[]
   return clusters;
 }
 
+export interface CallerIdentity {
+  arn: string;
+  accountId: string;
+  userId: string;
+}
+
+/**
+ * Resolves the AWS identity (IAM role or user) VaultLens is currently running as,
+ * via a signed sts:GetCallerIdentity call — works for IRSA, EKS Pod Identity, and
+ * EC2/ECS instance profiles alike, unlike reading AWS_ROLE_ARN (only set under IRSA).
+ * Returns null rather than throwing when not running on AWS or credentials can't
+ * be resolved — this is a diagnostics lookup, not a required dependency.
+ */
+export async function getCallerIdentity(region: string): Promise<CallerIdentity | null> {
+  const host = `sts.${region}.amazonaws.com`;
+  try {
+    const signer = new SignatureV4({
+      credentials: getCredentialProvider(),
+      region,
+      service: 'sts',
+      sha256: Sha256,
+    });
+    const query = { Action: 'GetCallerIdentity', Version: '2011-06-15' };
+    const request = new HttpRequest({
+      protocol: 'https:',
+      hostname: host,
+      path: '/',
+      method: 'GET',
+      query,
+      headers: { host, accept: 'application/json' },
+    });
+    const signed = await signer.sign(request);
+    const response = await axios.get(`https://${host}/`, {
+      params: query,
+      headers: signed.headers as Record<string, string>,
+      timeout: 10000,
+    });
+    const identity = response.data?.GetCallerIdentityResponse?.GetCallerIdentityResult;
+    if (!identity?.Arn) return null;
+    return { arn: identity.Arn, accountId: identity.Account, userId: identity.UserId };
+  } catch (e) {
+    const message = e instanceof AxiosError ? (awsErrorMessage(e.response?.data) ?? e.message) : e instanceof Error ? e.message : String(e);
+    console.debug('[EKS Auth] Could not resolve caller identity via sts:GetCallerIdentity:', message);
+    return null;
+  }
+}
+
 export type EksAutoDetectResult =
   // Host doesn't look like a standard EKS endpoint — auto-detection was never attempted.
   | { attempted: false }

@@ -1,3 +1,5 @@
+import pkiRoutes from './routes/pki.js';
+import pkiEngineRoutes from './routes/pkiEngine.js';
 import express from 'express';
 import crypto from 'crypto';
 import cors from 'cors';
@@ -29,6 +31,7 @@ import backupRoutes from './routes/backup.js';
 import hooksRoutes from './routes/hooks.js';
 import sysTokenSetupRoutes from './routes/sys-token-setup.js';
 import vaultlensAuditRoutes from './routes/vaultlens-audit.js';
+import adminHealthRoutes from './routes/adminHealth.js';
 
 const app = express();
 
@@ -191,11 +194,14 @@ app.use('/api/graph', graphRoutes);
 app.use('/api/permissions', permissionsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/security-audit', securityAuditRoutes);
+app.use('/api/pki', pkiRoutes);
+app.use('/api/pki-engine', pkiEngineRoutes);
 app.use('/api/sys', sysRoutes);
 app.use('/api/rotation', rotationRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/hooks', hooksRoutes);
 app.use('/api/sys-token-setup', sysTokenSetupRoutes);
+app.use('/api/admin/health', adminHealthRoutes);
 
 // Error handling
 app.use(errorHandler);

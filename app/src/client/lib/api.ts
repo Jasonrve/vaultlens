@@ -1118,6 +1118,64 @@ export async function testHook(id: string) {
   return data;
 }
 
+// ── Admin Health ──────────────────────────────────────────
+export interface AdminHealth {
+  app: {
+    version: string;
+    nodeEnv: string;
+    uptimeSeconds: number;
+    pid: number;
+    nodeVersion: string;
+  };
+  resources: {
+    memory: { rss: number; heapTotal: number; heapUsed: number; external: number; arrayBuffers: number };
+    loadAvg: [number, number, number];
+    cpuCount: number;
+    totalMemBytes: number;
+    freeMemBytes: number;
+  };
+  config: Record<string, unknown>;
+  vaultAuthIdentity: {
+    source: 'kubernetes' | 'static' | 'approle' | 'none';
+    configured: boolean;
+    kubernetesAuthRole?: string;
+    kubernetesAuthMount?: string;
+    token?: {
+      displayName: string;
+      entityId: string;
+      policies: string[];
+      identityPolicies: string[];
+      ttl: number;
+      type: string;
+    };
+    tokenError?: string;
+  };
+  awsIdentity: {
+    region: string;
+    manuallyConfiguredRole?: string;
+    callerIdentity: { arn: string; accountId: string; userId: string } | null;
+  } | null;
+  backgroundJobs: {
+    auditSocket: {
+      enabled: boolean;
+      listening: boolean;
+      port: number;
+      host: string;
+      connectedClients: number;
+      totalEventsReceived: number;
+      bufferSize: number;
+      firstEventAt: string | null;
+      lastEventAt: string | null;
+    };
+    graphCacheSize: number;
+  };
+}
+
+export async function getAdminHealth() {
+  const { data } = await api.get<AdminHealth>('/admin/health');
+  return data;
+}
+
 // ── Sys Info ──────────────────────────────────────────────
 export async function getVaultHealth() {
   const { data } = await api.get<Record<string, unknown>>('/sys/health');
@@ -1365,4 +1423,28 @@ export async function setAuditRetention(enabled: boolean) {
 
 export async function toggleAuditException(id: string, enabled: boolean) {
  const {data}=await api.patch(`/security-audit/exceptions/${encodeURIComponent(id)}/enabled`,{enabled});return data;
+}
+
+// PKI catalog shares the VaultLens session and CSRF transport.
+export async function pkiSelectCertificates(query: import('../../shared/pki').PkiQuery) { return (await api.post<{certificates: import('../../shared/pkiBatch').PkiBatchRef[]}>('/pki/selection', query)).data; }
+export async function pkiBatchPreview(action: import('../../shared/pkiBatch').PkiBatchAction, certificates: import('../../shared/pkiBatch').PkiBatchRef[]) { return (await api.post<{items: import('../../shared/pkiBatch').PkiBatchPreview[]}>('/pki/batch/preview', {action, certificates})).data; }
+export async function pkiBatchItem(action: import('../../shared/pkiBatch').PkiBatchAction, certificate: import('../../shared/pkiBatch').PkiBatchRef) { return (await api.post<{status:string;pem?:string}>('/pki/batch/item', {action,certificate,confirm:action})).data; }
+export async function pkiSources() { return (await api.get<{ sources: import('../../shared/pki').PkiSource[]; namespace: string }>('/pki/sources')).data; }
+export async function pkiQuery(query: import('../../shared/pki').PkiQuery) { return (await api.post<{ certificates: import('../../shared/pki').CertificateRecord[]; total: number; summary: import('../../shared/pki').PkiSummary; nextCursor: string | null }>('/pki/query', query)).data; }
+export async function pkiCertificate(id: number) { return (await api.get<{ certificate: import('../../shared/pki').CertificateRecord; pem: string; issuer: { pem: string; subject: string } | null; issuerCertificate?: import("../../shared/pkiPem").IssuerCertificateInfo | null; issuerState: string; chain?: import("../../shared/pkiPem").CertificateChain; conflicts: { observations: {observedFingerprint:string;firstSeen:string;lastSeen:string;observations:number}[]; truncated: boolean } }>(`/pki/certificates/${id}`)).data; }
+export async function pkiJobs() { return (await api.get<{ jobs: import('../../shared/pki').PkiJob[] }>('/pki/jobs')).data; }
+export async function pkiCollect(sources: string[]) { return (await api.post('/pki/jobs', { sources })).data; }
+export async function pkiJobAction(id: string, action: 'pause' | 'resume') { return (await api.post(`/pki/jobs/${encodeURIComponent(id)}/${action}`)).data; }
+
+export async function pkiJobDetails(id:string) { return (await api.get<import('../../shared/pki').PkiJobDetails>(`/pki/jobs/${encodeURIComponent(id)}`)).data; }
+export async function pkiEngine(mount:string,section='overview',ref?:string,source?:string,offset=0){return (await api.get<import('../../shared/pkiEngine').PkiEngineResult>('/pki-engine',{params:{mount,section,ref,source,offset}})).data;}
+
+export async function pkiEngineAction(input: {mount:string;source:string;action:string;ref?:string;mode?:string;fields:Record<string,unknown>;confirm?:string}) { return (await api.post<import("../../shared/pkiEngine").PkiEngineResult>("/pki-engine",input)).data; }
+
+export async function pkiEngineLookup(mount:string,source:string,section:'roles'|'issuers',query:string,signal:AbortSignal) {
+  return (await api.get<import('../../shared/pkiEngine').PkiEngineResult>('/pki-engine',{params:{mount,source,section,lookup:true,query},signal})).data;
+}
+
+export async function pkiCheckSource(id: string) {
+  return (await api.get<import('../../shared/pki').PkiSourceCheck>(`/pki/sources/${encodeURIComponent(id)}/check`)).data;
 }
