@@ -1,5 +1,5 @@
 import fs from 'fs';
-import path from 'path';
+import path from 'node:path';
 import { config } from '../config/index.js';
 import { VaultClient } from './vaultClient.js';
 import { getConfigStorage } from './config-storage/index.js';

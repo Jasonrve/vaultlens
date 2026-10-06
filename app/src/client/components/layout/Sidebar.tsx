@@ -92,6 +92,16 @@ function IconSettings() {
   );
 }
 
+function IconCertificate() {
+  return (
+    <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" aria-hidden="true">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 20H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4M7 7h8M7 11h4" />
+      <circle cx="17" cy="14" r="3.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m14.5 16.5-1 5 3.5-1.75 3.5 1.75-1-5" />
+    </svg>
+  );
+}
+
 function IconShieldCheck() {
   return (
     <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -245,6 +255,7 @@ export default function Sidebar() {
         </NavSection>
 
         <NavCategory label="Monitoring" />
+        <NavItem to="/certificates" icon={<IconCertificate />} label="Certificates" />
         <NavItem to="/identity" icon={<IconIdentityCard />} label="Identity" />
         <NavItem to="/visualizations" icon={<IconChart />} label="Visualizations" />
 

@@ -1,3 +1,4 @@
+import {pkiEngineUrl} from '../../../shared/pkiEngine';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useVaultStore } from '../../stores/vaultStore';
@@ -180,7 +181,7 @@ export default function SecretsEngineList() {
               <tr key={engine.path} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <Link
-                    to={`/secrets/${engine.path}`}
+                    to={engine.type === 'pki' ? pkiEngineUrl(engine.path) : `/secrets/${engine.path}`}
                     className="flex items-center gap-2 font-medium text-[#1563ff] hover:text-[#1250d4]"
                   >
                     <span>{engineIcon(engine.type)}</span>
