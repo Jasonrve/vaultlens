@@ -17,7 +17,8 @@
     "test:config-import": "tsx scripts/check-config-import.ts",
     "preview": "vite preview",
     "audit": "node dist/server/security-audit/cli.js",
-    "test:security-audit": "npm run build:server && node --test dist/server/security-audit/engine.test.js"
+    "test:security-audit": "npm run check:audit-parity && npm run build:server && node --test dist/server/security-audit/engine.test.js",
+    "check:audit-parity": "tsc -p tsconfig.audit-scripts.json && tsx ../scripts/check-audit-parity.ts"
   },
   "keywords": [],
   "license": "GPL-3.0-only",
