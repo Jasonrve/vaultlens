@@ -1,5 +1,26 @@
 @import "tailwindcss";
 
+@layer base {
+  /* Keep form surfaces opaque on page and dialog backgrounds. */
+  input:not([type]),
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="search"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="date"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"],
+  input[type="time"],
+  textarea,
+  select {
+    background-color: #fff;
+  }
+}
+
 :root {
   --brand-primary: #1563ff;
   --brand-secondary: #19191a;

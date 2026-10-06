@@ -6,6 +6,10 @@ import ErrorMessage from '../common/ErrorMessage';
 import DevIntegrationTab from './DevIntegrationTab';
 import FilteredAuditLog from '../common/FilteredAuditLog';
 import AuthActionBar from './AuthActionBar';
+import ConfirmDialog from '../common/ConfirmDialog';
+import VsoResourcesTab from './VsoResourcesTab';
+import { SiKubernetes } from 'react-icons/si';
+import type { ReactNode } from 'react';
 
 // Fields that contain token/security policies — rendered as badges
 const POLICY_FIELDS = new Set(['token_policies', 'policies', 'allowed_policies', 'disallowed_policies']);
@@ -81,6 +85,7 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
   const [generated, setGenerated] = useState<GeneratedSecret | null>(null);
   const [destroyingAccessor, setDestroyingAccessor] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<'secretId' | 'accessor' | null>(null);
+  const [confirmAccessor, setConfirmAccessor] = useState<string | null>(null);
 
   const loadSecretIds = useCallback(async () => {
     setLoading(true);
@@ -112,7 +117,6 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
   }
 
   async function handleRevoke(accessor: string) {
-    if (!window.confirm(`Revoke this secret ID?\n\nThis cannot be undone.`)) return;
     setDestroyingAccessor(accessor);
     try {
       await api.destroySecretId(method, role, accessor);
@@ -258,7 +262,7 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
-                        onClick={() => { void handleRevoke(s.accessor); }}
+                        onClick={() => setConfirmAccessor(s.accessor)}
                         disabled={destroyingAccessor === s.accessor}
                         className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
                       >
@@ -279,6 +283,18 @@ function SecretIdsSection({ method, role }: { method: string; role: string }) {
           </table>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmAccessor !== null}
+        title="Revoke secret ID"
+        message="Revoke this secret ID? This cannot be undone."
+        confirmLabel="Revoke"
+        onCancel={() => setConfirmAccessor(null)}
+        onConfirm={() => {
+          const accessor = confirmAccessor;
+          setConfirmAccessor(null);
+          if (accessor) void handleRevoke(accessor);
+        }}
+      />
     </div>
   );
 }
@@ -291,10 +307,18 @@ export default function RoleDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'details' | 'developer' | 'audits' | 'secret-ids'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'developer' | 'audits' | 'secret-ids' | 'vso'>('details');
   const [templateContent, setTemplateContent] = useState('');
   const [canCustomize, setCanCustomize] = useState(false);
   const [devGuidesEnabled, setDevGuidesEnabled] = useState(true);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [vsoResourcesEnabled, setVsoResourcesEnabled] = useState(false);
+
+  useEffect(() => {
+    api.getAuthMethodsConfig()
+      .then((cfg) => setVsoResourcesEnabled(cfg.enableVsoResources))
+      .catch(() => setVsoResourcesEnabled(false));
+  }, []);
 
   useEffect(() => {
     api
@@ -322,7 +346,6 @@ export default function RoleDetail() {
   }, [method, role]);
 
   async function handleDelete() {
-    if (!window.confirm(`Delete role "${role}"? This cannot be undone.`)) return;
     setDeleting(true);
     try {
       await api.deleteRole(method, role);
@@ -356,7 +379,7 @@ export default function RoleDetail() {
         <div className="flex items-center gap-2">
           <AuthActionBar context={{ screen: 'role', mount: method, role, authType }} />
           <button
-            onClick={() => { void handleDelete(); }}
+            onClick={() => setConfirmDelete(true)}
             disabled={deleting}
             className="rounded border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
           >
@@ -373,12 +396,14 @@ export default function RoleDetail() {
           const tabs = [
             'details' as const,
             ...(authType === 'approle' ? ['secret-ids' as const] : []),
+            ...(authType === 'kubernetes' && vsoResourcesEnabled ? ['vso' as const] : []),
             ...(showDevGuide ? ['developer' as const] : []),
             'audits' as const,
           ];
-          const tabLabels: Record<string, string> = {
+          const tabLabels: Record<string, ReactNode> = {
             'details': 'Role Details',
             'secret-ids': 'Secret IDs',
+            'vso': <span className="inline-flex items-center gap-1.5"><SiKubernetes className="h-3.5 w-3.5" /> Resources</span>,
             'developer': '⚙ Developer Guide',
             'audits': '📋 Audits',
           };
@@ -440,6 +465,11 @@ export default function RoleDetail() {
         <SecretIdsSection method={method} role={role} />
       )}
 
+      {/* Tab: VSO Resources scoped to this role (Kubernetes auth only) */}
+      {activeTab === 'vso' && (
+        <VsoResourcesTab method={method} role={role} />
+      )}
+
       {/* Tab: Developer Guide */}
       {activeTab === 'developer' && (
         <DevIntegrationTab method={method} role={role} />
@@ -449,6 +479,13 @@ export default function RoleDetail() {
       {activeTab === 'audits' && (
         <FilteredAuditLog mountPath={method} roleFilter={role} />
       )}
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete role"
+        message={`Delete role "${role}"? This cannot be undone.`}
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => { setConfirmDelete(false); void handleDelete(); }}
+      />
     </div>
   );
 }

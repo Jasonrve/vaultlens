@@ -503,7 +503,7 @@ export default function AuditLogPage() {
       {entries.length > 0 && (
         <div className="flex items-center justify-between border-t border-gray-200 pt-3">
           <p className="text-sm text-gray-500">
-            Showing {entries.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, entries.length)} of {entries.length} entries
+            Showing {entries.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total} entries
           </p>
           <div className="flex items-center gap-2">
             <button

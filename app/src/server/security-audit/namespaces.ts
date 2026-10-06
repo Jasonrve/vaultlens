@@ -16,6 +16,7 @@ export function normalizeNamespace(value: unknown): string {
   if (
     typeof value !== 'string' ||
     value.length > 1024 ||
+    // eslint-disable-next-line no-control-regex -- Namespace headers must reject control characters.
     /[\x00-\x20\x7f]/.test(value)
   )
     throw new Error('Invalid Vault namespace');

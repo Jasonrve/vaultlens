@@ -119,7 +119,7 @@ export default function AnalyticsPage() {
       if (c.status === 'fulfilled') setCounters(c.value as CountersData);
       if (e.status === 'fulfilled') setEngines(e.value);
       if (a.status === 'fulfilled') setAuthMethods(a.value);
-      if (p.status === 'fulfilled') setPolicies(p.value);
+      if (p.status === 'fulfilled') setPolicies(p.value.policies);
       if (ent.status === 'fulfilled') setEntities(ent.value);
       if (grp.status === 'fulfilled') setGroups(grp.value);
       if (src.status === 'fulfilled') setAuditSource(src.value);

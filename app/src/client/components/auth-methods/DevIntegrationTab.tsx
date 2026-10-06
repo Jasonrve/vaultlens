@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
+import ConfirmDialog from '../common/ConfirmDialog';
 import MarkdownEditorWithIntellisense from './MarkdownEditorWithIntellisense';
 
 interface Props {
@@ -65,6 +66,7 @@ export default function DevIntegrationTab({ method, role }: Props) {
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   function load() {
     setLoading(true);
@@ -108,7 +110,6 @@ export default function DevIntegrationTab({ method, role }: Props) {
   }
 
   async function handleReset() {
-    if (!window.confirm('Reset this template to the built-in default? Your customisation will be lost.')) return;
     setResetting(true);
     setSaveError(null);
     try {
@@ -216,7 +217,7 @@ export default function DevIntegrationTab({ method, role }: Props) {
           <div className="flex gap-2">
             {isCustomized && (
               <button
-                onClick={() => { void handleReset(); }}
+                onClick={() => setConfirmReset(true)}
                 disabled={resetting}
                 className="rounded border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
@@ -242,6 +243,14 @@ export default function DevIntegrationTab({ method, role }: Props) {
           {content}
         </ReactMarkdown>
       </div>
+      <ConfirmDialog
+        open={confirmReset}
+        title="Reset guide"
+        message="Reset this template to the built-in default? Your customisation will be lost."
+        confirmLabel="Reset"
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => { setConfirmReset(false); void handleReset(); }}
+      />
     </div>
   );
 }

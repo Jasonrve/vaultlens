@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as api from '../lib/api';
 import SuggestionsCombobox from '../components/common/SuggestionsCombobox';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 
 const AUDIT_FIELDS: { id: string; label: string }[] = [
   { id: 'accessor', label: 'Accessor' },
@@ -90,6 +91,7 @@ export default function HooksPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [auditFieldSuggestions, setAuditFieldSuggestions] = useState<Record<string, string[]>>({});
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -440,7 +442,7 @@ export default function HooksPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(hook.id)}
+                      onClick={() => setConfirmTarget(hook.id)}
                       disabled={deleting === hook.id}
                       className="rounded border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                     >
@@ -473,6 +475,17 @@ export default function HooksPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="Delete webhook"
+        message="Delete this webhook? This cannot be undone."
+        onCancel={() => setConfirmTarget(null)}
+        onConfirm={() => {
+          const id = confirmTarget;
+          setConfirmTarget(null);
+          if (id) void handleDelete(id);
+        }}
+      />
     </div>
   );
 }

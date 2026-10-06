@@ -58,8 +58,8 @@ export default function ShareSecretPage() {
       return;
     }
 
-    if (shareMode === 'otp' && (!otpCode.trim() || otpCode.length < 4)) {
-      setError('Please enter an OTP code (at least 4 characters)');
+    if (shareMode === 'otp' && (!otpCode.trim() || otpCode.length < 6)) {
+      setError('Please enter an OTP code (at least 6 characters)');
       return;
     }
 
@@ -288,8 +288,8 @@ export default function ShareSecretPage() {
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value)}
                 className="w-full rounded border border-gray-300 px-3 py-2 text-sm font-mono focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
-                placeholder="Enter a passcode to protect this secret (min 4 characters)..."
-                minLength={4}
+                placeholder="Enter a passcode to protect this secret (min 6 characters)..."
+                minLength={6}
                 maxLength={64}
               />
               <p className="mt-1 text-xs text-gray-500">

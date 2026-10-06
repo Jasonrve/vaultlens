@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 const BUILT_IN = new Set(['root', 'default']);
 
@@ -14,6 +15,7 @@ export default function PolicyList() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [confirmTarget, setConfirmTarget] = useState<string | null>(null);
 
   const loadPolicies = () => {
     api
@@ -29,7 +31,6 @@ export default function PolicyList() {
   useEffect(() => { loadPolicies(); }, []);
 
   const handleDelete = async (name: string) => {
-    if (!window.confirm(`Delete policy "${name}"? This cannot be undone.`)) return;
     setDeleting(name);
     try {
       await api.deletePolicy(name);
@@ -109,7 +110,7 @@ export default function PolicyList() {
                 <td className="px-4 py-3 text-right">
                   {!BUILT_IN.has(name) && !restricted && (
                     <button
-                      onClick={() => { void handleDelete(name); }}
+                      onClick={() => setConfirmTarget(name)}
                       disabled={deleting === name}
                       className="rounded border border-red-200 px-2 py-0.5 text-[11px] text-red-500 hover:bg-red-50 disabled:opacity-40"
                       title={`Delete policy "${name}"`}
@@ -126,6 +127,17 @@ export default function PolicyList() {
       {error && (
         <div className="mt-3 text-sm text-red-600">{error}</div>
       )}
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="Delete policy"
+        message={`Delete policy "${confirmTarget}"? This cannot be undone.`}
+        onCancel={() => setConfirmTarget(null)}
+        onConfirm={() => {
+          const name = confirmTarget;
+          setConfirmTarget(null);
+          if (name) void handleDelete(name);
+        }}
+      />
     </div>
   );
 }
