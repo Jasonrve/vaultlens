@@ -16,6 +16,9 @@
     "lint": "eslint src",
     "test:config-import": "tsx scripts/check-config-import.ts",
     "preview": "vite preview",
+    "audit": "node dist/server/security-audit/cli.js",
+    "test:security-audit": "npm run check:audit-parity && npm run build:server && node --test dist/server/security-audit/engine.test.js",
+    "check:audit-parity": "tsc -p tsconfig.audit-scripts.json && tsx ../scripts/check-audit-parity.ts",
     "test:pki": "npm run build:server && node --test dist/server/pki/*.test.js"
   },
   "keywords": [],
@@ -40,6 +43,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
+    "fflate": "0.8.3",
     "helmet": "^8.0.0",
     "hpp": "^0.2.3",
     "ini": "^6.0.0",

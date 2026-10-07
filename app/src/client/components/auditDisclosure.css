@@ -1,0 +1,22 @@
+/* Direct-child selectors keep nested disclosure states independent. */
+.audit-disclosure-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  list-style: none;
+  cursor: pointer;
+}
+.audit-disclosure-summary::-webkit-details-marker { display: none; }
+.audit-disclosure-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: #64748b;
+}
+button[aria-expanded="true"] > .audit-disclosure-icon--group,
+details[open] > .audit-disclosure-summary > .audit-disclosure-icon--detail {
+  transform: rotate(90deg);
+}
+details[open] > .audit-disclosure-summary > .audit-disclosure-icon--finding > .audit-disclosure-plus {
+  display: none;
+}

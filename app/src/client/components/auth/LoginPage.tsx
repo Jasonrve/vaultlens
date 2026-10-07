@@ -35,7 +35,9 @@ export default function LoginPage() {
   const { branding } = useBrandingStore();
   const navigate = useNavigate();
   const location = useLocation();
-  const returnTo = (location.state as { returnTo?: string } | null)?.returnTo;
+  const returnTo = new URLSearchParams(location.search).get('returnTo') === 'security-audit'
+    ? '/security-audit'
+    : (location.state as { returnTo?: string } | null)?.returnTo;
   const popupRef = useRef<Window | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
