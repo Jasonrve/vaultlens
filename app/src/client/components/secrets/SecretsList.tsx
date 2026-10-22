@@ -5,6 +5,7 @@ import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
 import SecretPathRelationshipModal from '../common/SecretPathRelationshipModal';
+import ConfirmDialog from '../common/ConfirmDialog';
 import MoveSecretsDialog from './MoveSecretsDialog';
 
 export default function SecretsList() {
@@ -17,13 +18,15 @@ export default function SecretsList() {
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [moveSource, setMoveSource] = useState<string | null>(null);
+  const [caps, setCaps] = useState<Record<string, { read: boolean; delete: boolean }>>({});
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setSearch('');
     api
       .listSecrets(splat)
-      .then((data) => setKeys(data.keys))
+      .then((data) => { setKeys(data.keys); setCaps(data.capabilities ?? {}); })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'))
       .finally(() => setLoading(false));
   }, [splat]);
@@ -63,6 +66,20 @@ export default function SecretsList() {
           onSuccess={() => navigate(`/secrets/${normalizedSplat}`)}
         />
       )}
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete secret"
+        message={`Delete ${deleteTarget}? This cannot be undone.`}
+        confirmLabel="Delete"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          const target = deleteTarget!;
+          setDeleteTarget(null);
+          api.deleteSecret(`${normalizedSplat}${target}`)
+            .then(() => setKeys((ks) => ks.filter((k) => k !== target)))
+            .catch((e: unknown) => setError(e instanceof Error ? e.message : 'An error occurred'));
+        }}
+      />
       <div className="mb-4">
         <Breadcrumb items={breadcrumbItems} copyPath={splat || undefined} />
       </div>
@@ -118,7 +135,7 @@ export default function SecretsList() {
                   </td>
                   <td className="w-20 px-2 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {!isFolder && (
+                      {!isFolder && caps[key]?.read && (
                         <button
                           onClick={async () => {
                             try {
@@ -153,6 +170,18 @@ export default function SecretsList() {
                         >
                           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 7.5h9m0 0-3-3m3 3-3 3M16.5 16.5h-9m0 0 3 3m-3-3 3-3" />
+                          </svg>
+                        </button>
+                      )}
+                      {!isFolder && caps[key]?.delete && (
+                        <button
+                          onClick={() => setDeleteTarget(key)}
+                          title="Delete secret"
+                          className="text-gray-300 hover:text-red-600 transition-colors"
+                          aria-label={`Delete ${key}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
                           </svg>
                         </button>
                       )}

@@ -34,7 +34,7 @@ docker run -d \
 For persistent config and backups, add volumes:
 
 ```bash
-docker volume create vaultlens_config
+docker volume create vaultlens_data
 docker volume create vaultlens_backups
 
 docker run -d \
@@ -42,9 +42,9 @@ docker run -d \
   -p 3001:3001 \
   -e VAULT_ADDR=http://your-vault-server:8200 \
   -e VAULT_SYSTEM_TOKEN=your-system-token \
-  -e VAULTLENS_CONFIG_PATH=/config \
+  -e VAULTLENS_CONFIG_PATH=/data/config \
   -e VAULTLENS_BACKUP_PATH=/backups \
-  -v vaultlens_config:/config \
+  -v vaultlens_data:/data \
   -v vaultlens_backups:/backups \
   ghcr.io/jasonrve/vaultlens:latest
 ```
@@ -63,7 +63,7 @@ docker compose up -d
 ```
 
 The compose file creates two named volumes automatically:
-- **`vaultlens_config`** — persists branding, webhooks, and rotation settings
+- **`vaultlens_data`** — persists branding, webhooks, and rotation settings
 - **`vaultlens_backups`** — persists backup files
 
 For Kubernetes, see [Deployment](/guide/deployment).

@@ -30,7 +30,7 @@ VaultLens stores its own configuration (branding, webhooks, rotation schedules, 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULTLENS_CONFIG_PATH` | `/config` | Directory for `config.ini` and logo blobs |
+| `VAULTLENS_CONFIG_PATH` | `/data/config` | Directory for `config.ini` and logo blobs |
 | `VAULTLENS_BACKUP_PATH` | `/backups` | Directory for backup JSON files |
 
 ## Kubernetes Auth

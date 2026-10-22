@@ -105,7 +105,7 @@ export async function getEngines() {
 }
 
 export async function listSecrets(path: string) {
-  const { data } = await api.get<{ keys: string[]; mount: string; version: number }>(
+  const { data } = await api.get<{ keys: string[]; mount: string; version: number; capabilities?: Record<string, { read: boolean; delete: boolean }> }>(
     `/secrets/list/${path}`,
   );
   return data;
@@ -113,7 +113,7 @@ export async function listSecrets(path: string) {
 
 export async function readSecret(path: string, version?: number) {
   const qs = version != null ? `?version=${version}` : '';
-  const { data } = await api.get<{ keys: string[]; mount: string; version: number; secretVersion?: number; restricted?: boolean; capabilities?: string[] }>(
+  const { data } = await api.get<{ keys: string[]; mount: string; version: number; secretVersion?: number; restricted?: boolean; capabilities?: string[]; canDelete?: boolean }>(
     `/secrets/read/${path}${qs}`,
   );
   return data;
@@ -182,10 +182,11 @@ export async function moveSecrets(
 }
 
 
-export async function mergeSecret(path: string, secretData: Record<string, unknown>) {
+export async function mergeSecret(path: string, secretData: Record<string, unknown>, removeKeys: string[] = []) {
   const { data } = await api.post<{ success: boolean; updatedKeys: string[] }>(
     `/secrets/merge/${path}`,
     secretData,
+    { params: { remove: removeKeys }, paramsSerializer: { indexes: null } },
   );
   return data;
 }
@@ -988,6 +989,18 @@ export async function restoreKvBackup(filename: string) {
 export async function getBackupStatus() {
   const { data } = await api.get<{ raftAvailable: boolean }>('/backup/status');
   return data;
+}
+
+export async function uploadAppBackup(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const { data } = await api.post<{ success: boolean; filename: string }>('/backup/app-upload', form);
+    return data;
+  } catch (e) {
+    const msg = (e as { response?: { data?: { error?: string } } }).response?.data?.error;
+    throw msg ? new Error(msg) : e;
+  }
 }
 
 export async function createAppBackup() {

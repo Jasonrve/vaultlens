@@ -99,6 +99,19 @@ export default function BackupRestorePage() {
     }
   };
 
+  const handleUploadApp = async (file: File | undefined) => {
+    if (!file) return;
+    setSuccessMsg(null);
+    setError(null);
+    try {
+      const result = await api.uploadAppBackup(file);
+      setSuccessMsg(`Application backup uploaded: ${result.filename}`);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload application backup');
+    }
+  };
+
   const handleRestore = async (filename: string) => {
     setRestoring(filename);
     setSuccessMsg(null);
@@ -152,7 +165,7 @@ export default function BackupRestorePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Backup & Restore</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -161,37 +174,42 @@ export default function BackupRestorePage() {
               : 'Create and manage KV secret backups (JSON format).'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2 [&>*]:whitespace-nowrap">
           <button
             onClick={loadData}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
           >
             Refresh
           </button>
-          {raftAvailable ? (
-            <button
-              onClick={handleCreate}
-              disabled={creating}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {creating ? 'Creating...' : 'Create Backup'}
-            </button>
-          ) : (
-            <button
-              onClick={handleCreateKv}
-              disabled={creating}
-              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {creating ? 'Creating...' : 'Create KV Backup'}
-            </button>
-          )}
+          <button
+            onClick={raftAvailable ? handleCreate : handleCreateKv}
+            disabled={creating}
+            title={raftAvailable ? 'Native Vault Raft snapshot' : 'Export of all Vault KV secrets'}
+            className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : 'Create Vault Backup'}
+          </button>
           <button
             onClick={handleCreateApp}
             disabled={creating}
+            title="Back up VaultLens settings (no Vault secrets)"
             className="rounded-md border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {creating ? 'Creating...' : 'Create Application Backup'}
+            {creating ? 'Creating...' : 'Create App Backup'}
           </button>
+          <label title="Upload an application backup (.json)" className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+            </svg>
+            Upload
+            <input
+              type="file"
+              accept=".json,application/json"
+              aria-label="Upload application backup"
+              className="hidden"
+              onChange={e => { void handleUploadApp(e.target.files?.[0]); e.target.value = ''; }}
+            />
+          </label>
         </div>
       </div>
 

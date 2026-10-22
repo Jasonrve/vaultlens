@@ -60,22 +60,21 @@ backup:
 
 # -- Configuration storage backend
 configStorage:
-  # -- Backend type: 'file' (default, stores config.ini on disk) or 'vault' (Vault KV v2)
-  # Use 'vault' for stateless/multi-replica deployments; 'file' requires persistence enabled below.
+  # -- Backend type: 'file' (default, stores config.ini under <data.path>/config) or 'vault' (Vault KV v2)
   backend: "file"
-  # -- Mount path inside the container for file-based config storage
-  # Only relevant when backend is 'file'
-  path: "/config"
+
+# -- Data volume, mounted at data.path. Holds config (<path>/config: config.ini, encryption key,
+# logo blobs) and the SQLite databases (<path>/db: PKI catalog, security audit).
+data:
+  path: "/data"
   persistence:
-    # -- Enable a PersistentVolumeClaim for file-based config storage
-    # Required when backend is 'file' and config must survive pod restarts
+    # -- Enable a PersistentVolumeClaim for /data. Without it an emptyDir is used and
+    # all config + SQLite data is lost on pod restart.
     enabled: true
     # -- Storage class name (leave empty to use cluster default)
     storageClassName: ""
-    # -- Access mode for the PVC
     accessMode: ReadWriteOnce
-    # -- Storage size for config (config.ini + logo blobs)
-    size: 100Mi
+    size: 1Gi
     # -- Use an existing PVC instead of creating one
     existingClaim: ""
 

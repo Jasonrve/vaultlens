@@ -1,5 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import fs from 'fs';
+import multer from 'multer';
 import path from 'path';
 import { config } from '../config/index.js';
 import { VaultClient } from '../lib/vaultClient.js';
@@ -669,6 +670,44 @@ router.post(
         restoredBlobs: Object.keys(backupData.blobs || {}).length,
         restoredDevGuides: Object.keys(backupData.devGuides || {}).length,
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// POST /api/backup/app-upload — add an application backup JSON (e.g. downloaded earlier) to the
+// backup list so it can be restored. Only validated application backups are accepted.
+const appBackupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+router.post(
+  '/app-upload',
+  appBackupUpload.single('file'),
+  (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!req.file) {
+        res.status(400).json({ error: 'A backup file is required' });
+        return;
+      }
+      let parsed: Partial<AppBackupFile>;
+      try {
+        parsed = JSON.parse(req.file.buffer.toString('utf-8')) as Partial<AppBackupFile>;
+      } catch {
+        res.status(400).json({ error: 'Invalid backup file: not valid JSON' });
+        return;
+      }
+      if (parsed.backupType !== 'app' || parsed.version !== 1 || !parsed.config || typeof parsed.config !== 'object') {
+        res.status(400).json({ error: 'Invalid backup file: not a VaultLens application backup' });
+        return;
+      }
+      // Never keep system credentials from an untrusted file (restore would write them back)
+      delete parsed.config[CREDS_SECTION];
+
+      let filename = generateAppBackupFilename();
+      for (let n = 1; fs.existsSync(path.join(BACKUP_DIR, filename)); n++) {
+        filename = filename.replace(/(-\d+)?\.json$/, `-${n}.json`);
+      }
+      fs.writeFileSync(path.join(BACKUP_DIR, filename), JSON.stringify(parsed, null, 2));
+      res.json({ success: true, filename });
     } catch (error) {
       next(error);
     }

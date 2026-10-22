@@ -24,7 +24,7 @@ docker run -d \
 For persistent config and backups across restarts, add named volumes:
 
 ```bash
-docker volume create vaultlens_config
+docker volume create vaultlens_data
 docker volume create vaultlens_backups
 
 docker run -d \
@@ -32,9 +32,9 @@ docker run -d \
   -p 3001:3001 \
   -e VAULT_ADDR=http://your-vault-server:8200 \
   -e VAULT_SYSTEM_TOKEN=your-system-token \
-  -e VAULTLENS_CONFIG_PATH=/config \
+  -e VAULTLENS_CONFIG_PATH=/data/config \
   -e VAULTLENS_BACKUP_PATH=/backups \
-  -v vaultlens_config:/config \
+  -v vaultlens_data:/data \
   -v vaultlens_backups:/backups \
   ghcr.io/jasonrve/vaultlens:latest
 ```
@@ -51,7 +51,7 @@ docker compose up -d
 ```
 
 The included `docker-compose.yml` uses two named volumes:
-- **`vaultlens_config`** → `/config` — branding, webhooks, rotation config
+- **`vaultlens_data`** → `/data` — branding, webhooks, rotation config
 - **`vaultlens_backups`** → `/backups` — backup JSON files
 
 ## Kubernetes / Helm
@@ -68,7 +68,7 @@ helm install vaultlens oci://ghcr.io/jasonrve/charts/vaultlens \
   --set kubernetesAuth.enabled=true \
   --set kubernetesAuth.role=vaultlens \
   --set backup.persistence.enabled=true \
-  --set configStorage.persistence.enabled=true
+  --set data.persistence.enabled=true
 ```
 
 Pin to a specific version:
