@@ -1,0 +1,17 @@
+{{- if and .Values.data.persistence.enabled (not .Values.data.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vaultlens.fullname" . }}-data
+  labels:
+    {{- include "vaultlens.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.data.persistence.accessMode | default "ReadWriteOnce" }}
+  {{- if .Values.data.persistence.storageClassName }}
+  storageClassName: {{ .Values.data.persistence.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.data.persistence.size | default "1Gi" }}
+{{- end }}

@@ -374,10 +374,43 @@ router.get(
         }
       }
 
+      // Per-secret read/delete capabilities so the UI only offers actions the caller can perform
+      const keyCaps: Record<string, { read: boolean; delete: boolean }> = {};
+      const secretKeys = keys.filter((k) => !k.endsWith('/'));
+      const base = engineInfo.subPath.replace(/\/+$/, '');
+      const pathsOf = (k: string) => {
+        const sub = base ? `${base}/${k}` : k;
+        return {
+          data: buildKVPath(engineInfo.mount, sub, engineInfo.version, 'data'),
+          meta: buildKVPath(engineInfo.mount, sub, engineInfo.version, engineInfo.version === 2 ? 'metadata' : 'data'),
+        };
+      };
+      const has = (c: unknown, cap: string) => Array.isArray(c) && (c.includes('root') || c.includes(cap));
+      for (let i = 0; i < secretKeys.length; i += 100) {
+        const chunk = secretKeys.slice(i, i + 100);
+        try {
+          const caps = await vaultClient.post<Record<string, unknown>>(
+            '/sys/capabilities-self',
+            req.vaultToken!,
+            { paths: chunk.flatMap((k) => Object.values(pathsOf(k))) }
+          );
+          for (const k of chunk) {
+            const p = pathsOf(k);
+            keyCaps[k] = {
+              read: has(caps[p.data], 'read'),
+              delete: has(caps[p.data], 'delete') || has(caps[p.meta], 'delete'),
+            };
+          }
+        } catch {
+          // capability lookup failed — leave unset; UI hides gated actions
+        }
+      }
+
       res.json({
         keys,
         mount: engineInfo.mount,
         version: engineInfo.version,
+        capabilities: keyCaps,
       });
       secretOperationsTotal.inc({ operation: 'list' });
     } catch (error) {
@@ -456,16 +489,26 @@ router.get(
 
       // When restricted, check what capabilities the user actually has on this path
       let capabilities: string[] | undefined;
+      let canDelete = false;
       if (restricted) {
+        // KV v2 delete may go through the metadata path (all versions) or the data path (latest version)
+        const metaPath = engineInfo.version === 2
+          ? buildKVPath(engineInfo.mount, engineInfo.subPath, 2, 'metadata')
+          : vaultPath;
         try {
           const capsResponse = await vaultClient.post<Record<string, unknown>>(
             '/sys/capabilities-self',
             req.vaultToken!,
-            { paths: [vaultPath] }
+            { paths: [vaultPath.split('?')[0]!, metaPath] }
           );
-          const caps = (capsResponse as Record<string, unknown>)[vaultPath] ??
-            (capsResponse as { capabilities?: string[] }).capabilities ?? [];
-          capabilities = Array.isArray(caps) ? caps : [];
+          const capsFor = (p: string): string[] => {
+            const c = (capsResponse as Record<string, unknown>)[p];
+            return Array.isArray(c) ? (c as string[]) : [];
+          };
+          capabilities = capsFor(vaultPath.split('?')[0]!);
+          const allowed = (c: string[]) => c.includes('root') || c.includes('delete');
+          canDelete = allowed(capabilities) || allowed(capsFor(metaPath));
+          if (capabilities.includes('root')) capabilities = [...capabilities, 'create', 'update'];
         } catch {
           capabilities = [];
         }
@@ -477,7 +520,7 @@ router.get(
         version: engineInfo.version,
         secretVersion,
         restricted,
-        ...(capabilities ? { capabilities } : {}),
+        ...(capabilities ? { capabilities, canDelete } : {}),
       });
     } catch (error) {
       next(error);
@@ -705,6 +748,7 @@ router.post(
         return;
       }
       const userFields = req.body as Record<string, unknown>;
+      const removeKeys = [req.query['remove'] ?? []].flat().map(String);
 
       if (!userFields || typeof userFields !== 'object') {
         res.status(400).json({ error: 'Request body must be an object' });
@@ -760,6 +804,7 @@ router.post(
 
       // Merge user-provided fields with existing values
       const mergedData = { ...existingData, ...userFields };
+      for (const key of removeKeys) delete mergedData[key];
 
       const writePath = buildKVPath(
         engineInfo.mount,
@@ -797,6 +842,7 @@ router.post(
       res.json({
         success: true,
         updatedKeys: Object.keys(userFields),
+        removedKeys: removeKeys,
       });
     } catch (error) {
       next(error);
@@ -867,7 +913,16 @@ router.delete(
         engineInfo.version === 2 ? 'metadata' : 'data'
       );
 
-      await vaultClient.delete(vaultPath, req.vaultToken!);
+      try {
+        await vaultClient.delete(vaultPath, req.vaultToken!);
+      } catch (error) {
+        // KV v2: a token with delete only on data/ can still soft-delete the latest version
+        if (engineInfo.version !== 2 || (error as { statusCode?: number }).statusCode !== 403) throw error;
+        await vaultClient.delete(
+          buildKVPath(engineInfo.mount, engineInfo.subPath, 2, 'data'),
+          req.vaultToken!
+        );
+      }
 
       secretOperationsTotal.inc({ operation: 'delete' });
       res.json({ success: true });

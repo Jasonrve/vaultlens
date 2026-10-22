@@ -18,12 +18,14 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-}
       # Config storage — 'file' (default, persisted below) or 'vault' (Vault KV, no volume needed)
       - VAULTLENS_CONFIG_STORAGE=${VAULTLENS_CONFIG_STORAGE:-file}
-      - VAULTLENS_CONFIG_PATH=/config
+      - VAULTLENS_CONFIG_PATH=/data/config
+      - VAULTLENS_PKI_DB_PATH=/data/db/pki-certificates.sqlite
+      - VAULTLENS_AUDIT_DB=/data/db/security-audit.sqlite
       # Backup storage
       - VAULTLENS_BACKUP_PATH=/backups
       - VAULTLENS_DEBUG_SHELL=${VAULTLENS_DEBUG_SHELL:-false}
     volumes:
-      - vaultlens_config:/config
+      - vaultlens_data:/data
       - vaultlens_backups:/backups
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
@@ -56,8 +58,7 @@ networks:
     driver: bridge
 
 volumes:
-  # Persists config.ini and logo blobs across container restarts.
-  # Set VAULTLENS_CONFIG_STORAGE=vault to use Vault KV instead (no volume needed).
-  vaultlens_config:
+  # Persists /data/config (config.ini, logo blobs) and /data/db (SQLite) across restarts.
+  vaultlens_data:
   # Persists backup JSON files across container restarts.
   vaultlens_backups:

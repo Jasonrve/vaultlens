@@ -98,6 +98,7 @@ export default function SecretView() {
   const [error, setError] = useState<string | null>(null);
   const [restricted, setRestricted] = useState(false);
   const [canWrite, setCanWrite] = useState(false);
+  const [canDelete, setCanDelete] = useState(false);
   const [metadata, setMetadata] = useState<SecretMetadata | null>(null);
   const [metadataLoading, setMetadataLoading] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
@@ -160,6 +161,7 @@ export default function SecretView() {
         if (isRestricted && result.capabilities) {
           const caps = result.capabilities;
           setCanWrite(caps.includes('create') || caps.includes('update'));
+          setCanDelete(result.canDelete === true);
         }
 
         // Eagerly load values when user has read permission
@@ -440,14 +442,24 @@ export default function SecretView() {
             </div>
           )}
           {restricted ? (
-            canWrite && (
-              <button
-                onClick={() => navigate(`/secrets/merge/${splat}`)}
-                className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
-              >
-                Partial Update
-              </button>
-            )
+            <>
+              {canWrite && (
+                <button
+                  onClick={() => navigate(`/secrets/merge/${splat}`)}
+                  className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Partial Update
+                </button>
+              )}
+              {canDelete && (
+                <button
+                  onClick={() => setConfirmDialog({ type: 'delete' })}
+                  className="rounded-md border border-red-300 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                >
+                  Delete
+                </button>
+              )}
+            </>
           ) : (
             <>
               <button

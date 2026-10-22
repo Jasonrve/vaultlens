@@ -7,6 +7,7 @@ import ErrorMessage from '../common/ErrorMessage';
 import Breadcrumb from '../common/Breadcrumb';
 import SecretValueGenerator from './SecretValueGenerator';
 import { decodeSecretImport, type SecretImportPayload } from '../../lib/crypto';
+import { formatPem, pemNeedsFormatting } from '../../lib/pem';
 import { importConfig, type ConfigFormat, type ParsedConfig } from '../../lib/config-import';
 
 interface KvRow {
@@ -134,6 +135,30 @@ export default function SecretEditor() {
     setRows(updated);
   }
 
+  function switchMode(next: 'kv' | 'json') {
+    if (next === mode) return;
+    setError(null);
+    if (next === 'json') {
+      const data: Record<string, string> = {};
+      for (const row of rows) if (row.key.trim()) data[row.key.trim()] = row.value;
+      setJson(JSON.stringify(data, null, 2));
+    } else {
+      try {
+        const data = JSON.parse(json) as Record<string, unknown>;
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('JSON must be an object');
+        const kvRows = Object.entries(data).map(([key, value]) => ({
+          key,
+          value: typeof value === 'string' ? value : JSON.stringify(value),
+        }));
+        setRows(kvRows.length > 0 ? kvRows : [{ key: '', value: '' }]);
+      } catch (err) {
+        setError(`Fix the JSON before switching to Key / Value: ${err instanceof Error ? err.message : 'invalid JSON'}`);
+        return;
+      }
+    }
+    setMode(next);
+  }
+
   async function handleConfigFile(file: File) {
     setImportingFile(true);
     setError(null);
@@ -204,9 +229,11 @@ export default function SecretEditor() {
         data = JSON.parse(json) as Record<string, unknown>;
       } else {
         data = {};
+        const fix = rows.some((r) => pemNeedsFormatting(r.value))
+          && window.confirm('Some values look like PEM certificates/keys with broken line breaks. Format them before saving?');
         for (const row of rows) {
           if (row.key.trim()) {
-            data[row.key.trim()] = row.value;
+            data[row.key.trim()] = fix ? (formatPem(row.value) ?? row.value) : row.value;
           }
         }
       }
@@ -446,14 +473,14 @@ export default function SecretEditor() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setMode('kv')}
+            onClick={() => switchMode('kv')}
             className={`rounded-md px-3 py-1.5 text-sm ${mode === 'kv' ? 'bg-[#1563ff] text-white' : 'bg-gray-100 text-gray-700'}`}
           >
             Key / Value
           </button>
           <button
             type="button"
-            onClick={() => setMode('json')}
+            onClick={() => switchMode('json')}
             className={`rounded-md px-3 py-1.5 text-sm ${mode === 'json' ? 'bg-[#1563ff] text-white' : 'bg-gray-100 text-gray-700'}`}
           >
             JSON
@@ -471,13 +498,30 @@ export default function SecretEditor() {
                   onChange={(e) => updateRow(i, 'key', e.target.value)}
                   className="w-1/3 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
                 />
-                <input
-                  type="text"
-                  placeholder="value"
-                  value={row.value}
-                  onChange={(e) => updateRow(i, 'value', e.target.value)}
-                  className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#1563ff] focus:outline-none"
-                />
+                <div className="min-w-0 flex-1">
+                  <textarea
+                    rows={row.value.includes('\n') ? Math.min(row.value.split('\n').length, 10) : 1}
+                    placeholder="value (drop a file here)"
+                    value={row.value}
+                    onChange={(e) => updateRow(i, 'value', e.target.value)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      const file = e.dataTransfer.files[0];
+                      if (!file) return;
+                      e.preventDefault();
+                      updateRow(i, 'value', await file.text());
+                    }}
+                    className="block w-full resize-y rounded-md border border-gray-300 px-3 py-2 font-mono text-sm focus:border-[#1563ff] focus:outline-none"
+                  />
+                  {pemNeedsFormatting(row.value) && (
+                    <p className="mt-1 text-xs text-amber-700">
+                      This looks like a PEM certificate/key with broken line breaks.{' '}
+                      <button type="button" className="underline" onClick={() => updateRow(i, 'value', formatPem(row.value)!)}>
+                        Format it
+                      </button>
+                    </p>
+                  )}
+                </div>
                 <SecretValueGenerator onInsert={(value) => updateRow(i, 'value', value)} />
                 <button
                   type="button"

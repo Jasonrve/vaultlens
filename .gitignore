@@ -39,3 +39,4 @@ task/
 # Local assistant and security-review artifacts
 .claude/
 CLAUDE-SECURITY-*/
+.playwright-mcp/

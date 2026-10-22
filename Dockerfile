@@ -41,6 +41,9 @@ RUN mkdir -p /app/data/logos
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV VAULTLENS_BACKUP_PATH=/backups
+ENV VAULTLENS_CONFIG_PATH=/data/config
+ENV VAULTLENS_PKI_DB_PATH=/data/db/pki-certificates.sqlite
+ENV VAULTLENS_AUDIT_DB=/data/db/security-audit.sqlite
 
 EXPOSE 3001
 

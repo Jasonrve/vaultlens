@@ -5,6 +5,7 @@ import { VaultClient, VaultError } from '../lib/vaultClient.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { concurrentMap } from '../lib/concurrency.js';
 import { parsePolicyHCL } from './policies.js';
+import { pathMatchesPolicyPath } from '../../shared/policyEvaluator.js';
 import {
   graphQueriesTotal,
   graphComputationDurationSeconds,
@@ -817,18 +818,19 @@ router.get(
       const nodes: GraphNode[] = [];
       const edges: GraphEdge[] = [];
 
-      /** Convert a Vault HCL path pattern to a RegExp for matching */
-      function vaultPatternToRegex(pattern: string): RegExp {
-        const escaped = pattern
-          .split(/(\*|\+)/g)
-          .map((part) => {
-            if (part === '*') return '.*';
-            if (part === '+') return '[^/]+';
-            return part.replace(/[.^${}()|[\]\\]/g, '\\$&');
-          })
-          .join('');
-        return new RegExp('^' + escaped + '$');
-      }
+      // Policies for KV v2 are written against the API path (mount/data/... and
+      // mount/metadata/...), not the UI path the caller sends, so match every form.
+      const candidatePaths = [rawPath.replace(/^\/+/, '')];
+      try {
+        const m = await vaultClient.get<{
+          data: { path?: string; options?: { version?: string } | null };
+        }>(`/sys/internal/ui/mounts/${candidatePaths[0]}`, token);
+        const mount = (m.data.path ?? '').replace(/\/+$/, '');
+        if (mount && m.data.options?.version === '2' && candidatePaths[0]!.startsWith(`${mount}/`)) {
+          const rest = candidatePaths[0]!.slice(mount.length + 1);
+          candidatePaths.push(`${mount}/data/${rest}`, `${mount}/metadata/${rest}`);
+        }
+      } catch { /* mount lookup failed — match the path as given */ }
 
       // Root node: the queried secret path
       const rootId = 'secret-root';
@@ -852,7 +854,7 @@ router.get(
           const paths = parsePolicyHCL(rules);
           for (const p of paths) {
             try {
-              if (vaultPatternToRegex(p.path).test(rawPath)) {
+              if (candidatePaths.some((c) => pathMatchesPolicyPath(c, p.path))) {
                 matchingPolicies.push(policyName);
                 break;
               }

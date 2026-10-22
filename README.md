@@ -235,7 +235,7 @@ Share secrets safely with anyone — even people without Vault access. Secrets a
 
 ```bash
 # Create persistent volumes for config and backups
-docker volume create vaultlens_config
+docker volume create vaultlens_data
 docker volume create vaultlens_backups
 
 docker run -d \
@@ -244,9 +244,9 @@ docker run -d \
   -e VAULT_ADDR=http://your-vault-server:8200 \
   -e VAULT_SYSTEM_TOKEN=your-system-token \
   -e VAULTLENS_CONFIG_STORAGE=file \
-  -e VAULTLENS_CONFIG_PATH=/config \
+  -e VAULTLENS_CONFIG_PATH=/data/config \
   -e VAULTLENS_BACKUP_PATH=/backups \
-  -v vaultlens_config:/config \
+  -v vaultlens_data:/data \
   -v vaultlens_backups:/backups \
   ghcr.io/Jasonrve/vaultlens:latest
 ```
@@ -264,7 +264,7 @@ docker compose up -d
 ```
 
 The included `docker-compose.yml` creates two named volumes automatically:
-- **`vaultlens_config`** — persists branding, webhooks, and rotation config (`/config`)
+- **`vaultlens_data`** — persists branding, webhooks, and rotation config (`/data/config`)
 - **`vaultlens_backups`** — persists backup JSON files (`/backups`)
 
 
@@ -294,7 +294,7 @@ VaultLens supports multiple deployment methods:
 | `VAULT_SKIP_TLS_VERIFY` | No | `false` | Skip TLS certificate verification |
 | `CORS_ORIGIN` | No | — | Allowed CORS origin (only if frontend is on a different origin) |
 | `VAULTLENS_CONFIG_STORAGE` | No | `file` | Config backend: `file` or `vault` |
-| `VAULTLENS_CONFIG_PATH` | No | `/config` | Directory for `config.ini` and logo blobs (file mode) |
+| `VAULTLENS_CONFIG_PATH` | No | `/data/config` | Directory for `config.ini` and logo blobs (file mode) |
 | `VAULTLENS_BACKUP_PATH` | No | `/backups` | Directory for backup JSON files |
 | `VAULT_AUDIT_LOG_PATH` | No | — | Path to Vault audit log file (required for webhooks) |
 | `RATE_LIMIT_MAX` | No | `500` | Max API requests per window |
@@ -338,7 +338,7 @@ helm install vaultlens ./charts/vaultlens \
   --set kubernetesAuth.enabled=true \
   --set kubernetesAuth.role=vaultlens \
   --set backup.persistence.enabled=true \
-  --set configStorage.persistence.enabled=true
+  --set data.persistence.enabled=true
 ```
 
 For stateless multi-replica deployments, set `configStorage.backend=vault` to store configuration in Vault KV instead of a PVC.
