@@ -5,6 +5,7 @@ import type { Group } from '../../types';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Badge from '../common/Badge';
+import RefLink from '../common/RefLink';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
 
 export default function GroupDetail() {
@@ -99,9 +100,9 @@ export default function GroupDetail() {
           <div className="flex flex-wrap gap-2 p-4">
             {group.policies?.length ? (
               group.policies.map((p) => (
-                <Link key={p} to={`/policies/${p}`}>
+                <RefLink key={p} kind="policy" id={p}>
                   <Badge text={p} variant="read" />
-                </Link>
+                </RefLink>
               ))
             ) : (
               <span className="text-sm text-gray-400">No policies attached</span>
@@ -117,9 +118,9 @@ export default function GroupDetail() {
           <div className="flex flex-wrap gap-2 p-4">
             {group.member_entity_ids?.length ? (
               group.member_entity_ids.map((eid) => (
-                <Link key={eid} to={`/access/entities/${eid}`} title={eid}>
+                <RefLink key={eid} kind="entity" id={eid}>
                   <Badge text={entityNames[eid] || eid} variant="write" />
-                </Link>
+                </RefLink>
               ))
             ) : (
               <span className="text-sm text-gray-400">No member entities</span>
@@ -135,9 +136,9 @@ export default function GroupDetail() {
             </div>
             <div className="flex flex-wrap gap-2 p-4">
               {group.member_group_ids.map((gid) => (
-                <Link key={gid} to={`/access/groups/${gid}`}>
+                <RefLink key={gid} kind="group" id={gid}>
                   <Badge text={gid} variant="list" />
-                </Link>
+                </RefLink>
               ))}
             </div>
           </div>

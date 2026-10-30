@@ -338,11 +338,23 @@ router.get(
         getAuthTypeForMount(normalizedMount, req.vaultToken!),
       ]);
 
+      const data = { ...response.data };
+      if (authType === 'approle') {
+        // role-id is a separate endpoint; it is an identifier, not a secret. Best-effort so a missing read grant doesn't hide the role.
+        try {
+          const rid = await vaultClient.get<{ data: { role_id: string } }>(
+            `/auth/${normalizedMount}/role/${encodeURIComponent(role)}/role-id`,
+            req.vaultToken!
+          );
+          data['role_id'] = rid.data.role_id;
+        } catch { /* leave role_id absent */ }
+      }
+
       res.json({
         method,
         role,
         authType,
-        data: response.data,
+        data,
       });
     } catch (error) {
       next(error);
