@@ -1,4 +1,5 @@
 ﻿import { useLocation, Link } from 'react-router-dom';
+import RefLink from '../common/RefLink';
 import { useAuthStore } from '../../stores/authStore';
 import { useRef, useState, useEffect } from 'react';
 import WhatsNewModal, { hasUnseenRelease } from '../common/WhatsNewModal';
@@ -164,9 +165,7 @@ export default function Header() {
                     <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1.5">Token Policies</p>
                     <div className="flex flex-wrap gap-1">
                       {tokenInfo.policies.map((p) => (
-                        <span key={p} className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-                          {p}
-                        </span>
+                        <RefLink key={p} kind="policy" id={p} className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-100" />
                       ))}
                     </div>
                   </div>
@@ -178,9 +177,7 @@ export default function Header() {
                     <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-1.5">Identity Policies</p>
                     <div className="flex flex-wrap gap-1">
                       {tokenInfo.identity_policies.map((p) => (
-                        <span key={p} className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700">
-                          {p}
-                        </span>
+                        <RefLink key={p} kind="policy" id={p} className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-700 hover:bg-purple-100" />
                       ))}
                     </div>
                   </div>

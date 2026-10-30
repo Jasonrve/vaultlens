@@ -28,7 +28,7 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
         return;
       }
       if (lookups >= revokeAt) allowed = false;
-      res.end('{"data":{}}');
+      res.end(JSON.stringify({ data: { policies: [req.headers["x-vault-token"] === "viewer" ? "default" : "root"] } }));
     } else if (path === "/v1/sys/health") res.end('{"cluster_id":"fixture"}');
     else if (path === "/v1/sys/mounts")
       res.end('{"data":{"pki/":{"type":"pki","accessor":"a"}}}');
@@ -102,6 +102,7 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
   try {
     assert.equal((await get("/sources", "")).status, 401);
     assert.equal((await get("/sources", "expired")).status, 403);
+    assert.equal((await get("/sources", "viewer")).status, 403);
     assert.equal((await get("/certificates/1")).status, 200);
     assert.equal((await get("/jobs/" + job)).status, 200);
     const selection = await (await post("/selection", q)).json() as {certificates: {id:number;fingerprint:string;sourceId:string;serial:string}[]};

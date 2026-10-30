@@ -8,6 +8,7 @@ import FilteredAuditLog from '../common/FilteredAuditLog';
 import AuthActionBar from './AuthActionBar';
 import ConfirmDialog from '../common/ConfirmDialog';
 import JsonEditor from '../common/JsonEditor';
+import RefLink from '../common/RefLink';
 import VsoResourcesTab from './VsoResourcesTab';
 import { SiKubernetes } from 'react-icons/si';
 import type { ReactNode } from 'react';
@@ -65,9 +66,7 @@ function FieldRow({ label, value, isPolicy }: FieldRowProps) {
         {isPolicy && Array.isArray(value) && value.length > 0 ? (
           <span className="flex flex-wrap gap-1">
             {(value as string[]).map((p) => (
-              <span key={p} className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                {p}
-              </span>
+              <RefLink key={p} kind="policy" id={p} className="rounded bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-200" />
             ))}
           </span>
         ) : (

@@ -45,6 +45,7 @@ router.use(async (req: Request, res: Response, next: NextFunction) => {
     const tokenInfo = await adapter.verifyToken();
     const policies = [...(tokenInfo?.policies ?? []), ...(tokenInfo?.identity_policies ?? [])];
     const admin = policies.includes("root") || policies.includes("vaultlens-admin");
+    if (!admin) throw new PkiError(403, "Administrator access required");
     const sources = await adapter.allowed(await adapter.discover());
     for (const source of sources) store().source(source);
     contexts.set(req, { adapter, token, sources, admin });
