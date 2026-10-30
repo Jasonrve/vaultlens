@@ -7,6 +7,7 @@ import DevIntegrationTab from './DevIntegrationTab';
 import FilteredAuditLog from '../common/FilteredAuditLog';
 import AuthActionBar from './AuthActionBar';
 import ConfirmDialog from '../common/ConfirmDialog';
+import JsonEditor from '../common/JsonEditor';
 import VsoResourcesTab from './VsoResourcesTab';
 import { SiKubernetes } from 'react-icons/si';
 import type { ReactNode } from 'react';
@@ -21,6 +22,26 @@ function formatValue(val: unknown): string {
   if (Array.isArray(val)) return val.length === 0 ? '—' : val.join(', ');
   if (typeof val === 'object') return JSON.stringify(val);
   return String(val);
+}
+
+// Vault echoes legacy aliases next to their token_* replacements and rejects/ignores some read-only
+// fields on write; drop them so a read→edit→save round trip doesn't send conflicting values.
+const LEGACY_ALIASES: Record<string, string> = {
+  policies: 'token_policies',
+  ttl: 'token_ttl',
+  max_ttl: 'token_max_ttl',
+  period: 'token_period',
+  num_uses: 'token_num_uses',
+  bound_cidrs: 'token_bound_cidrs',
+  bound_cidr_list: 'token_bound_cidrs',
+};
+const READ_ONLY_FIELDS = ['role_id', 'local_secret_ids'];
+
+function toEditableRole(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data };
+  for (const [legacy, current] of Object.entries(LEGACY_ALIASES)) if (current in out) delete out[legacy];
+  for (const k of READ_ONLY_FIELDS) delete out[k];
+  return out;
 }
 
 function toLabel(key: string): string {
@@ -40,7 +61,7 @@ function FieldRow({ label, value, isPolicy }: FieldRowProps) {
   return (
     <div className="flex border-b border-gray-100 px-4 py-3 last:border-0">
       <span className="w-1/2 text-sm font-medium text-gray-600">{label}</span>
-      <span className="w-1/2 text-sm text-gray-800 break-all">
+      <span className={`w-1/2 text-sm text-gray-800 break-all ${label === 'Role Id' ? 'font-mono select-all' : ''}`}>
         {isPolicy && Array.isArray(value) && value.length > 0 ? (
           <span className="flex flex-wrap gap-1">
             {(value as string[]).map((p) => (
@@ -313,6 +334,10 @@ export default function RoleDetail() {
   const [devGuidesEnabled, setDevGuidesEnabled] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [vsoResourcesEnabled, setVsoResourcesEnabled] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editJson, setEditJson] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getAuthMethodsConfig()
@@ -344,6 +369,35 @@ export default function RoleDetail() {
         setTemplateContent('');
       });
   }, [method, role]);
+
+  function startEdit() {
+    setEditJson(JSON.stringify(toEditableRole(roleData ?? {}), null, 2));
+    setSaveError(null);
+    setActiveTab('details');
+    setEditing(true);
+  }
+
+  async function handleSave() {
+    let body: Record<string, unknown>;
+    try {
+      body = JSON.parse(editJson) as Record<string, unknown>;
+    } catch {
+      setSaveError('Invalid JSON');
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.createOrUpdateRole(method, role, body);
+      const result = await api.getRole(method, role);
+      setRoleData(result.data);
+      setEditing(false);
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to save role');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleDelete() {
     setDeleting(true);
@@ -378,6 +432,13 @@ export default function RoleDetail() {
         <h1 className="text-2xl font-bold text-gray-800">{role}</h1>
         <div className="flex items-center gap-2">
           <AuthActionBar context={{ screen: 'role', mount: method, role, authType }} />
+          <button
+            onClick={startEdit}
+            disabled={editing}
+            className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Edit Role
+          </button>
           <button
             onClick={() => setConfirmDelete(true)}
             disabled={deleting}
@@ -425,7 +486,29 @@ export default function RoleDetail() {
       </div>
 
       {/* Tab: Role Details */}
-      {activeTab === 'details' && (
+      {activeTab === 'details' && editing && (
+        <div className="space-y-3">
+          <JsonEditor value={editJson} onChange={setEditJson} />
+          {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={() => { void handleSave(); }}
+              disabled={saving}
+              className="rounded bg-[#1563ff] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1250d4] disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {activeTab === 'details' && !editing && (
         <>
           {/* General fields */}
           {generalFields.length > 0 && (
