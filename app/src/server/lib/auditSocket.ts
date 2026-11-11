@@ -17,7 +17,7 @@ import v8 from 'v8';
 import { notifyAuditUpdate } from './auditEvents.js';
 
 // Maximum number of raw audit entries to keep in memory.
-const MAX_BUFFER_ENTRIES = 50_000;
+export const MAX_BUFFER_ENTRIES = 50_000;
 
 // Ring buffer — newest entries are at the end.
 const ringBuffer: unknown[] = [];

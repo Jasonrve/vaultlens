@@ -15,6 +15,7 @@ import * as api from '../lib/api';
 import type { GraphNode } from '../types';
 import type { EntitySuggestion, PermissionTestResult } from '../lib/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import RefLink from '../components/common/RefLink';
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
@@ -175,12 +176,12 @@ function DetailPanel({ node, onClose }: { node: GraphNode | null; onClose: () =>
             <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Policies</p>
             <div className="mt-1 space-y-1">
               {(node.data.policies as string[]).map((p, i) => (
-                <span
+                <RefLink
                   key={i}
-                  className="mr-1 inline-block rounded bg-emerald-50 px-2 py-0.5 text-xs font-mono text-emerald-700"
-                >
-                  {p}
-                </span>
+                  kind="policy"
+                  id={p}
+                  className="mr-1 inline-block rounded bg-emerald-50 px-2 py-0.5 text-xs font-mono text-emerald-700 hover:bg-emerald-100"
+                />
               ))}
             </div>
           </div>

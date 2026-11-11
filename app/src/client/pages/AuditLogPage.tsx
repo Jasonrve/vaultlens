@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import * as api from '../lib/api';
 import type { AuditLogEntry, AuditSourceInfo } from '../lib/api';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import RefLink from '../components/common/RefLink';
 import ErrorMessage from '../components/common/ErrorMessage';
 import AuditContextMenu from '../components/common/AuditContextMenu';
 import AuditWebhookModal from '../components/common/AuditWebhookModal';
@@ -450,13 +451,12 @@ export default function AuditLogPage() {
                                   <dt className="font-medium text-gray-500">Policies:</dt>
                                   <dd className="flex flex-wrap gap-1">
                                     {entry.policies.length > 0 ? entry.policies.map((p) => (
-                                      <Link
+                                      <RefLink
                                         key={p}
-                                        to={`/policies/${p}`}
+                                        kind="policy"
+                                        id={p}
                                         className="rounded bg-blue-100 px-1.5 py-0.5 text-[11px] text-blue-700 hover:bg-blue-200"
-                                      >
-                                        {p}
-                                      </Link>
+                                      />
                                     )) : <span className="text-gray-400">—</span>}
                                   </dd>
                                 </div>

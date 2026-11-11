@@ -4,11 +4,13 @@ import AuditReportsPage from './pages/AuditReportsPage';
 import AuditRunsPage from './pages/AuditRunsPage';
 import AuditSourcesPage from './pages/AuditSourcesPage';
 import CertificatesPage from './pages/CertificatesPage';
+import ClientIntelligencePage from './pages/ClientIntelligencePage';
 import PkiEnginePage from './pages/PkiEnginePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useAuthStore } from './stores/authStore';
+import { useIsAdmin } from './lib/useIsAdmin';
 import { useBrandingStore } from './stores/brandingStore';
 import * as api from './lib/api';
 import Layout from './components/layout/Layout';
@@ -58,6 +60,10 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Navigate to={location.pathname.startsWith('/security-audit') ? '/login?returnTo=security-audit' : '/login'} replace />;
   }
   return <>{children}</>;
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  return useIsAdmin() ? <>{children}</> : <Navigate to="/app" replace />;
 }
 
 /**
@@ -279,7 +285,8 @@ function AppRoutes() {
           <Route path="rules" element={<Navigate to="../checks" replace />} />
         </Route>
       </Route>
-        <Route path="/certificates" element={<ProtectedRoute><Layout /></ProtectedRoute>}><Route index element={<CertificatesPage />} /></Route>
+        <Route path="/certificates" element={<ProtectedRoute><AdminRoute><Layout /></AdminRoute></ProtectedRoute>}><Route index element={<CertificatesPage />} /></Route>
+        <Route path="/client-intelligence" element={<ProtectedRoute><AdminRoute><Layout /></AdminRoute></ProtectedRoute>}><Route index element={<ClientIntelligencePage />} /></Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );

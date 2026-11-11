@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { AxiosError } from "axios";
 import * as api from "../lib/api";
+import { useIsAdmin } from "../lib/useIsAdmin";
 import { pkiEngineUrl, type PkiEngineResult } from "../../shared/pkiEngine";
 import type { PkiSource } from "../../shared/pki";
 import { pkiOperations } from "../../shared/pkiOperations";
@@ -114,6 +115,7 @@ function Pem({ title, value }: { title: string; value: string }) {
   );
 }
 export default function PkiEnginePage() {
+  const isAdmin = useIsAdmin();
   const navigate = useNavigate(),
     mount = useParams()["*"] || "",
     [params] = useSearchParams(),
@@ -880,7 +882,7 @@ export default function PkiEnginePage() {
           </p>
           <div className="engine-inline">
             <button onClick={download}>Download PEM</button>
-            <Link
+            {isAdmin && <Link
               to={
                 "/certificates?filter=" +
                 encodeURIComponent(
@@ -902,7 +904,7 @@ export default function PkiEnginePage() {
               }
             >
               Find in Certificates monitoring
-            </Link>
+            </Link>}
           </div>
           <details>
             <summary>Certificate PEM</summary>

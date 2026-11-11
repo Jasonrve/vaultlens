@@ -19,7 +19,9 @@
     "audit": "node dist/server/security-audit/cli.js",
     "test:security-audit": "npm run check:audit-parity && npm run build:server && node --test dist/server/security-audit/engine.test.js",
     "check:audit-parity": "tsc -p tsconfig.audit-scripts.json && tsx ../scripts/check-audit-parity.ts",
-    "test:pki": "npm run build:server && node --test dist/server/pki/*.test.js"
+    "test:pki": "npm run build:server && node --test dist/server/pki/*.test.js",
+    "test:client-intelligence": "npm run build:server && node --test dist/server/client-intelligence/*.test.js",
+    "test:e2e": "playwright test"
   },
   "keywords": [],
   "license": "GPL-3.0-only",
@@ -67,6 +69,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.20.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/typography": "^0.5.19",
     "@tailwindcss/vite": "^4.2.2",
     "@types/cookie-parser": "^1.4.8",
