@@ -4,6 +4,7 @@ import AuditReportsPage from './pages/AuditReportsPage';
 import AuditRunsPage from './pages/AuditRunsPage';
 import AuditSourcesPage from './pages/AuditSourcesPage';
 import CertificatesPage from './pages/CertificatesPage';
+import ClientIntelligencePage from './pages/ClientIntelligencePage';
 import PkiEnginePage from './pages/PkiEnginePage';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -285,6 +286,7 @@ function AppRoutes() {
         </Route>
       </Route>
         <Route path="/certificates" element={<ProtectedRoute><AdminRoute><Layout /></AdminRoute></ProtectedRoute>}><Route index element={<CertificatesPage />} /></Route>
+        <Route path="/client-intelligence" element={<ProtectedRoute><AdminRoute><Layout /></AdminRoute></ProtectedRoute>}><Route index element={<ClientIntelligencePage />} /></Route>
         <Route path="*" element={<Navigate to="/app" replace />} />
     </Routes>
   );

@@ -1,0 +1,116 @@
+/* Global dark theme.
+   Tailwind v4 compiles every colour utility to var(--color-*), so re-pointing the palette here
+   re-themes every page, hover state, border and divider without touching components.
+   text-white/bg-blue-600 etc. are deliberately left alone so buttons keep their contrast. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --aws-text: #f1f5f9; /* AWS wordmark lettering (the smile stays orange) */
+
+  --dk-bg: #090e1d;
+  --dk-card: #0e1428;
+
+  /* surfaces (bg-gray-50/100/200) and borders (border-gray-100/200/300) */
+  --color-gray-50: #121a33;
+  --color-gray-100: #172142;
+  --color-gray-200: #1f2b52;
+  --color-gray-300: #2b3962;
+  --color-slate-50: #121a33;
+  --color-slate-100: #172142;
+  --color-slate-200: #1f2b52;
+  --color-slate-300: #2b3962;
+  --color-zinc-50: #121a33;
+  --color-zinc-100: #172142;
+  --color-zinc-200: #1f2b52;
+  --color-neutral-100: #172142;
+
+  /* text (text-gray-300..900) */
+  --color-gray-400: #7c87a8;
+  --color-gray-500: #8d98b8;
+  --color-gray-600: #a6b0d0;
+  --color-gray-700: #c3cbe6;
+  --color-gray-800: #dce2f4;
+  --color-gray-900: #eef1fa;
+  --color-slate-400: #7c87a8;
+  --color-slate-500: #8d98b8;
+  --color-slate-600: #a6b0d0;
+  --color-slate-700: #c3cbe6;
+  --color-slate-800: #dce2f4;
+  --color-slate-900: #eef1fa;
+
+  /* status tints: dark translucent backgrounds, light text */
+  --color-red-50: #2a1216;  --color-red-100: #3b171c;  --color-red-200: #6b2128;  --color-red-300: #8f2f38;
+  --color-red-500: #f87171; --color-red-600: #f87171;  --color-red-700: #fca5a5;  --color-red-800: #fecaca;
+  --color-amber-50: #2b2108; --color-amber-100: #3a2d0a; --color-amber-200: #5c4710; --color-amber-300: #7a5f16;
+  --color-amber-500: #fbbf24; --color-amber-600: #fbbf24; --color-amber-700: #fcd34d; --color-amber-800: #fde68a; --color-amber-900: #fef3c7;
+  --color-yellow-50: #2b2108; --color-yellow-100: #3a2d0a; --color-yellow-700: #fcd34d; --color-yellow-800: #fde68a;
+  --color-orange-50: #2e1a0a; --color-orange-100: #3d230d; --color-orange-700: #fdba74;
+  --color-blue-50: #0f1d3d;  --color-blue-100: #15295a;  --color-blue-200: #1f3b7c;  --color-blue-300: #2c4f9e;
+  --color-blue-700: #93c5fd; --color-blue-800: #bfdbfe;
+  --color-green-50: #0b2a1d; --color-green-100: #0f3a28; --color-green-200: #14532d; --color-green-300: #1d6b3d;
+  --color-green-500: #34d399; --color-green-600: #34d399; --color-green-700: #6ee7b7; --color-green-800: #a7f3d0;
+  --color-emerald-50: #0b2a1d; --color-emerald-100: #0f3a28; --color-emerald-700: #6ee7b7;
+  --color-purple-50: #20123d; --color-purple-100: #2b1a4d; --color-purple-700: #d8b4fe; --color-purple-800: #e9d5ff;
+  --color-indigo-50: #14153d; --color-indigo-100: #1c1f55; --color-indigo-700: #a5b4fc;
+  /* extra tint scales */
+  --color-violet-50: #20123d; --color-violet-100: #2b1a4d; --color-violet-200: #4b2c8a; --color-violet-700: #d8b4fe; --color-violet-800: #e9d5ff;
+  --color-sky-50: #0b2336; --color-sky-100: #103250; --color-sky-200: #1b5078; --color-sky-700: #7dd3fc; --color-sky-800: #bae6fd;
+  --color-cyan-50: #082b30; --color-cyan-100: #0c3d45; --color-cyan-200: #146673; --color-cyan-700: #67e8f9; --color-cyan-800: #a5f3fc;
+  --color-teal-50: #0a2b2a; --color-teal-100: #0e3d3b; --color-teal-200: #136a66; --color-teal-700: #5eead4; --color-teal-800: #99f6e4;
+  --color-pink-50: #2d1021; --color-pink-100: #40152f; --color-pink-200: #7a2655; --color-pink-700: #f9a8d4; --color-pink-800: #fbcfe8;
+  --color-rose-50: #2d1018; --color-rose-100: #40151f; --color-rose-200: #7a2638; --color-rose-700: #fda4af; --color-rose-800: #fecdd3;
+  --color-fuchsia-50: #2a1033; --color-fuchsia-100: #3a1648; --color-fuchsia-200: #6d2a80; --color-fuchsia-700: #f0abfc; --color-fuchsia-800: #f5d0fe;
+  --color-lime-50: #1a2a0b; --color-lime-100: #243d0e; --color-lime-200: #3f6a13; --color-lime-700: #bef264; --color-lime-800: #d9f99d;
+}
+
+/* white is shared by bg-white and text-white, so only the background utilities are remapped */
+html[data-theme='dark'] .bg-white { background-color: var(--dk-card); }
+html[data-theme='dark'] .hover\:bg-white:hover { background-color: var(--dk-card); }
+html[data-theme='dark'] body { background-color: var(--dk-bg); color: #dce2f4; }
+
+/* shell */
+html[data-theme='dark'] .bg-\[\#f6f6f6\] { background-color: var(--dk-bg); } /* login / OIDC callback page background */
+html[data-theme='dark'] main { background-color: var(--dk-bg) !important; } /* branding sets this inline */
+html[data-theme='dark'] aside { background-color: #0a0f20 !important; border-right: 1px solid #172040; }
+html[data-theme='dark'] aside a[aria-current='page'] {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+}
+html[data-theme='dark'] header { border-bottom-color: #172040; }
+html[data-theme='dark'] main::-webkit-scrollbar { width: 10px; }
+html[data-theme='dark'] main::-webkit-scrollbar-thumb { background: #1d2850; border-radius: 6px; }
+
+/* form controls (index.css forces #fff on inputs; this is unlayered, so it wins) */
+html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] select {
+  background-color: #121a33;
+  color: #e8ecf8;
+  border-color: #2b3962;
+}
+html[data-theme='dark'] input::placeholder,
+html[data-theme='dark'] textarea::placeholder { color: #6a7596; }
+html[data-theme='dark'] option { background-color: #121a33; color: #e8ecf8; }
+
+/* misc */
+html[data-theme='dark'] .shadow, html[data-theme='dark'] .shadow-sm, html[data-theme='dark'] .shadow-md,
+html[data-theme='dark'] .shadow-lg, html[data-theme='dark'] .shadow-xl { --tw-shadow-color: rgba(0, 0, 0, 0.5); }
+html[data-theme='dark'] hr { border-color: #1f2b52; }
+html[data-theme='dark'] code:not(pre code) { background-color: #172142; color: #dce2f4; }
+html[data-theme='dark'] .prose {
+  --tw-prose-body: #c3cbe6; --tw-prose-headings: #eef1fa; --tw-prose-bold: #eef1fa; --tw-prose-links: #93c5fd;
+  --tw-prose-code: #dce2f4; --tw-prose-pre-bg: #121a33; --tw-prose-pre-code: #dce2f4; --tw-prose-quotes: #c3cbe6;
+  --tw-prose-counters: #8d98b8; --tw-prose-bullets: #8d98b8; --tw-prose-hr: #1f2b52; --tw-prose-th-borders: #2b3962;
+  --tw-prose-td-borders: #1f2b52; --tw-prose-captions: #8d98b8;
+}
+html[data-theme='dark'] .react-flow { --xy-background-color: var(--dk-bg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after {
+    transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease, fill 220ms ease, stroke 220ms ease !important;
+  }
+}
+
+/* brand-blue text/links: the light-theme blue is too dim on a dark surface */
+html[data-theme='dark'] [class*='text-[#1563ff]'], html[data-theme='dark'] [class*='text-[#1250d4]'] { color: #7aa7ff; }
+html[data-theme='dark'] [class*='hover:text-[#1563ff]']:hover { color: #a9c4ff; }

@@ -265,6 +265,7 @@ export default function Sidebar() {
         <NavCategory label="Monitoring" />
         {isAdminUser && <NavItem to="/security-audit" icon={<IconShieldCheck />} label="Security Audit" />}
         {isAdminUser && <NavItem to="/certificates" icon={<IconCertificate />} label="Certificates" />}
+        {isAdminUser && <NavItem to="/client-intelligence" icon={<IconUsers />} label="Client Intelligence" />}
         <NavItem to="/identity" icon={<IconIdentityCard />} label="Identity" />
         <NavItem to="/visualizations" icon={<IconChart />} label="Visualizations" />
 
