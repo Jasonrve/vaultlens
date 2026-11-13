@@ -27,6 +27,12 @@ Click any secret to open the detail view. Two display modes are available:
 
 Values are loaded when you open the secret (if you have `read` permission).
 
+### Copying Individual Values
+
+In **Key / Value** mode, use the **Copy value** icon beside a field's eye icon to copy that value without revealing it on screen. A check mark briefly confirms a successful copy. If your browser blocks clipboard access, an error message appears instead.
+
+The button is available across all mounts using the secret value view, including KV v1, KV v2, and cubbyhole. It appears only after the value has been successfully read with your permissions; restricted-access fields and values that could not be loaded have no copy button. When viewing a historical KV v2 version, the button copies the value from that selected version. Non-string values are copied as JSON text, and empty values copy an empty string.
+
 ## Version History (KV v2)
 
 KV v2 secrets preserve every write as a numbered version. VaultLens exposes the full version history directly in the secret detail view.
