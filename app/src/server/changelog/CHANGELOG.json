@@ -5,10 +5,14 @@
       "Vault Secrets Operator resource browser",
       "VSO connection diagnostics",
       "VSO resource YAML drawer",
-      "Complete VSO resource discovery"
+      "Permission-aware secret value copy"
     ],
     "sections": {
       "New": [
+        {
+          "title": "Individual secret value copy",
+          "description": "Copy a field's value directly from the secret view without revealing it on screen. Copy buttons are available across secret mounts only for values you have permission to read."
+        },
         {
           "title": "Vault Secrets Operator resource browser",
           "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
