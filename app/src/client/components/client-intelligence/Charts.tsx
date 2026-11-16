@@ -210,7 +210,7 @@ export function TopUsers({ data, loading, onSelectBackend, onSearch, exportMenu 
           <ul className="text-xs" aria-label="Top clients by requests">
             {data.clients.map((c) => (
               <li key={c.id}>
-                <button type="button" className="ci-legend-row w-full rounded-md px-1.5 py-1 text-left hover:bg-[var(--ci-hover)]" title={`${c.displayName} · ${c.requests.toLocaleString()} requests, ${c.errors} errors`} onClick={() => onSearch(c.displayName)}>
+                <button type="button" className="ci-legend-row w-full rounded-md px-1.5 py-1 text-left hover:bg-[var(--ci-hover)]" title={`${c.displayName} Â· ${c.requests.toLocaleString()} requests, ${c.errors} errors`} onClick={() => onSearch(c.displayName)}>
                   <span className="flex items-center gap-2">
                     <BackendIcon type={c.backend} className="h-4 w-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate"><span className="font-medium">{c.displayName}</span>{c.detail && c.detail !== c.displayName && <span className="ci-muted ml-1.5 text-[11px]">{c.detail}</span>}</span>
