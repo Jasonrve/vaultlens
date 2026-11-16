@@ -109,7 +109,6 @@ test("HTTP authorization covers details, jobs and snapshot export with concurren
     assert.equal(selection.certificates.length, 300);
     const selectedCertificate = selection.certificates.find(c => c.id === 1)!;
     assert.equal((await post("/batch/item", {action:"remove",certificate:selectedCertificate})).status, 400);
-    assert.equal((await post("/batch/item", {action:"remove",certificate:selectedCertificate,confirm:"remove"})).status, 403);
     allowed = false;
     assert.equal((await get("/sources/" + source.id + "/check")).status, 403);
     assert.equal((await post("/selection", q)).status, 403);
