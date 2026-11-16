@@ -5,10 +5,14 @@
       "Vault Secrets Operator resource browser",
       "VSO connection diagnostics",
       "VSO resource YAML drawer",
-      "Complete VSO resource discovery"
+      "Auth method role search"
     ],
     "sections": {
       "New": [
+        {
+          "title": "Auth method role search",
+          "description": "Find roles by typing all or part of a role name in the Roles tab. Search works across AWS, AppRole, Kubernetes, and other auth methods with role lists, regardless of letter case."
+        },
         {
           "title": "Vault Secrets Operator resource browser",
           "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
