@@ -117,7 +117,7 @@ let rawEntriesCache: { data: AuditEntry[]; expires: number } | null = null;
 
 // Reads from the in-memory ring buffer (socket mode) or the on-disk audit
 // log file (file mode), cached briefly to absorb bursts of requests.
-async function readRawAuditEntries(): Promise<AuditEntry[]> {
+export async function readRawAuditEntries(): Promise<AuditEntry[]> {
   if (rawEntriesCache && rawEntriesCache.expires > Date.now()) {
     return rawEntriesCache.data;
   }

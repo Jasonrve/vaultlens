@@ -5,6 +5,7 @@ import type { Entity } from '../../types';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
 import Badge from '../common/Badge';
+import RefLink from '../common/RefLink';
 import RelationshipGraphModal from '../common/RelationshipGraphModal';
 
 export default function EntityDetail() {
@@ -105,9 +106,9 @@ export default function EntityDetail() {
           <div className="flex flex-wrap gap-2 p-4">
             {entity.policies?.length ? (
               entity.policies.map((p) => (
-                <Link key={p} to={`/policies/${p}`}>
+                <RefLink key={p} kind="policy" id={p}>
                   <Badge text={p} variant="read" />
-                </Link>
+                </RefLink>
               ))
             ) : (
               <span className="text-sm text-gray-400">No policies attached</span>
@@ -123,9 +124,9 @@ export default function EntityDetail() {
           <div className="flex flex-wrap gap-2 p-4">
             {entity.group_ids?.length ? (
               entity.group_ids.map((gid) => (
-                <Link key={gid} to={`/access/groups/${gid}`} title={gid}>
+                <RefLink key={gid} kind="group" id={gid}>
                   <Badge text={groupNames[gid] || gid} variant="list" />
-                </Link>
+                </RefLink>
               ))
             ) : (
               <span className="text-sm text-gray-400">No group memberships</span>

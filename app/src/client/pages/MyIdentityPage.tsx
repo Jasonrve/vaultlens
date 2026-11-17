@@ -17,6 +17,7 @@ import type { GraphData } from '../types';
 import type { EntitySuggestion } from '../lib/api';
 import { useAuthStore } from '../stores/authStore';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import RefLink from '../components/common/RefLink';
 
 // ─── Custom Node Types ────────────────────────────────────────────────────────
 
@@ -202,9 +203,7 @@ function DetailPanel({
                 value={
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {(d.policies as string[]).map((p) => (
-                      <span key={p} className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono text-emerald-700 ring-1 ring-emerald-200">
-                        {p}
-                      </span>
+                      <RefLink key={p} kind="policy" id={p} className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100" />
                     ))}
                   </div>
                 }
@@ -229,9 +228,7 @@ function DetailPanel({
                 value={
                   <div className="flex flex-wrap gap-1 mt-0.5">
                     {(d.policies as string[]).map((p) => (
-                      <span key={p} className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono text-emerald-700 ring-1 ring-emerald-200">
-                        {p}
-                      </span>
+                      <RefLink key={p} kind="policy" id={p} className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-mono text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100" />
                     ))}
                   </div>
                 }

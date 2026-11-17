@@ -1,3 +1,6 @@
+import { FaAws } from 'react-icons/fa';
+import { SiKubernetes } from 'react-icons/si';
+
 /**
  * SVG icons for each Vault auth method type.
  * Uses inline SVGs so there are no external image dependencies.
@@ -82,13 +85,13 @@ export default function AuthMethodIcon({ type, className = 'h-6 w-6' }: Props) {
   }
 
   // ── AWS ────────────────────────────────────────────────────────────────────
+  // Official wordmark + smile (Font Awesome brand glyph): lettering follows the theme, smile is AWS orange.
   if (normalised === 'aws') {
     return (
-      <svg className={className} viewBox="0 0 24 24" fill="none">
-        <path d="M6.5 15.5 C5 14.2 4 12.7 4 11 C4 8.2 6.5 6 9.5 6 C10.2 4.8 11.5 4 13 4 C15.2 4 17 5.8 17 8 C17 8.1 17 8.2 17 8.3 C19.2 8.8 21 10.7 21 13 C21 15.5 19 17.5 16.5 17.5" stroke="#FF9900" strokeWidth="1.5" fill="none" strokeLinejoin="round" />
-        <path d="M9 17 l3 3 l3-3" stroke="#FF9900" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <line x1="12" y1="20" x2="12" y2="13" stroke="#FF9900" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
+      <span className={`relative inline-flex items-center justify-center ${className}`} role="img" aria-label="AWS">
+        <FaAws className="h-full w-full" style={{ color: 'var(--aws-text, #232F3E)' }} />
+        <FaAws className="absolute inset-0 h-full w-full" style={{ color: '#FF9900', clipPath: 'inset(63% 0 0 0)' }} />
+      </span>
     );
   }
 
@@ -125,20 +128,13 @@ export default function AuthMethodIcon({ type, className = 'h-6 w-6' }: Props) {
   }
 
   // ── Kubernetes ────────────────────────────────────────────────────────────
+  // Official helm mark (Simple Icons): blue heptagon with the wheel cut out; the white disc behind it shows through.
   if (normalised === 'kubernetes' || normalised === 'k8s') {
     return (
-      <svg className={className} viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="10" fill="#326CE5" />
-        <circle cx="12" cy="12" r="2.5" fill="white" />
-        <line x1="12" y1="3.5" x2="12" y2="9" stroke="white" strokeWidth="1.5" />
-        <line x1="12" y1="15" x2="12" y2="20.5" stroke="white" strokeWidth="1.5" />
-        <line x1="3.5" y1="12" x2="9" y2="12" stroke="white" strokeWidth="1.5" />
-        <line x1="15" y1="12" x2="20.5" y2="12" stroke="white" strokeWidth="1.5" />
-        <line x1="6" y1="6" x2="9.75" y2="9.75" stroke="white" strokeWidth="1.5" />
-        <line x1="14.25" y1="14.25" x2="18" y2="18" stroke="white" strokeWidth="1.5" />
-        <line x1="18" y1="6" x2="14.25" y2="9.75" stroke="white" strokeWidth="1.5" />
-        <line x1="9.75" y1="14.25" x2="6" y2="18" stroke="white" strokeWidth="1.5" />
-      </svg>
+      <span className={`relative inline-flex items-center justify-center ${className}`} role="img" aria-label="Kubernetes">
+        <span className="absolute rounded-full bg-white" style={{ inset: '17%', top: '18%', bottom: '16%' }} />
+        <SiKubernetes className="relative h-full w-full" style={{ color: '#326CE5' }} />
+      </span>
     );
   }
 
