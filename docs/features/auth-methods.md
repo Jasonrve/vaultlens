@@ -100,6 +100,10 @@ Plain text (no `=` or `:`) is displayed as a standard description paragraph belo
 
 ## Auth Method Detail
 
+### Role Search
+
+Use **Search roles** above the Roles table to filter roles by name, including partial names. Matching is case-insensitive and ignores leading or trailing spaces. Clear the search to show all roles again. This is available for AWS, AppRole, Kubernetes, and other auth methods with a Roles table. Searches apply only to the current auth method and reset when you switch methods.
+
 ### Vault Secrets Operator Resources
 
 Administrators can enable **Vault Secrets Operator resources** from **Settings → Features → Auth Methods**. The setting is global: when enabled, every Kubernetes auth mount gets a **VSO Resources** tab, and each of that mount's roles gets a role-scoped **🔗 VSO Resources** tab filtered to just the resources tied to that role. It is disabled by default for normal installations.

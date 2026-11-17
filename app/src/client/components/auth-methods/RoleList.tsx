@@ -55,6 +55,7 @@ interface RoleListProps {
 export default function RoleList({ embedded = false, errorCounts = null }: RoleListProps) {
   const { method = '' } = useParams();
   const [roles, setRoles] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
   const [methodType, setMethodType] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +93,7 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
   }
 
   useEffect(() => {
+    setSearch('');
     loadRoles();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [method]);
@@ -139,6 +141,9 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
     }
   }
 
+  const query = search.trim().toLowerCase();
+  const filteredRoles = roles.filter((role) => role.toLowerCase().includes(query));
+
   if (loading) return <LoadingSpinner className="mt-12" />;
   if (error) return error === 'permission denied'
     ? (
@@ -161,7 +166,15 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
         </div>
       )}
 
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap items-center justify-end gap-3">
+        <input
+          type="search"
+          aria-label="Search roles"
+          placeholder="Search roles..."
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="w-64 max-w-full rounded-md border border-gray-300 px-3 py-1.5 text-sm focus:border-[#1563ff] focus:ring-1 focus:ring-[#1563ff] focus:outline-none"
+        />
         <button
           onClick={() => setShowCreate(true)}
           className="rounded bg-[#1563ff] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1250d4]"
@@ -358,7 +371,7 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 bg-white">
-            {roles.map((role) => (
+            {filteredRoles.map((role) => (
               <tr key={role} className="hover:bg-gray-50">
                 <td className="px-4 py-3">
                   <Link
@@ -382,10 +395,10 @@ export default function RoleList({ embedded = false, errorCounts = null }: RoleL
                 </td>
               </tr>
             ))}
-            {roles.length === 0 && (
+            {filteredRoles.length === 0 && (
               <tr>
                 <td colSpan={2} className="px-4 py-8 text-center text-sm text-gray-400">
-                  No roles found for this auth method
+                  {roles.length === 0 ? 'No roles found for this auth method' : `No roles match "${search.trim()}"`}
                 </td>
               </tr>
             )}
