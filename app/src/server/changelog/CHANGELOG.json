@@ -69,6 +69,10 @@
           "description": "Destructive actions (secret, policy, role and secret-ID delete, webhook delete, dev guide reset) use the app's own confirmation dialog instead of the browser prompt."
         },
         {
+          "title": "Admin-only Certificates",
+          "description": "The Certificates page and PKI API are restricted to root and vaultlens-admin users. Other users are redirected away from the page and receive 403 from the PKI API. AppRole role IDs are shown on Role Details."
+        },
+        {
           "title": "Separate data volume",
           "description": "Helm and Docker deployments mount a separate /data volume for the config, PKI and audit databases."
         },
