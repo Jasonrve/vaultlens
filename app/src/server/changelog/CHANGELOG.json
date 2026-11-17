@@ -5,10 +5,15 @@
       "Vault Secrets Operator resource browser",
       "VSO connection diagnostics",
       "VSO resource YAML drawer",
+      "Permission-aware secret value copy"
       "Auth method role search"
     ],
     "sections": {
       "New": [
+        {
+          "title": "Individual secret value copy",
+          "description": "Copy a field's value directly from the secret view without revealing it on screen. Copy buttons are available across secret mounts only for values you have permission to read."
+        },
         {
           "title": "Auth method role search",
           "description": "Find roles by typing all or part of a role name in the Roles tab. Search works across AWS, AppRole, Kubernetes, and other auth methods with role lists, regardless of letter case."
