@@ -1,6 +1,7 @@
 ﻿import { useLocation, Link } from 'react-router-dom';
 import RefLink from '../common/RefLink';
 import { useAuthStore } from '../../stores/authStore';
+import { useThemeStore } from '../../stores/themeStore';
 import { useRef, useState, useEffect } from 'react';
 import WhatsNewModal, { hasUnseenRelease } from '../common/WhatsNewModal';
 
@@ -22,6 +23,7 @@ const LABELS: Record<string, string> = {
 export default function Header() {
   const location = useLocation();
   const { tokenInfo, logout } = useAuthStore();
+  const { theme, toggle } = useThemeStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -120,6 +122,20 @@ export default function Header() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggle}
+          data-testid="theme-toggle"
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-800"
+        >
+          {theme === 'dark' ? (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10l1.4 1.4M3 12h2m14 0h2M5.6 18.4L7 17m10-10l1.4-1.4M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+          ) : (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.7} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" /></svg>
+          )}
+        </button>
         {tokenInfo?.display_name && (
           <div className="relative" ref={dropdownRef}>
             <button

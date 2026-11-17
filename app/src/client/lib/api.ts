@@ -1,6 +1,9 @@
 import axios, { AxiosError } from 'axios';
 import { rateLimitDelay, recordRateLimit } from './requestBackoff';
 import type {
+  ActivityResponse, TopResponse, BackendsResponse, ClientDetailResponse, ClientListResponse, ClientQuery, ClientSummary,
+} from '../../shared/clientIntelligence';
+import type {
   SecretEngine,
   Policy,
   PolicyPath,
@@ -1460,4 +1463,52 @@ export async function pkiEngineLookup(mount:string,source:string,section:'roles'
 
 export async function pkiCheckSource(id: string) {
   return (await api.get<import('../../shared/pki').PkiSourceCheck>(`/pki/sources/${encodeURIComponent(id)}/check`)).data;
+}
+
+// ── Client Intelligence ───────────────────────────────────────────────────────
+function ciParams(q: Partial<ClientQuery>): URLSearchParams {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '' && v !== false) p.set(k, String(v));
+  return p;
+}
+
+export async function getClientSummary(days: number): Promise<ClientSummary> {
+  return (await api.get<ClientSummary>('/client-intelligence/summary', { params: { days } })).data;
+}
+export async function getClients(q: Partial<ClientQuery>): Promise<ClientListResponse> {
+  return (await api.get<ClientListResponse>(`/client-intelligence/clients?${ciParams(q)}`)).data;
+}
+export async function getClientBackends(days: number): Promise<BackendsResponse> {
+  return (await api.get<BackendsResponse>('/client-intelligence/backends', { params: { days } })).data;
+}
+export async function getClientActivity(days: number, backend?: string, bucket: 'day' | 'hour' = 'day'): Promise<ActivityResponse> {
+  return (await api.get<ActivityResponse>('/client-intelligence/activity', { params: { days, backend, bucket } })).data;
+}
+export async function getClientTop(days: number): Promise<TopResponse> {
+  return (await api.get<TopResponse>('/client-intelligence/top', { params: { days } })).data;
+}
+export async function downloadTopExport(days: number, format: 'csv' | 'json'): Promise<void> {
+  const res = await api.get<Blob>('/client-intelligence/top/export', { params: { days, format, limit: 1000 }, responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vault-top-callers-${new Date().toISOString().slice(0, 10)}.${format}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+export async function getClientDetail(id: string, days: number): Promise<ClientDetailResponse> {
+  return (await api.get<ClientDetailResponse>(`/client-intelligence/clients/${encodeURIComponent(id)}`, { params: { days } })).data;
+}
+/** Downloads the current filtered inventory; throws with the server message on failure. */
+export async function downloadClientExport(q: Partial<ClientQuery>, format: 'csv' | 'json'): Promise<{ partial: boolean }> {
+  const p = ciParams({ ...q, offset: undefined, limit: undefined });
+  p.set('format', format);
+  const res = await api.get<Blob>(`/client-intelligence/export?${p}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `vault-clients-${new Date().toISOString().slice(0, 10)}.${format}`;
+  a.click();
+  URL.revokeObjectURL(url);
+  return { partial: res.headers['x-export-partial'] === 'true' };
 }

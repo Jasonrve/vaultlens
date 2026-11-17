@@ -40,3 +40,7 @@ task/
 .claude/
 CLAUDE-SECURITY-*/
 .playwright-mcp/
+
+# Playwright
+app/test-results/
+app/playwright-report/

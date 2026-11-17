@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Icon } from '@iconify/react';
 import * as api from '../../lib/api';
 import LoadingSpinner from '../common/LoadingSpinner';
 import ErrorMessage from '../common/ErrorMessage';
@@ -112,6 +113,9 @@ export default function SecretView() {
   const [viewMode, setViewMode] = useState<'kv' | 'json'>('kv');
   const [jsonRevealed, setJsonRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showMove, setShowMove] = useState(false);
 
   // Version viewing
@@ -136,6 +140,27 @@ export default function SecretView() {
 
   // Tracks whether user has "show all" active — persisted across version switches
   const showAllRef = useRef(false);
+
+  useEffect(() => {
+    setCopiedKey(null);
+    setCopyError(null);
+    return () => {
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+    };
+  }, [splat, viewingSecretVersion]);
+
+  async function handleCopyValue(key: string) {
+    if (restricted || !secretValues || !Object.prototype.hasOwnProperty.call(secretValues, key)) return;
+    setCopyError(null);
+    try {
+      await navigator.clipboard.writeText(secretValues[key]);
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+      setCopiedKey(key);
+      copyTimer.current = setTimeout(() => setCopiedKey(null), 2000);
+    } catch {
+      setCopyError('Unable to copy the value. Check your browser clipboard permissions.');
+    }
+  }
 
   // Reset to latest version when navigating to a different secret
   useEffect(() => {
@@ -571,6 +596,8 @@ export default function SecretView() {
         </div>
       )}
 
+      {copyError && <p role="status" className="mb-3 text-sm text-red-600">{copyError}</p>}
+
       {/* Secret Fields */}
       <div className="rounded-md border border-gray-200 bg-white">
         <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2">
@@ -682,6 +709,17 @@ export default function SecretView() {
                     <span className="text-gray-400 select-none tracking-widest">••••••••</span>
                   )}
                 </span>
+                {!restricted && secretValues && Object.prototype.hasOwnProperty.call(secretValues, key) && (
+                  <button
+                    type="button"
+                    onClick={() => { void handleCopyValue(key); }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                    title={copiedKey === key ? 'Copied!' : 'Copy value'}
+                    aria-label={copiedKey === key ? `Copied value for ${key}` : `Copy value for ${key}`}
+                  >
+                    <Icon icon={copiedKey === key ? 'lucide:check' : 'lucide:copy'} className={`h-4 w-4${copiedKey === key ? ' text-green-600' : ''}`} />
+                  </button>
+                )}
                 {!restricted && (
                 <button
                   onClick={() => toggleReveal(key)}

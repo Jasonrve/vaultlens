@@ -5,7 +5,7 @@ services:
     privileged: true
     command: server --disable=traefik --tls-san=k3s --write-kubeconfig=/shared/k3s.yaml --write-kubeconfig-mode=644
     ports:
-      - "6443:6443"
+      - "6445:6443"
     volumes:
       - k3s-data:/var/lib/rancher/k3s
       - k3s-shared:/shared
@@ -146,7 +146,7 @@ services:
       - k3s-shared:/var/run/secrets/kubernetes.io/serviceaccount:ro
     command: sh -c "npm install && rm -rf dist && npm run build && npm start"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health > /dev/null 2>&1 && echo OK || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/health > /dev/null 2>&1 && echo OK || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
