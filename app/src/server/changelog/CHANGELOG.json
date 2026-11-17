@@ -5,8 +5,12 @@
       "Vault Secrets Operator resource browser",
       "VSO connection diagnostics",
       "VSO resource YAML drawer",
-      "Permission-aware secret value copy"
-      "Auth method role search"
+      "Permission-aware secret value copy",
+      "Auth method role search",
+      "Certificate inventory and PKI engine workspace",
+      "Native security audit workspace",
+      "Client Intelligence dashboard",
+      "Admin Health page"
     ],
     "sections": {
       "New": [
@@ -21,9 +25,57 @@
         {
           "title": "Vault Secrets Operator resource browser",
           "description": "Administrators can enable a read-only VSO Resources tab for all Kubernetes auth mounts. Open the tab to list VSO resources across namespaces and inspect an individual object as YAML."
+        },
+        {
+          "title": "Certificate inventory and PKI engine workspace",
+          "description": "Browse PKI engines and their certificate inventory in one workspace. Certificates are visible to administrators only, and revocation asks for confirmation."
+        },
+        {
+          "title": "Native security audit workspace",
+          "description": "Run a configuration security audit across auth methods, policies, roles and identities, with a configurable rule catalog. Snapshots can be saved and compared to see what changed."
+        },
+        {
+          "title": "Client Intelligence dashboard",
+          "description": "See which clients (by auth backend, identity, namespace and IP) call Vault, with an activity chart, backend distribution, top users, a filterable inventory, a detail drawer, and CSV/JSON export. Includes a light/dark theme toggle."
+        },
+        {
+          "title": "Admin Health page",
+          "description": "Administrators get a Health page with runtime status, the Vault auth identity, AWS identity (IRSA/EKS), Vault server status, background jobs, and sanitized configuration."
+        },
+        {
+          "title": "Edit roles as JSON",
+          "description": "Edit any auth method's role as JSON from the role page. AppRole role IDs are shown on Role Details."
+        },
+        {
+          "title": "Secret file drop and multi-line values",
+          "description": "Drag and drop a file into a secret value. Values are edited in a multi-line textarea so PEM newlines are preserved, with a PEM format hint and a confirmation on save."
+        },
+        {
+          "title": "Application backup upload",
+          "description": "Upload application backups from the Backup page."
         }
       ],
       "Improved": [
+        {
+          "title": "Partial secret updates",
+          "description": "Add and remove individual fields when updating a secret, without re-entering the rest of it. Secret delete is gated by the per-secret delete permission."
+        },
+        {
+          "title": "Clickable policy, entity and group references",
+          "description": "Policy, entity and group names link to their pages. Ctrl/Cmd-click opens a preview modal instead. Certificates is hidden from non-admins."
+        },
+        {
+          "title": "Consistent confirmation dialogs",
+          "description": "Destructive actions (secret, policy, role and secret-ID delete, webhook delete, dev guide reset) use the app's own confirmation dialog instead of the browser prompt."
+        },
+        {
+          "title": "Separate data volume",
+          "description": "Helm and Docker deployments mount a separate /data volume for the config, PKI and audit databases."
+        },
+        {
+          "title": "Secret graph for KV v2",
+          "description": "The secret graph matches KV v2 data and metadata policy paths."
+        },
         {
           "title": "VSO connection diagnostics",
           "description": "When VaultLens cannot reach a downstream Kubernetes cluster, the VSO tabs now show the exact API request, TLS verification state, CA certificate status, and upstream error details. The same information is recorded in the server logs without exposing credentials."
@@ -38,6 +90,18 @@
         }
       ],
       "Fixed": [
+        {
+          "title": "Form control backgrounds",
+          "description": "Form inputs use white backgrounds again, fixing hard-to-read fields in some themes."
+        },
+        {
+          "title": "UI QA fixes",
+          "description": "Analytics shows the ACL policy count again. Comment-only policies display their HCL instead of a blank page, and switching edit modes no longer discards those comments. The login page shows the server's error message for an invalid token."
+        },
+        {
+          "title": "Multi-line PEM values",
+          "description": "PEM values keep their line breaks when saved and shown in the secret editor."
+        },
         {
           "title": "VSO resource permission errors",
           "description": "Opening Resources on a Kubernetes auth method now keeps you on the page and shows downstream cluster permission guidance instead of redirecting you to the dashboard."
